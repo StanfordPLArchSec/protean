@@ -1,0 +1,15 @@
+[submodule "glibc"]
+	path = glibc
+	url = https://sourceware.org/git/glibc.git
+	branch = release/2.37/master
+[submodule "gem5"]
+	path = gem5
+	url = git@github.com:StanfordPLArchSec/llsct2-gem5.git
+	branch = develop
+[submodule "passes"]
+	path = passes
+	url = git@github.com:StanfordPLArchSec/llsct2-passes.git
+[submodule "llvm"]
+	path = llvm
+	url = git@github.com:StanfordPLArchSec/llsct2-llvm.git
+	branch = sct
