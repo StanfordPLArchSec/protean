@@ -23,12 +23,15 @@ ExternalProject_Get_Property(gem5 BINARY_DIR)
 set(gem5_BINARY_DIR ${BINARY_DIR})
 
 add_executable(gem5::gem5 IMPORTED GLOBAL)
-set_target_properties(gem5::gem5 PROPERTIES IMPORTED_LOCATION ${gem5_BINARY_DIR}/build/X86/gem5.${GEM5_BUILD_TYPE})
+set(GEM5_BINARY ${gem5_BINARY_DIR}/build/X86/gem5.${GEM5_BUILD_TYPE})
+set_target_properties(gem5::gem5 PROPERTIES IMPORTED_LOCATION ${GEM5_BINARY})
 add_dependencies(gem5::gem5 gem5)
 # FIXME: Use SOURCES instead of DEPENDS + set_target_properties?
 set(gem5_se_py ${CMAKE_CURRENT_SOURCE_DIR}/gem5/configs/deprecated/example/se.py)
 add_custom_target(gem5_se_py DEPENDS ${gem5_se_py})
-set(gem5_se_wrapper ${CMAKE_CURRENT_SOURCE_DIR}/gem5_se_wrapper.sh)
+
+configure_file(gem5_se_wrapper.sh.in gem5_wrapper_se.sh @ONLY)
+set(gem5_se_wrapper ${CMAKE_CURRENT_BINARY_DIR}/gem5_wrapper_se.sh)
 add_custom_target(gem5_se_wrapper DEPENDS ${gem5_se_wrapper})
 
 # LLVM
@@ -43,6 +46,7 @@ ExternalProject_Add(llvm
   -DLLVM_INCLUDE_TESTS=Off
   BINARY_DIR ${CMAKE_CURRENT_SOURCE_DIR}/llvm/build
   INSTALL_COMMAND ""
+  # BUILD_ALWAYS On
 )
 ExternalProject_Get_Property(llvm BINARY_DIR)
 set(llvm_BINARY_DIR ${BINARY_DIR})
@@ -66,6 +70,7 @@ ExternalProject_Add(glibc
   BUILD_COMMAND make -s -j $ENV{CMAKE_BUILD_PARALLEL_LEVEL}
   INSTALL_COMMAND make -s -j $ENV{CMAKE_BUILD_PARALLEL_LEVEL} install
   DEPENDS llvm::clang llvm::clang++ # TODO: will need to add passes here too
+  # BUILD_ALWAYS On
 )
 ExternalProject_Get_Property(glibc INSTALL_DIR)
 set(glibc_INSTALL_DIR ${INSTALL_DIR})
@@ -73,7 +78,6 @@ set(glibc_INSTALL_DIR ${INSTALL_DIR})
 add_library(glibc::glibc IMPORTED GLOBAL SHARED)
 set_target_properties(glibc::glibc PROPERTIES IMPORTED_LOCATION ${glibc_INSTALL_DIR}/lib/libc.so.6)
 add_dependencies(glibc::glibc glibc)
-
 
 # TEST SUITE
 # FIXME: Somehow parameterize which SPEC benchmarks are run.
@@ -83,65 +87,66 @@ list(FIND SPEC_BENCH_SIZE_OPTIONS ${SPEC_BENCH_SIZE} SPEC_BENCH_SIZE_IDX)
 if(IDX STREQUAL -1)
   message(FATAL_ERROR "Invalid SPEC_BENCH_SIZE ${SPEC_BENCH_SIZE}")
 endif()
-function(add_test_suite NAME)
-  cmake_parse_arguments(ARG "TEST" "" "RUN_UNDER;DEPENDS" ${ARGN})
-  if(ARG_UNPARSED_ARGUMENTS)
-    message(FATAL_ERROR "Unrecognized arguments passed to \"add_test_suite\": ${ARG_UNPARSED_ARGUMENTS}")
-  endif()
-  string(JOIN " " RUN_UNDER ${ARG_RUN_UNDER})
-  ExternalProject_Get_Property(glibc INSTALL_DIR)
-  set(glibc_INSTALL_DIR ${INSTALL_DIR})
-  set(glibc_LIBRARY_DIR ${glibc_INSTALL_DIR}/lib)
-  set(glibc_INCLUDE_DIR ${glibc_INSTALL_DIR}/include)
-  set(glibc_LINKER ${glibc_LIBRARY_DIR}/ld-linux-x86-64.so.2)
-  set(flags "-static -L ${glibc_LIBRARY_DIR} -isystem ${glibc_INCLUDE_DIR} -Wl,--rpath=${glibc_LIBRARY_DIR} -Wl,--dynamic-linker=${glibc_LINKER}")
-  set(depends llvm::clang llvm::clang++ glibc::glibc ${ARG_DEPENDS})
-  if(ARG_TEST)
-    set(test_command $<TARGET_FILE:llvm::llvm-lit> -vv -a External/SPEC/CINT2017speed)
-    list(APPEND depends llvm::llvm-lit)
-  else()
-    set(test_command "")
-  endif()
-  ExternalProject_Add(${NAME}
-    PREFIX ${NAME} # FIXME: Might want to make this subdirectory-compatible...
-    SOURCE_DIR ${CMAKE_SOURCE_DIR}/test-suite
-    CMAKE_ARGS
-      -DCMAKE_C_COMPILER=$<TARGET_FILE:llvm::clang>
-      -DCMAKE_CXX_COMPILER=$<TARGET_FILE:llvm::clang++>
-      -DCMAKE_C_FLAGS=${flags}
-      -DCMAKE_CXX_FLAGS=${flags}
-      -DTEST_SUITE_SPEC2017_ROOT=${CMAKE_SOURCE_DIR}/cpu2017
-      -DTEST_SUITE_SUBDIRS=External
-      -DTEST_SUITE_COLLECT_STATS=Off
-      -DTEST_SUITE_COLLECT_CODE_SIZE=Off
-      -DTEST_SUITE_RUN_TYPE=${SPEC_BENCH_SIZE}
-      -DTEST_SUITE_RUN_UNDER=${RUN_UNDER}
-    INSTALL_COMMAND ""
-    TEST_COMMAND ${test_command}
-    DEPENDS ${depends}
-  )
-endfunction()
-
-add_test_suite(test-suite-host TEST)
-add_custom_target(test_suite_host_TEST ALL DEPENDS test-suite-host)
-
-# SIMPOINTS
-set(mem_size 8589934592)
-add_test_suite(test-suite-simpoints TEST
-  RUN_UNDER ${gem5_se_wrapper} $<TARGET_FILE:gem5::gem5> ${gem5_se_py} --cpu-type=X86NonCachingSimpleCPU --mem-size=${mem_size} --simpoint-profile --
-  DEPENDS gem5_se_wrapper gem5::gem5 gem5_se_py
+ExternalProject_Get_Property(glibc INSTALL_DIR)
+set(glibc_INSTALL_DIR ${INSTALL_DIR})
+set(glibc_LIBRARY_DIR ${glibc_INSTALL_DIR}/lib)
+set(glibc_INCLUDE_DIR ${glibc_INSTALL_DIR}/include)
+set(glibc_LINKER ${glibc_LIBRARY_DIR}/ld-linux-x86-64.so.2)
+set(test_suite_flags "-static -L ${glibc_LIBRARY_DIR} -isystem ${glibc_INCLUDE_DIR} -Wl,--rpath=${glibc_LIBRARY_DIR} -Wl,--dynamic-linker=${glibc_LINKER}")
+ExternalProject_Add(test-suite
+  SOURCE_DIR ${CMAKE_SOURCE_DIR}/test-suite
+  BINARY_DIR ${CMAKE_SOURCE_DIR}/test-suite/build
+  CMAKE_ARGS
+    -DCMAKE_C_COMPILER=$<TARGET_FILE:llvm::clang>
+    -DCMAKE_CXX_COMPILER=$<TARGET_FILE:llvm::clang++>
+    -DCMAKE_C_FLAGS=${test_suite_flags}
+    -DCMAKE_CXX_FLAGS=${test_suite_flags}
+    -DTEST_SUITE_SPEC2017_ROOT=${CMAKE_SOURCE_DIR}/cpu2017
+    -DTEST_SUITE_SUBDIRS=External
+    -DTEST_SUITE_COLLECT_STATS=Off
+    -DTEST_SUITE_COLLECT_CODE_SIZE=Off
+    -DTEST_SUITE_RUN_TYPE=${SPEC_BENCH_SIZE}
+    -DTEST_SUITE_RUN_UNDER=${gem5_se_wrapper}\ --host
+  INSTALL_COMMAND ""
+  DEPENDS llvm::clang llvm::clang++ glibc::glibc gem5_se_wrapper
+  BUILD_ALWAYS On
 )
-ExternalProject_Get_Property(test-suite-simpoints BINARY_DIR)
-file(GLOB cpu2017_tests RELATIVE ${BINARY_DIR}/External/SPEC/CINT2017speed *_s) # FIXME: At least factor this suffix out.
-foreach(cpu2017_test IN LISTS cpu2017_tests)
-  # TODO
-endforeach()
-add_custom_target(test-suite-simpoints-test ALL DEPENDS test-suite-simpoints)
+
+
+# SIM
+ExternalProject_Get_Property(test-suite BINARY_DIR)
+set(test_suite_BINARY_DIR ${BINARY_DIR})
+ExternalProject_Add(sim
+  SOURCE_DIR ${CMAKE_SOURCE_DIR}/sim
+  BINARY_DIR ${CMAKE_SOURCE_DIR}/sim/build
+  CMAKE_ARGS
+    -DTEST_SUITE_ROOT=${test_suite_BINARY_DIR}
+    -DTEST_SUITE_SUBDIR=External/SPEC/CINT2017speed
+    -DLLVM_LIT=$<TARGET_FILE:llvm::llvm-lit>
+    -DGEM5_COMMAND=${gem5_se_wrapper}
+  INSTALL_COMMAND ""
+  DEPENDS test-suite llvm::llvm-lit gem5_se_wrapper gem5::gem5 gem5_se_py
+  BUILD_ALWAYS On
+)
+add_custom_target(sim_test ALL DEPENDS sim)
+
+  
+# # SIMPOINTS
+# set(mem_size 8589934592)
+# add_test_suite(test-suite-simpoints TEST
+#   # RUN_UNDER ${gem5_se_wrapper} $<TARGET_FILE:gem5::gem5> ${gem5_se_py} --cpu-type=X86NonCachingSimpleCPU --mem-size=${mem_size} --simpoint-profile --
+#   # DEPENDS gem5_se_wrapper gem5::gem5 gem5_se_py
+# )
+# ExternalProject_Get_Property(test-suite-simpoints BINARY_DIR)
+# foreach(cpu2017_test IN LISTS cpu2017_tests)
+#   # TODO
+# endforeach()
+# add_custom_target(test-suite-simpoints-test ALL DEPENDS test-suite-simpoints)
 
 
 
 add_custom_target(glibc_test ALL
-  llvm::clang -static -L ${glibc_INSTALL_DIR}/lib -isystem ${GLIBC_INSTALL_DIR}/include -Wl,--rpath=${glibc_INSTALL_DIR}/lib
+  llvm::clang -static -L ${glibc_INSTALL_DIR}/lib -isystem ${glibc_INSTALL_DIR}/include -Wl,--rpath=${glibc_INSTALL_DIR}/lib
   -Wl,--dynamic-linker=${GLIBC_INSTALL_DIR}/lib/ld-linux-x86-64-so.2
   ${CMAKE_CURRENT_SOURCE_DIR}/test.c
 )

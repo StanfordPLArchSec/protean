@@ -22,7 +22,6 @@ file(GLOB paths_to_copy ${TEST_SUITE_ROOT}/*)
 set(our_test_suite ${CMAKE_CURRENT_BINARY_DIR}/test-suite)
 make_directory(${our_test_suite})
 file(COPY ${paths_to_copy} DESTINATION ${our_test_suite})
-#file(COPY ${TEST_SUITE_ROOT}/lit.cfg ${TEST_SUITE_ROOT}/lit.site.cfg DESTINATION ${CMAKE_CURRENT_BINARY_DIR})
 
 # Separate test files
 # TODO: Fix glob crap.
@@ -38,7 +37,7 @@ endforeach()
 # Run lit without 'run under'.
 file(GLOB_RECURSE testpaths ${our_test_suite}/${TEST_SUITE_SUBDIR}/*.test)
 add_custom_target(sim_host_tests ALL
-  COMMAND ${LLVM_LIT} ${testpaths}
+  COMMAND ${LLVM_LIT} -vva ${testpaths}
   DEPENDS ${testpaths}
 )
 # foreach(testpath IN LISTS testpaths)
@@ -60,7 +59,7 @@ execute_process(
 )
 execute_process(
   COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/generate_lit_cfg.py --name simpoints --
-    ${GEM5_COMMAND} --cpu-type=X86NonCachingSimpleCPU --mem-size=${mem_size} --simpoint-profile --
+    ${GEM5_COMMAND} m5out-simpoints- %s -- -- --cpu-type=X86NonCachingSimpleCPU --mem-size=${mem_size} --simpoint-profile --
   INPUT_FILE ${our_test_suite}/lit.site.cfg
   OUTPUT_FILE ${our_test_suite}/simpoints.lit.site.cfg
   COMMAND_ERROR_IS_FATAL ANY
