@@ -13,3 +13,6 @@
 	path = llvm
 	url = git@github.com:StanfordPLArchSec/llsct2-llvm.git
 	branch = sct
+[submodule "simpoint"]
+	path = simpoint
+	url = https://github.com/OscarLGH/SimPoint.3.2.git
