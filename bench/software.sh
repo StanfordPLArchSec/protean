@@ -75,6 +75,11 @@ remove_ignored_tests() {
 }
 
 run_llvm_lit() {
+    no_verify=0
+    if [[ "$1" = "--no-verify" ]]; then
+	shift 1
+	no_verify=1
+    fi
     dir="$1"
     shift 1
     tests=()
@@ -82,6 +87,9 @@ run_llvm_lit() {
 	testname=$(basename $TEST .test)
 	if ! grep -q $testname ${LLSCT}/bench/ignore.txt; then
 	    tests+=($TEST)
+	    if [[ $no_verify = 1 ]]; then
+		sed -i '/^VERIFY:/d' $TEST
+	    fi
 	fi
     done
     ${LLVM_LIT} $@ ${tests[@]}
@@ -96,8 +104,8 @@ done
 
 # Reconfigure to use run-under, profile step
 cmake ${LLSCT}/test-suite -DTEST_SUITE_RUN_UNDER=${LLSCT}/bench/sw_run_under_profile.sh
-run_llvm_lit . -vva
+run_llvm_lit . 
 
 # Checkpoint step
 cmake ${LLSCT}/test-suite -DTEST_SUITE_RUN_UNDER=${LLSCT}/bench/sw_run_under_checkpoint.sh
-run_llvm_lit . -vva --no-verify
+run_llvm_lit --no-verify .
