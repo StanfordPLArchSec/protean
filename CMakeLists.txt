@@ -4,6 +4,10 @@ project(llsct2)
 
 include(ExternalProject)
 
+set(TEST_SUITE_SUBDIR External/SPEC/CINT2017speed CACHE STRING "Subdirectory of SPEC CPU tests to run in LLVM's Test Suite repository")
+set(TEST_SUITE_RUN_TYPE test CACHE STRING "SPEC CPU2017 benchmark run size")
+set(SIM_BLACKLIST "600.perlbench_s_1;602.gcc_s_0;625.x264_s_0;605.mcf_s_0;631.deepsjeng_s_0" CACHE STRING "simulation blacklist")
+
 # FIXME: Find SCONS.
 
 # GEM5
@@ -29,10 +33,6 @@ add_dependencies(gem5::gem5 gem5)
 # FIXME: Use SOURCES instead of DEPENDS + set_target_properties?
 set(gem5_se_py ${CMAKE_CURRENT_SOURCE_DIR}/gem5/configs/deprecated/example/se.py)
 add_custom_target(gem5_se_py DEPENDS ${gem5_se_py})
-
-configure_file(gem5_se_wrapper.sh.in gem5_wrapper_se.sh @ONLY)
-set(gem5_se_wrapper ${CMAKE_CURRENT_BINARY_DIR}/gem5_wrapper_se.sh)
-add_custom_target(gem5_se_wrapper DEPENDS ${gem5_se_wrapper})
 
 # LLVM
 ExternalProject_Add(llvm
@@ -81,12 +81,6 @@ add_dependencies(glibc::glibc glibc)
 
 # TEST SUITE
 # FIXME: Somehow parameterize which SPEC benchmarks are run.
-set(SPEC_BENCH_SIZE_OPTIONS test train ref)
-set(SPEC_BENCH_SIZE "test" CACHE STRING "Size of SPEC benchmark to run (options: ${SPEC_BENCH_SIZE_OPTIONS})")
-list(FIND SPEC_BENCH_SIZE_OPTIONS ${SPEC_BENCH_SIZE} SPEC_BENCH_SIZE_IDX)
-if(IDX STREQUAL -1)
-  message(FATAL_ERROR "Invalid SPEC_BENCH_SIZE ${SPEC_BENCH_SIZE}")
-endif()
 ExternalProject_Get_Property(glibc INSTALL_DIR)
 set(glibc_INSTALL_DIR ${INSTALL_DIR})
 set(glibc_LIBRARY_DIR ${glibc_INSTALL_DIR}/lib)
@@ -105,27 +99,33 @@ ExternalProject_Add(test-suite
     -DTEST_SUITE_SUBDIRS=External
     -DTEST_SUITE_COLLECT_STATS=Off
     -DTEST_SUITE_COLLECT_CODE_SIZE=Off
-    -DTEST_SUITE_RUN_TYPE=${SPEC_BENCH_SIZE}
-    -DTEST_SUITE_RUN_UNDER=${gem5_se_wrapper}\ --host
+    -DTEST_SUITE_RUN_TYPE=${TEST_SUITE_RUN_TYPE}
   INSTALL_COMMAND ""
-  DEPENDS llvm::clang llvm::clang++ glibc::glibc gem5_se_wrapper
+  DEPENDS llvm::clang llvm::clang++ glibc::glibc
   BUILD_ALWAYS On
 )
 
+# Test test suite to make sure everything works
+ExternalProject_Get_Property(test-suite BINARY_DIR)
+set(test-suite_BINARY_DIR ${BINARY_DIR})
+add_custom_target(test_suite_test ALL
+  COMMAND llvm::llvm-lit ${test-suite_BINARY_DIR}/${TEST_SUITE_SUBDIR}
+  DEPENDS test-suite # NOTE: auto-dep on llvm::llvm-lit I think
+) 
+
 
 # SIM
-ExternalProject_Get_Property(test-suite BINARY_DIR)
-set(test_suite_BINARY_DIR ${BINARY_DIR})
 ExternalProject_Add(sim
   SOURCE_DIR ${CMAKE_SOURCE_DIR}/sim
   BINARY_DIR ${CMAKE_SOURCE_DIR}/sim/build
   CMAKE_ARGS
-    -DTEST_SUITE_ROOT=${test_suite_BINARY_DIR}
-    -DTEST_SUITE_SUBDIR=External/SPEC/CINT2017speed
-    -DLLVM_LIT=$<TARGET_FILE:llvm::llvm-lit>
-    -DGEM5_COMMAND=${gem5_se_wrapper}
+    -DTEST_DIR=${test-suite_BINARY_DIR}/${TEST_SUITE_SUBDIR}
+    -DGEM5_BINARY=$<TARGET_FILE:gem5::gem5>
+    -DGEM5_SE_PY=${gem5_se_py}
+    -DTEST_SUITE_BINARY_DIR=${test-suite_BINARY_DIR}
+    -DTEST_SUITE_RUN_TYPE=${TEST_SUITE_RUN_TYPE}
   INSTALL_COMMAND ""
-  DEPENDS test-suite llvm::llvm-lit gem5_se_wrapper gem5::gem5 gem5_se_py
+  DEPENDS test-suite gem5::gem5 gem5_se_py
   BUILD_ALWAYS On
 )
 add_custom_target(sim_test ALL DEPENDS sim)

@@ -1,1 +1,6 @@
 *~
+build/
+.*
+cpu2017*.iso
+__pycache__/
+cpu2017/

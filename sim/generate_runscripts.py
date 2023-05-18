@@ -12,6 +12,7 @@ parser.add_argument('--output-rundir', required = True, type = str) # must be ab
 parser.add_argument('--test-suite-binary-dir', required=  True, type = str)
 parser.add_argument('--test', required = True, type = str)
 parser.add_argument('--no-verify', action = argparse.BooleanOptionalAction)
+parser.add_argument('--no-redirect', action = argparse.BooleanOptionalAction)
 parser.add_argument('se_args', nargs = '*')
 args = parser.parse_args()
 
@@ -43,7 +44,7 @@ def do_substitutions(line, output_rundir):
 def get_cmd_argv(cmdline, outrundir, i):
     tokens = cmdline.split()
 
-    final_cmd = [args.gem5_binary, f'--outdir={outrundir}/m5out', args.gem5_se_py]
+    final_cmd = [args.gem5_binary, f'--outdir=$m5out', args.gem5_se_py]
     for se_arg in args.se_args:
         se_arg = se_arg.replace('%i', str(i))
         final_cmd.append(se_arg)
@@ -51,13 +52,15 @@ def get_cmd_argv(cmdline, outrundir, i):
     if '>' in tokens:
         stdout_idx = tokens.index('>')
         stdout_file = tokens[stdout_idx+1]
-        final_cmd.append(f'--output={stdout_file}')
+        if not args.no_redirect:
+            final_cmd.append(f'--output={stdout_file}')
         del tokens[stdout_idx:stdout_idx+2]
 
     if '2>' in tokens:
         stderr_idx = tokens.index('2>')
         stderr_file = tokens[stderr_idx+1]
-        final_cmd.append(f'--errout={stderr_file}')
+        if not args.no_redirect:
+            final_cmd.append(f'--errout={stderr_file}')
         del tokens[stderr_idx:stderr_idx+2]
 
     final_cmd.append(f'--cmd={tokens[0]}')
@@ -76,17 +79,41 @@ for i, run in enumerate(runs):
     if os.path.isdir(outrundir):
         shutil.rmtree(outrundir)
     shutil.copytree(args.input_rundir, outrundir)
-    m5out = f'{outrundir}/m5out'
+    # m5out = f'{outrundir}/m5out'
     # os.mkdir(m5out)
     outrunsh = f'{outrundir}/run.sh'
     with open(outrunsh, 'w') as f:
         # initial stuff
-        print(f'set -e', file = f)
-        print(f'cd {outrundir}', file = f)
 
-        # clear m5out directory
-        print(f'rm -rf {m5out}', file = f)
-        print(f'mkdir -p {m5out}', file = f)
+        preamble = '''
+        set -e
+
+        m5out="{outrundir}/m5out"
+        while getopts "ho:c:" optc; do
+            case $optc in
+               h)
+                  usage
+                  exit
+                  ;;
+               o)
+                  m5out="$OPTARG"
+                  ;;
+               c)
+                  checkpoint="$OPTARG"
+                  ;;
+               *)
+                  usage >&2
+                  exit 1
+                  ;;
+            esac
+        done
+        
+        cd {outrundir}
+        rm -rf $m5out
+        mkdir -p $m5out
+        '''.format(outrundir = outrundir)
+
+        print(preamble, file = f)
         
         # emit run
         last = run.split()[-1]
