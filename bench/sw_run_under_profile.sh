@@ -16,13 +16,13 @@ MEM_SIZE=8589934592
 CMD="$1"
 shift 1
 
+
 # 0. Identify which run we're on.
-## Scan for existing run directories.
 I=0
 while [[ -d m5out-bbv-${I} ]]; do
     ((++I))
 done
-echo "Starting run ${I} for SPEC benchmark ${BENCH}" >&2
+echo "Starting profiling (BBV) run ${I} for SPEC benchmark ${BENCH}" >&2
 
 # 1. Profiling and Generating BBV.
 ## Here, we need to redirect the program's stdout to file and then cat it once we're done.
@@ -46,23 +46,3 @@ fi
 
 # 2. SimPoint Analysis
 ${LLSCT}/simpoint/bin/simpoint -loadFVFile ${M5OUT_BBV}/simpoint.bb.gz -maxK 30 -saveSimpoints ${M5OUT_BBV}/simpoint -saveSimpointWeights ${M5OUT_BBV}/weight -inputVectorsGzipped >&2
-
-# 3. Taking SimPoint Checkpoints in gem5
-## Redirect output to stderr so llvm-lit's verification still works.
-
-rundir=$(realpath ${PWD})
-rundir_bak=${rundir}.bak
-cd ..
-rm -rf ${rundir_bak}
-cp -r ${rundir} ${rundir_bak}
-M5OUT_CPT=${rundir_bak}/m5out-cpt-${I}
-rm -rf ${M5OUT_CPT}
-cd ${rundir}
-${GEM5_BIN} --outdir=${M5OUT_CPT} ${GEM5_SE_PY} --take-simpoint-checkpoint=${rundir_bak}/simpoint-$I,${rundir_bak}/weight-$I,10000000,10000 \
-	    --cpu-type=X86NonCachingSimpleCPU --mem-size=${MEM_SIZE} --cmd="${CMD}" --options="$*" >&2
-cd ..
-rm -rf ${rundir}
-mv ${rundir_bak} ${rundir}
-
-echo "${BENCH}-${I}: found" >&2
-# TODO: Create log for all these.

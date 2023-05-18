@@ -2,6 +2,7 @@
 
 set -e
 set -o pipefail
+set -u
 
 usage() {
     cat <<EOF
@@ -19,6 +20,7 @@ OUTDIR="$(realpath "$2")"
 CLANG="${LLSCT}/llvm/build/bin/clang"
 CLANGXX="${CLANG}++"
 RUN_TYPE=test
+LLVM_LIT=${LLSCT}/llvm/build/bin/llvm-lit
 
 if [[ -d "$OUTDIR" ]]; then
     echo "$0: output directory $OUTDIR already exists; resuming from previous build." >&2
@@ -58,22 +60,44 @@ if [[ ! -d test-suite ]]; then
 	  -DTEST_SUITE_SUBDIRS=External \
 	  -DTEST_SUITE_COLLECT_STATS=Off \
 	  -DTEST_SUITE_COLLECT_CODE_SIZE=Off \
-	  -DTEST_SUITE_RUN_TYPE=${RUN_TYPE} \
-	  -DTEST_SUITE_RUN_UNDER=${LLSCT}/bench/sw_run_under.sh
+	  -DTEST_SUITE_RUN_TYPE=${RUN_TYPE}
+else
+    cmake -S ${LLSCT}/test-suite -B test-suite -UTEST_SUITE_RUN_UNDER
 fi
 cd test-suite
 cmake --build .
+
+# Remove ignored tests.
+remove_ignored_tests() {
+    cat ${LLSCT}/bench/ignore.txt | while read IGNORE; do
+    find $1 -name "${IGNORE}.test" -exec rm {} \;
+    done
+}
+
+run_llvm_lit() {
+    dir="$1"
+    shift 1
+    tests=()
+    for TEST in $(find $dir -name '*.test'); do
+	testname=$(basename $TEST .test)
+	if ! grep -q $testname ${LLSCT}/bench/ignore.txt; then
+	    tests+=($TEST)
+	fi
+    done
+    ${LLVM_LIT} $@ ${tests[@]}
+}
+
+run_llvm_lit .
 
 # Remove results from previous run.
 find . -name 'm5out-*' -type d | while read -r dir; do
     rm -rf "${dir}"
 done
 
+# Reconfigure to use run-under, profile step
+cmake ${LLSCT}/test-suite -DTEST_SUITE_RUN_UNDER=${LLSCT}/bench/sw_run_under_profile.sh
+run_llvm_lit . -vva
 
-# Remove ignored tests.
-echo 'Removing ignored tests...' >&2
-cat ${LLSCT}/bench/ignore.txt | while read IGNORE; do
-    find . -name "${IGNORE}.test" -exec rm {} \;
-done
-
-${LLSCT}/llvm/build/bin/llvm-lit . -vva
+# Checkpoint step
+cmake ${LLSCT}/test-suite -DTEST_SUITE_RUN_UNDER=${LLSCT}/bench/sw_run_under_checkpoint.sh
+run_llvm_lit . -vva --no-verify
