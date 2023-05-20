@@ -5,6 +5,11 @@ import subprocess
 import json
 import multiprocessing
 import shutil
+import signal
+import copy
+import glob
+
+signal.signal(signal.SIGINT, lambda x, y: sys.exit(1))
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--benchspec', required = True)
@@ -14,6 +19,8 @@ parser.add_argument('--gem5', required = True)
 parser.add_argument('--errlog', required = True)
 parser.add_argument('--force', '-f', action = 'store_true')
 parser.add_argument('--jobs', '-j', type = int, default = multiprocessing.cpu_count() + 2)
+parser.add_argument('--simpoint', required = True)
+parser.add_argument('--color', action = 'store_true')
 args = parser.parse_args()
 
 # Make paths absolute
@@ -22,6 +29,7 @@ args.test_suite = os.path.abspath(args.test_suite)
 args.outdir = os.path.abspath(args.outdir)
 args.gem5 = os.path.abspath(args.gem5)
 args.errlog = os.path.abspath(args.errlog)
+args.simpoint = os.path.abspath(args.simpoint)
 
 with open(args.benchspec) as f:
     benchspec = json.load(f)
@@ -69,39 +77,49 @@ os.makedirs(args.outdir, exist_ok = True)
 
 # Design approach: Each benchmark gets its own workflow thread.
 
+mem_size = 8589934592
+
 jobs_sema = multiprocessing.BoundedSemaphore(args.jobs)
 
-def resolve_inherits_direct(d):
-    done = False
-    while not done:
-        done = True
-        for key, value in d.items():
-            if type(value) == dict and 'inherit' in value:
-                inherits_from = value['inherit']
-                del value['inherit']
-                d[key] = {**d[inherits_from], **value}
-                done = False
-                break
+def resolve_inherits(d):
+    if type(d) == list:
+        return [resolve_inherits(x) for x in d]
+    elif type(d) == str or type(d) == int:
+        return d
+    elif type(d) == dict:
+        d = dict([(k, resolve_inherits(v)) for k, v in d.items()])
+        done = False
+        while not done:
+            done = True
+            for k, v in d.items():
+                if type(v) == dict and 'inherit' in v:
+                    new_v = copy.deepcopy(v)
+                    inherits_from = new_v['inherit']
+                    del new_v['inherit']
+                    for a, b in d[inherits_from].items():
+                        if a not in new_v:
+                            new_v[a] = b
+                    d[k] = new_v
+                    done = False
+                    break
+        return d
+    else:
+        print('unexpected type: ', type(d), file = sys.stderr)
+        assert False
+                    
         
-
-def resolve_inherits_all(d):
-    if type(d) != dict:
-        return
-    resolve_inherits_direct(d)
-    for value in d.values():
-        resolve_inherits_all(value)
-resolve_inherits_all(benchspec)
+benchspec = resolve_inherits(benchspec)
 assert '"inherit"' not in json.dumps(benchspec)
 
 with open('tmp.json', 'w') as f:
     json.dump(benchspec, f)
 
 # NOTE: Should not modify input d.
-def perform_test_substitutions(d, test_name, input_dir, output_dir): # returns d'
+def perform_test_substitutions(d, bench_name, test_name, input_dir, output_dir): # returns d'
     if d is None:
         return None
 
-    rec = lambda x: perform_test_substitutions(x, test_name, input_dir, output_dir)
+    rec = lambda x: perform_test_substitutions(x, bench_name, test_name, input_dir, output_dir)
     
     if type(d) == str:
         # substitute directly on string
@@ -110,6 +128,7 @@ def perform_test_substitutions(d, test_name, input_dir, output_dir): # returns d
         d = d.replace('%T', output_dir)
         d = d.replace('%n', test_name)
         d = d.replace('%b', f'{args.test_suite}/tools')
+        d = d.replace('%i', bench_name.split('.')[0])
         assert '%' not in d
     elif type(d) == dict:
         d = dict([(key, rec(value)) for key, value in d.items()])
@@ -124,7 +143,79 @@ def find_executable(name, root):
     return None
     
 
+def copy_assets(test_spec):
+    for copy in test_spec['cp']:
+        if os.path.isdir(copy['from']):
+            shutil.copytree(copy['from'], copy['to'])
+        else:
+            shutil.copyfile(copy['from'], copy['to'])
+
+
+def handle_benchmark_checkpoint_result(exe, test_spec, bench_name, test_name,
+                                       checkpoint_dir, input_dir, parent_output_dir):
+    checkpoint_tokens = os.path.basename(checkpoint_dir).removeprefix('cpt.').split('_')
+    checkpoint_args = dict()
+    for key, value in zip(checkpoint_tokens[::2], checkpoint_tokens[1::2]):
+        checkpoint_args[key] = value
+    checkpoint_args = types.SimpleNamespace(checkpoint_args)
+    checkpoint_id = int(checkpoint_args.simpoint)
+    output_dir = f'{parent_output_dir}/{checkpoint_dir}'
+    os.mkdir(output_dir)
+    sub_res = lambda x: perform_test_substitutions(test_spec, bench_name, test_name, input_dir, output_dir)
+    test_spec_res = sub_res(test_spec)
+    with jobs_sema, \
+         open(f'{output_dir_res}/simout', 'w') as simout, \
+         open(f'{output_dir_res}/simerr', 'w') as simerr:
+        options = ' '.join(test_spec_res['args'])
+        copy_assets(test_spec_res)
+        result = subprocess.run(
+            [
+                f'{args.gem5}/build/X86/gem5.fast',
+                f'--outdir={output_dir_res}/m5out',
+                f'{args.gem5}/configs/deprecated/example/se.py',
+                '--cpu-type=X86O3CPU',
+                f'--mem-size={mem_size}',
+                '--l1d_size=64kB',
+                '--l1i_size=16kB',
+                '--caches',
+                f'--checkpoint-dir={checkpoint_dir}',
+                '--restore-simpoint-checkpoint',
+                f'--checkpoint-restore={checkpoint_id+1}',
+                f'--cmd={args.cmd}',
+                f'--options={options}',
+                f'--output={stdout}',
+                f'--errout={stderr}',
+            ],
+            stdout = simout,
+            stderr = simerr,
+        )
+        if result.returncode != 0:
+            log(f'[{bench_name}->{test_name}] results execution failed for checkpoint {checkpoint_id}')
+
+    # Produce ipc.txt
+    with open(f'{output_dir}/ipc.txt', 'w') as ipc_file, \
+         open(f'{output_dir}/m5out/stats.txt') as stats_file:
+        stats_keys = {'simInsts': [], 'simTicks': [], 'system.clk_domain.clock': []}        
+        for line in stats_file.read().splitlines():
+            for key in stats_keys:
+                if line.startswith(key):
+                    stats_keys[key].append(float(line.split()[1]))
+        for l in stats_keys.values():
+            assert len(l) == 2
+
+        interval = int(checkpoint_args.interval)
+        simTicks = stats_keys['simTicks'][-1]
+        period = stats_keys['system.clk_domain.clock'][-1]
+        ipc = interval / (simTicks / period)
+        print(f'{ipc}', file = ipc_file)
+            
+    return 0
+    
+
 def handle_benchmark_test(exe, test_name, test_spec, parent_input_dir, parent_output_dir):
+    if 'skip' in test_spec:
+        return 0
+    
     assert type(test_spec) == dict
     jobs = []
 
@@ -158,14 +249,30 @@ def handle_benchmark_test(exe, test_name, test_spec, parent_input_dir, parent_ou
     if 'cd' not in test_spec:
         test_spec['cd'] = '%T'
 
+    if 'cp' not in test_spec:
+        test_spec['cp'] = []
+    if 'cp' in test_spec and type(test_spec['cp']) == dict:
+        test_spec['cp'] = [test_spec['cp']]
+    for i, cp in enumerate(test_spec['cp']):
+        if type(cp) == str:
+            test_spec['cp'][i] = {
+                "from": f"%R/{cp}",
+                "to": f"%T/{cp}"
+            }
 
     # 1. Run test on host.
     output_dir_host = f'{output_dir}/host'
     os.mkdir(output_dir_host)
-    sub_host = lambda x: perform_test_substitutions(test_spec, test_name, input_dir, output_dir_host)
+    sub_host = lambda x: perform_test_substitutions(test_spec, bench_name, test_name, input_dir, output_dir_host)
     test_spec_host = sub_host(test_spec)
+    if 'args' not in test_spec_host:
+        print(bench_name, test_name, file = sys.stderr)
+    cmdline_host = [exe, *test_spec_host['args']]
+    with open(f'{output_dir_host}/cmdline', 'w') as f:
+        print(' '.join(cmdline_host), file = f)
     with jobs_sema, open(f'{output_dir_host}/stdout', 'w') as stdout, open(f'{output_dir_host}/stderr', 'w') as stderr:
-        result = subprocess.run([exe, *test_spec_host['args']], stdout = stdout, stderr = stderr, cwd = test_spec_host['cd'])
+        copy_assets(test_spec_host)
+        result = subprocess.run(cmdline_host, stdout = stdout, stderr = stderr, cwd = test_spec_host['cd'])
         if result.returncode != 0:
             log(f'[{bench_name}->{test_name}] ERROR: host execution failed')
             return 1
@@ -181,10 +288,11 @@ def handle_benchmark_test(exe, test_name, test_spec, parent_input_dir, parent_ou
     # 3. Profiling and Generating BBV.
     output_dir_bbv = f'{output_dir}/bbv'
     os.mkdir(output_dir_bbv)
-    sub_bbv = lambda x: perform_test_substitutions(test_spec, test_name, input_dir, output_dir_bbv)
+    sub_bbv = lambda x: perform_test_substitutions(test_spec, bench_name, test_name, input_dir, output_dir_bbv)
     test_spec_bbv = sub_bbv(test_spec)
     with jobs_sema, open(f'{output_dir_bbv}/simout', 'w') as simout, open(f'{output_dir_bbv}/simerr', 'w') as simerr:
         options = ' '.join(test_spec_bbv['args'])
+        copy_assets(test_spec_bbv)
         result = subprocess.run([f'{args.gem5}/build/X86/gem5.fast', f'--outdir={output_dir_bbv}/m5out', f'{args.gem5}/configs/deprecated/example/se.py',
                                  '--cpu-type=X86NonCachingSimpleCPU', f'--mem-size={mem_size}', '--simpoint-profile', f'--output={output_dir_bbv}/stdout',
                                  f'--errout={output_dir_bbv}/stderr',
@@ -198,11 +306,20 @@ def handle_benchmark_test(exe, test_name, test_spec, parent_input_dir, parent_ou
             return 1
     assert os.path.exists(f'{output_dir_bbv}/m5out/simpoint.bb.gz')
 
+    # 3.1. Verify results of simulation.
+    for i, verify_command in enumerate(test_spec_host['verify_commands']):
+        with jobs_sema, open(f'{output_dir_bbv}/verout-{i}', 'w') as stdout, open(f'{output_dir_bbv}/vererr-{i}', 'w') as stderr:
+            result = subprocess.run(verify_command, shell = True, stdout = stdout, stderr = stderr, cwd = test_spec_bbv['cd'])
+            if result.returncode != 0:
+                log(f'[{bench_name}->{test_name}] ERROR: bbv verification {i} failed')
+                return 1
+        
+
     # 4. SimPoint Analysis
     output_dir_spt = f'{output_dir}/spt'
     os.mkdir(output_dir_spt)
     with jobs_sema, open(f'{output_dir_spt}/stdout', 'w') as stdout, open(f'{output_dir_spt}/stderr', 'w') as stderr:
-        result = subprocess.run([f'{args.simpoint}/bin/simpoint', '-loadFVFile', f'{output_dir_bbv}/m5out/simpoint.bb.gz',
+        result = subprocess.run([args.simpoint, '-loadFVFile', f'{output_dir_bbv}/m5out/simpoint.bb.gz',
                                  '-maxK', '30', '-saveSimpoints', f'{output_dir_spt}/simpoints.out',
                                  '-saveSimpointWeights', f'{output_dir_spt}/weights.out', '-inputVectorsGzipped'],
                                 stdout = stdout,
@@ -217,10 +334,11 @@ def handle_benchmark_test(exe, test_name, test_spec, parent_input_dir, parent_ou
     # 5. Taking SimPoint Checkpoints in gem5
     output_dir_cpt = f'{output_dir}/cpt'
     os.mkdir(output_dir_cpt)
-    sub_cpt = lambda x: perform_test_substitutions(test_spec, test_name, input_dir, output_dir_cpt)
+    sub_cpt = lambda x: perform_test_substitutions(test_spec, bench_name, test_name, input_dir, output_dir_cpt)
     test_spec_cpt = sub_cpt(test_spec)
     with jobs_sema, open(f'{output_dir_cpt}/simout', 'w') as simout, open(f'{output_dir_cpt}/simerr', 'w') as simerr:
         options = ' '.join(test_spec_cpt['args'])
+        copy_assets(test_spec_cpt)
         result = subprocess.run([f'{args.gem5}/build/X86/gem5.fast', f'--outdir={output_dir_cpt}/m5out', f'{args.gem5}/configs/deprecated/example/se.py',
                                  '--cpu-type=X86NonCachingSimpleCPU', f'--mem-size={mem_size}',
                                  f'--take-simpoint-checkpoint={output_dir_spt}/simpoints.out,{output_dir_spt}/weights.out,10000000,10000',
@@ -233,10 +351,32 @@ def handle_benchmark_test(exe, test_name, test_spec, parent_input_dir, parent_ou
         if result.returncode != 0:
             log(f'[{bench_name}->{test_name}] ERROR: cpt execution failed')
             return 1
-    
+
+    # 6. Resuming from gem5 Checkpoints
+    output_dir_res = f'{output_dir}/res'
+    os.mkdir(output_dir_res)
+    jobs_res = []
+    for checkpoint_dir in glob.glob(f'{output_dir_cpt}/m5out/cpt.*'):
+        job = multiprocessing.Process(target = handle_benchmark_checkpoint,
+                                      args = (exe, test_spec, bench_name, test_name,
+                                              checkpoint_dir, input_dir, output_dir_res))
+        job.start()
+        jobs_res.append(job)
+    res_failed = 0
+    for job in jobs_res:
+        job.join()
+        if job.returncode != 0:
+            res_failed = 1
+    if res_failed != 0:
+        return 1
+
+    # TODO
     return 0
         
 def handle_benchmark(bench_name, bench_tests, parent_input_dir, parent_output_dir):
+    if 'skip' in bench_tests:
+        return 0
+    
     # Locate binary.
     exe = find_executable(bench_name, parent_input_dir)
     if exe is None:
