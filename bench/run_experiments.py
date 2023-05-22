@@ -16,21 +16,23 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--benchspec', required = True)
 parser.add_argument('--test-suite', required = True)
 parser.add_argument('--outdir', required = True)
-parser.add_argument('--gem5', required = True)
+parser.add_argument('--llsct', required = True)
 parser.add_argument('--errlog', required = True)
 parser.add_argument('--force', '-f', action = 'store_true')
 parser.add_argument('--jobs', '-j', type = int, default = multiprocessing.cpu_count() + 2)
-parser.add_argument('--simpoint', required = True)
 parser.add_argument('--color', action = 'store_true')
+parser.add_argument('--interval', type = int, default = 100000000)
 args = parser.parse_args()
 
 # Make paths absolute
+args.llsct = os.path.abspath(args.llsct)
 args.benchspec = os.path.abspath(args.benchspec)
 args.test_suite = os.path.abspath(args.test_suite)
 args.outdir = os.path.abspath(args.outdir)
-args.gem5 = os.path.abspath(args.gem5)
 args.errlog = os.path.abspath(args.errlog)
-args.simpoint = os.path.abspath(args.simpoint)
+gem5 = f'{args.llsct}/gem5'
+simpoint = f'{args.llsct}/simpoint/bin/simpoint'
+valgrind = f'{args.llsct}/valgrind/install/bin/valgrind'
 
 with open(args.benchspec) as f:
     benchspec = json.load(f)
@@ -228,6 +230,40 @@ def handle_benchmark_checkpoint_result(exe, test_spec, bench_name, test_name,
         print(f'{ipc}', file = ipc_file)
             
     return 0
+
+def generate_bbv(exe, bench_name, test_name, test_spec, input_dir, output_dir):
+    os.mkdir(output_dir)
+    # Generate BBV
+    test_spec = perform_test_substitutions(test_spec, bench_name, test_name, input_dir, output_dir)
+    with jobs_sema, open(f'{output_dir}/stdout', 'w') as stdout, open(f'{output_dir}/stderr', 'w') as stderr:
+        options = ' '.join(test_spec['args'])
+        copy_assets(test_spec)
+        result = subprocess.run([valgrind, '--tool=exp-bbv',
+                                 f'--bb-out-file={output_dir}/bbv.out',
+                                 f'--pc-out-file={output_dir}/pc.out',
+                                 f'--interval-size={args.interval}',
+                                 f'--log-file={output_dir}/valout',
+                                 '--',
+                                 exe, *test_spec['args'],
+                                 ],
+                                stdin = subprocess.DEVNULL,
+                                stdout = stdout,
+                                stderr = stderr,
+                                cwd = test_spec['cd'],
+                                )
+        if result.returncode != 0:
+            log(f'[{bench_name}->{test_name}] ERROR: valgrind bbv generation failed')
+            return 1
+
+    # Verify output
+    for i, verify_command in enumerate(test_spec['verify_commands']):
+        with jobs_sema, open(f'{output_dir}/verout-{i}', 'w') as stdout, open(f'{output_dir}/vererr-{i}', 'w') as stderr:
+            result = subprocess.run(verify_command, shell = True, stdin = subprocess.DEVNULL, stdout = stdout, stderr = stderr, cwd = test_spec['cd'])
+            if result.returncode != 0:
+                log(f'[{bench_name}->{test_name}] ERROR: valgrind bbv verification failed')
+                return 1
+    
+    return 0
     
 
 def handle_benchmark_test(exe, test_name, test_spec, parent_input_dir, parent_output_dir):
@@ -308,45 +344,46 @@ def handle_benchmark_test(exe, test_name, test_spec, parent_input_dir, parent_ou
                 return 1
 
     # 3. Profiling and Generating BBV.
-    output_dir_bbv = f'{output_dir}/bbv'
-    os.mkdir(output_dir_bbv)
-    sub_bbv = lambda x: perform_test_substitutions(test_spec, bench_name, test_name, input_dir, output_dir_bbv)
-    test_spec_bbv = sub_bbv(test_spec)
-    with jobs_sema, open(f'{output_dir_bbv}/simout', 'w') as simout, open(f'{output_dir_bbv}/simerr', 'w') as simerr:
-        options = ' '.join(test_spec_bbv['args'])
-        copy_assets(test_spec_bbv)
-        result = subprocess.run([f'{args.gem5}/build/X86/gem5.fast', f'--outdir={output_dir_bbv}/m5out', f'{args.gem5}/configs/deprecated/example/se.py',
-                                 '--cpu-type=X86NonCachingSimpleCPU', f'--mem-size={mem_size}', '--simpoint-profile', f'--output={output_dir_bbv}/stdout',
-                                 f'--errout={output_dir_bbv}/stderr',
-                                 f'--cmd={exe}',
-                                 f'--options={options}'],
-                                stdin = subprocess.DEVNULL,
-                                stdout = simout,
-                                stderr = simerr,
-                                cwd = test_spec_bbv['cd'])
-        if result.returncode != 0:
-            log(f'[{bench_name}->{test_name}] ERROR: bbv execution failed')
-            return 1
-    assert os.path.exists(f'{output_dir_bbv}/m5out/simpoint.bb.gz')
-
-    # 3.1. Verify results of simulation.
-    for i, verify_command in enumerate(test_spec_host['verify_commands']):
-        with jobs_sema, open(f'{output_dir_bbv}/verout-{i}', 'w') as stdout, open(f'{output_dir_bbv}/vererr-{i}', 'w') as stderr:
-            result = subprocess.run(verify_command, shell = True,
-                                    stdin = subprocess.DEVNULL, stdout = stdout, stderr = stderr,
-                                    cwd = test_spec_bbv['cd'])
-            if result.returncode != 0:
-                log(f'[{bench_name}->{test_name}] ERROR: bbv verification {i} failed')
-                return 1
-        
-
+    # output_dir_bbv = f'{output_dir}/bbv'
+    # os.mkdir(output_dir_bbv)
+    # sub_bbv = lambda x: perform_test_substitutions(test_spec, bench_name, test_name, input_dir, output_dir_bbv)
+    # test_spec_bbv = sub_bbv(test_spec)
+    # with jobs_sema, open(f'{output_dir_bbv}/simout', 'w') as simout, open(f'{output_dir_bbv}/simerr', 'w') as simerr:
+    #     options = ' '.join(test_spec_bbv['args'])
+    #     copy_assets(test_spec_bbv)
+    #     result = subprocess.run([f'{args.gem5}/build/X86/gem5.fast', f'--outdir={output_dir_bbv}/m5out', f'{args.gem5}/configs/deprecated/example/se.py',
+    #                              '--cpu-type=X86NonCachingSimpleCPU', f'--mem-size={mem_size}', '--simpoint-profile', f'--output={output_dir_bbv}/stdout',
+    #                              f'--errout={output_dir_bbv}/stderr',
+    #                              f'--cmd={exe}',
+    #                              f'--options={options}'],
+    #                             stdin = subprocess.DEVNULL,
+    #                             stdout = simout,
+    #                             stderr = simerr,
+    #                             cwd = test_spec_bbv['cd'])
+    #     if result.returncode != 0:
+    #         log(f'[{bench_name}->{test_name}] ERROR: bbv execution failed')
+    #         return 1
+    # assert os.path.exists(f'{output_dir_bbv}/m5out/simpoint.bb.gz')
+    # 
+    # # 3.1. Verify results of simulation.
+    # for i, verify_command in enumerate(test_spec_host['verify_commands']):
+    #     with jobs_sema, open(f'{output_dir_bbv}/verout-{i}', 'w') as stdout, open(f'{output_dir_bbv}/vererr-{i}', 'w') as stderr:
+    #         result = subprocess.run(verify_command, shell = True,
+    #                                 stdin = subprocess.DEVNULL, stdout = stdout, stderr = stderr,
+    #                                 cwd = test_spec_bbv['cd'])
+    #         if result.returncode != 0:
+    #             log(f'[{bench_name}->{test_name}] ERROR: bbv verification {i} failed')
+    #             return 1
+    if generate_bbv(exe, bench_name, test_name, test_spec, input_dir, f'{output_dir}/bbv') != 0:
+        return 1
+    
     # 4. SimPoint Analysis
     output_dir_spt = f'{output_dir}/spt'
     os.mkdir(output_dir_spt)
     with jobs_sema, open(f'{output_dir_spt}/stdout', 'w') as stdout, open(f'{output_dir_spt}/stderr', 'w') as stderr:
-        result = subprocess.run([args.simpoint, '-loadFVFile', f'{output_dir_bbv}/m5out/simpoint.bb.gz',
+        result = subprocess.run([simpoint, '-loadFVFile', f'{output_dir}/bbv/bbv.out',
                                  '-maxK', '30', '-saveSimpoints', f'{output_dir_spt}/simpoints.out',
-                                 '-saveSimpointWeights', f'{output_dir_spt}/weights.out', '-inputVectorsGzipped'],
+                                 '-saveSimpointWeights', f'{output_dir_spt}/weights.out'],
                                 stdin = subprocess.DEVNULL, stdout = stdout, stderr = stderr)
         if result.returncode != 0:
             log(f'[{bench_name}->{test_name}] ERROR: simpoint analysis failed')
@@ -363,9 +400,9 @@ def handle_benchmark_test(exe, test_name, test_spec, parent_input_dir, parent_ou
     with jobs_sema, open(f'{output_dir_cpt}/simout', 'w') as simout, open(f'{output_dir_cpt}/simerr', 'w') as simerr:
         options = ' '.join(test_spec_cpt['args'])
         copy_assets(test_spec_cpt)
-        result = subprocess.run([f'{args.gem5}/build/X86/gem5.fast', f'--outdir={output_dir_cpt}/m5out', f'{args.gem5}/configs/deprecated/example/se.py',
+        result = subprocess.run([f'{gem5}/build/X86/gem5.fast', f'--outdir={output_dir_cpt}/m5out', f'{gem5}/configs/deprecated/example/se.py',
                                  '--cpu-type=X86NonCachingSimpleCPU', f'--mem-size={mem_size}',
-                                 f'--take-simpoint-checkpoint={output_dir_spt}/simpoints.out,{output_dir_spt}/weights.out,10000000,10000',
+                                 f'--take-simpoint-checkpoint={output_dir_spt}/simpoints.out,{output_dir_spt}/weights.out,{args.interval},10000',
                                  f'--cmd={exe}',
                                  f'--options={options}',
                                  f'--output={output_dir_cpt}/stdout', f'--errout={output_dir_cpt}/stderr'],
