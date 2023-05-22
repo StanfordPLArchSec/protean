@@ -8,6 +8,7 @@ import shutil
 import signal
 import copy
 import glob
+import types
 
 signal.signal(signal.SIGINT, lambda x, y: sys.exit(1))
 
@@ -40,6 +41,19 @@ def log(*args, **kwargs):
     print(*args, **kwargs, file = sys.stderr)
     print(*args, **kwargs, file = errlog)
 
+def report_error(msg, file = sys.stderr, prefix = 'ERROR'):
+    if os.isatty():
+        file.write('\033[1;31m')
+    file.write(prefix)
+    file.write(': ')
+    if os.isatty():
+        file.write('\033[0;0m')
+    print(msg, file = file);
+    
+def report_fatal_error(msg, file = sys.stderr):
+    report_error(msg, file = file, prefix = 'FATAL ERROR')
+    exit(1)
+        
 # Sanity checks
 if not os.path.isdir(args.test_suite):
     print(f'{sys.argv[0]}: error: {args.test_suite} is not a directory', file = sys.stderr)
@@ -157,11 +171,11 @@ def handle_benchmark_checkpoint_result(exe, test_spec, bench_name, test_name,
     checkpoint_args = dict()
     for key, value in zip(checkpoint_tokens[::2], checkpoint_tokens[1::2]):
         checkpoint_args[key] = value
-    checkpoint_args = types.SimpleNamespace(checkpoint_args)
+    checkpoint_args = types.SimpleNamespace(**checkpoint_args)
     checkpoint_id = int(checkpoint_args.simpoint)
-    output_dir = f'{parent_output_dir}/{checkpoint_dir}'
-    os.mkdir(output_dir)
-    sub_res = lambda x: perform_test_substitutions(test_spec, bench_name, test_name, input_dir, output_dir)
+    output_dir_res = f'{parent_output_dir}/{os.path.basename(checkpoint_dir)}'
+    os.mkdir(output_dir_res)
+    sub_res = lambda x: perform_test_substitutions(test_spec, bench_name, test_name, input_dir, output_dir_res)
     test_spec_res = sub_res(test_spec)
     with jobs_sema, \
          open(f'{output_dir_res}/simout', 'w') as simout, \
@@ -178,29 +192,33 @@ def handle_benchmark_checkpoint_result(exe, test_spec, bench_name, test_name,
                 '--l1d_size=64kB',
                 '--l1i_size=16kB',
                 '--caches',
-                f'--checkpoint-dir={checkpoint_dir}',
+                f'--checkpoint-dir={os.path.dirname(checkpoint_dir)}',
                 '--restore-simpoint-checkpoint',
                 f'--checkpoint-restore={checkpoint_id+1}',
-                f'--cmd={args.cmd}',
+                f'--cmd={exe}',
                 f'--options={options}',
-                f'--output={stdout}',
-                f'--errout={stderr}',
+                f'--output={output_dir_res}/simout',
+                f'--errout={output_dir_res}/simerr',
             ],
+            stdin = subprocess.DEVNULL,
             stdout = simout,
             stderr = simerr,
+            cwd = test_spec_res['cd'],
         )
         if result.returncode != 0:
             log(f'[{bench_name}->{test_name}] results execution failed for checkpoint {checkpoint_id}')
 
     # Produce ipc.txt
-    with open(f'{output_dir}/ipc.txt', 'w') as ipc_file, \
-         open(f'{output_dir}/m5out/stats.txt') as stats_file:
+    with open(f'{output_dir_res}/ipc.txt', 'w') as ipc_file, \
+         open(f'{output_dir_res}/m5out/stats.txt') as stats_file:
         stats_keys = {'simInsts': [], 'simTicks': [], 'system.clk_domain.clock': []}        
         for line in stats_file.read().splitlines():
             for key in stats_keys:
                 if line.startswith(key):
                     stats_keys[key].append(float(line.split()[1]))
         for l in stats_keys.values():
+            if len(l) != 2:
+                print(stats_keys, file = sys.stderr)
             assert len(l) == 2
 
         interval = int(checkpoint_args.interval)
@@ -272,7 +290,9 @@ def handle_benchmark_test(exe, test_name, test_spec, parent_input_dir, parent_ou
         print(' '.join(cmdline_host), file = f)
     with jobs_sema, open(f'{output_dir_host}/stdout', 'w') as stdout, open(f'{output_dir_host}/stderr', 'w') as stderr:
         copy_assets(test_spec_host)
-        result = subprocess.run(cmdline_host, stdout = stdout, stderr = stderr, cwd = test_spec_host['cd'])
+        result = subprocess.run(cmdline_host,
+                                stdin = subprocess.DEVNULL, stdout = stdout, stderr = stderr,
+                                cwd = test_spec_host['cd'])
         if result.returncode != 0:
             log(f'[{bench_name}->{test_name}] ERROR: host execution failed')
             return 1
@@ -280,7 +300,9 @@ def handle_benchmark_test(exe, test_name, test_spec, parent_input_dir, parent_ou
     # 2. Verify results of host test.
     for i, verify_command in enumerate(test_spec_host['verify_commands']):
         with jobs_sema, open(f'{output_dir_host}/verout-{i}', 'w') as stdout, open(f'{output_dir_host}/vererr-{i}', 'w') as stderr:
-            result = subprocess.run(verify_command, shell = True, stdout = stdout, stderr = stderr, cwd = test_spec_host['cd'])
+            result = subprocess.run(verify_command, shell = True,
+                                    stdin = subprocess.DEVNULL, stdout = stdout, stderr = stderr,
+                                    cwd = test_spec_host['cd'])
             if result.returncode != 0:
                 log(f'[{bench_name}->{test_name}] ERROR: host verification {i} failed')
                 return 1
@@ -298,6 +320,7 @@ def handle_benchmark_test(exe, test_name, test_spec, parent_input_dir, parent_ou
                                  f'--errout={output_dir_bbv}/stderr',
                                  f'--cmd={exe}',
                                  f'--options={options}'],
+                                stdin = subprocess.DEVNULL,
                                 stdout = simout,
                                 stderr = simerr,
                                 cwd = test_spec_bbv['cd'])
@@ -309,7 +332,9 @@ def handle_benchmark_test(exe, test_name, test_spec, parent_input_dir, parent_ou
     # 3.1. Verify results of simulation.
     for i, verify_command in enumerate(test_spec_host['verify_commands']):
         with jobs_sema, open(f'{output_dir_bbv}/verout-{i}', 'w') as stdout, open(f'{output_dir_bbv}/vererr-{i}', 'w') as stderr:
-            result = subprocess.run(verify_command, shell = True, stdout = stdout, stderr = stderr, cwd = test_spec_bbv['cd'])
+            result = subprocess.run(verify_command, shell = True,
+                                    stdin = subprocess.DEVNULL, stdout = stdout, stderr = stderr,
+                                    cwd = test_spec_bbv['cd'])
             if result.returncode != 0:
                 log(f'[{bench_name}->{test_name}] ERROR: bbv verification {i} failed')
                 return 1
@@ -322,8 +347,7 @@ def handle_benchmark_test(exe, test_name, test_spec, parent_input_dir, parent_ou
         result = subprocess.run([args.simpoint, '-loadFVFile', f'{output_dir_bbv}/m5out/simpoint.bb.gz',
                                  '-maxK', '30', '-saveSimpoints', f'{output_dir_spt}/simpoints.out',
                                  '-saveSimpointWeights', f'{output_dir_spt}/weights.out', '-inputVectorsGzipped'],
-                                stdout = stdout,
-                                stderr = stderr)
+                                stdin = subprocess.DEVNULL, stdout = stdout, stderr = stderr)
         if result.returncode != 0:
             log(f'[{bench_name}->{test_name}] ERROR: simpoint analysis failed')
             return 1
@@ -345,6 +369,7 @@ def handle_benchmark_test(exe, test_name, test_spec, parent_input_dir, parent_ou
                                  f'--cmd={exe}',
                                  f'--options={options}',
                                  f'--output={output_dir_cpt}/stdout', f'--errout={output_dir_cpt}/stderr'],
+                                stdin = subprocess.DEVNULL,
                                 stdout = simout,
                                 stderr = simerr,
                                 cwd = test_spec_cpt['cd'])
@@ -357,7 +382,7 @@ def handle_benchmark_test(exe, test_name, test_spec, parent_input_dir, parent_ou
     os.mkdir(output_dir_res)
     jobs_res = []
     for checkpoint_dir in glob.glob(f'{output_dir_cpt}/m5out/cpt.*'):
-        job = multiprocessing.Process(target = handle_benchmark_checkpoint,
+        job = multiprocessing.Process(target = handle_benchmark_checkpoint_result,
                                       args = (exe, test_spec, bench_name, test_name,
                                               checkpoint_dir, input_dir, output_dir_res))
         job.start()
@@ -365,7 +390,7 @@ def handle_benchmark_test(exe, test_name, test_spec, parent_input_dir, parent_ou
     res_failed = 0
     for job in jobs_res:
         job.join()
-        if job.returncode != 0:
+        if job.exitcode != 0:
             res_failed = 1
     if res_failed != 0:
         return 1
