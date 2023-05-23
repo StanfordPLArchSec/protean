@@ -4,9 +4,11 @@ import argparse
 import glob
 import types
 import math
+from shared import parse_checkpoint_args
+import functools
 
 parser = argparse.ArgumentParser()
-parser.add_argument('results_dir')
+parser.add_argument('results_dirs', nargs = '+')
 args = parser.parse_args()
 
 def parse_checkpoint_args(checkpoint_dir):
@@ -30,52 +32,88 @@ def get_results_for_checkpoint(checkpoint_dir):
     assert len(tokens) == 1
     return float(tokens[0])
 
-def get_results_for_benchmark_test(test_dir):
+
+def prune(x):
+    if type(x) != dict:
+        return x
+
+    todel = list()
+    for k, v in x.items():
+        prune(v)
+        if len(v) == 0:
+            todel.append(k)
+    for k in todel:
+        del x[k]
+        
+        
+        
+
+def get_results_for_dir(dir: str):
+    results = dict()
+    for bench_name in os.listdir(dir):
+        bench_dir = f'{dir}/{bench_name}'
+        results[bench_name] = dict()
+        for test_name in os.listdir(bench_dir):
+            test_dir = f'{bench_dir}/{test_name}'
+            results[bench_name][test_name] = dict()
+            for cpt_name in os.listdir(test_dir):
+                cpt_dir = f'{test_dir}/{cpt_name}'
+                ipc_path = f'{cpt_dir}/ipc.txt'
+                if os.path.exists(ipc_path):
+                    with open(ipc_path) as f:
+                        lines = f.read().splitlines()
+                        ipc = float(lines[0])
+                        results[bench_name][test_name][cpt_name] = [ipc]
+
+    # Prune if necessary
+    prune(results)
+    return results
+
+                        
+results_list = [get_results_for_dir(dir) for dir in args.results_dirs]
+
+# Intersect lists
+
+def merge_results(a, b) -> dict:
+    assert type(a) == type(b)
+    t = type(a)
+    if t == dict:
+        keys = set(a.keys()) & set(b.keys())
+        d = dict()
+        for key in keys:
+            d[key] = merge_results(a[key], b[key])
+    elif t == list:
+        d = a + b
+    else:
+        assert False
+    return d
+
+
+merged_results = functools.reduce(merge_results, results_list[1:], results_list[0])
+
+# Compute overheads for each benchmark
+bench_ipcs = dict()
+
+def compute_test_ipc(i, test_results):
     test_ipc = 0
-    weight = 0
-    n = 0
-    for checkpoint_dir in glob.glob(f'{test_dir}/cpt.*'):
-        checkpoint_ipc = get_results_for_checkpoint(checkpoint_dir)
-        if checkpoint_ipc is None:
-            continue
-        checkpoint_args = parse_checkpoint_args(checkpoint_dir)
-        checkpoint_weight = float(checkpoint_args.weight)
-        test_ipc += checkpoint_ipc * checkpoint_weight
-        weight += checkpoint_weight
-        n += 1
-    if n == 0:
-        return None
-    return test_ipc / weight
+    test_weight = 0
+    for cpt_name, cpt_ipcs in test_results.items():
+        cpt_args = parse_checkpoint_args(cpt_name)
+        cpt_weight = float(cpt_args.weight)
+        test_weight += cpt_weight
+        test_ipc += cpt_ipcs[i] * cpt_weight
+    test_ipc /= test_weight
+    return test_ipc
 
-def get_results_for_benchmark(bench_dir):
-    bench_name = os.path.basename(bench_dir)
-    test_ipcs = []
-    for test_name in os.listdir(bench_dir):
-        test_dir = os.path.join(bench_dir, test_name)
-        if os.path.isdir(test_dir):
-            test_ipc = get_results_for_benchmark_test(test_dir)
-            if test_ipc is not None:
-                test_ipcs.append(test_ipc)
-    if len(test_ipcs) == 0:
-        return None
-    bench_ipc = pow(math.prod(test_ipcs), 1 / len(test_ipcs))
-    print(f'{bench_name} {bench_ipc:.4}')
-    return bench_ipc
+def compute_bench_ipc(i, bench_results):
+    bench_ipcs = list()
+    for test_results in bench_results.values():
+        bench_ipcs.append(compute_test_ipc(i, test_results))
+    return pow(math.prod(bench_ipcs), 1 / len(bench_ipcs))
 
-def get_results_for_all(results_dir):
-    bench_ipcs = []
-    for bench_name in os.listdir(results_dir):
-        bench_dir = os.path.join(results_dir, bench_name)
-        if os.path.isdir(bench_dir):
-            bench_ipc = get_results_for_benchmark(bench_dir)
-            if bench_ipc is not None:
-                bench_ipcs.append(bench_ipc)
-    if len(bench_ipcs) == 0:
-        print(f'NO RESULTS FOUND!')
-        exit(1)
-    geomean_ipc = pow(math.prod(bench_ipcs), 1 / len(bench_ipcs))
-    print(f'geomean {geomean_ipc:.4}')
 
-get_results_for_all(args.results_dir)
-            
-            
+for bench_name, bench_results in merged_results.items():
+    ipcs = list()
+    for i in range(len(args.results_dirs)):
+        ipcs.append(compute_bench_ipc(i, bench_results))
+    print(bench_name, *ipcs);
