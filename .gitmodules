@@ -15,7 +15,7 @@
 	branch = sct
 [submodule "simpoint"]
 	path = simpoint
-	url = https://github.com/OscarLGH/SimPoint.3.2.git
+	url = ./simpoint/
 [submodule "valgrind"]
 	path = valgrind
 	url = https://sourceware.org/git/valgrind.git
