@@ -19,3 +19,6 @@
 [submodule "valgrind"]
 	path = valgrind
 	url = https://sourceware.org/git/valgrind.git
+[submodule "test-suite"]
+	path = test-suite
+	url = ./test-suite
