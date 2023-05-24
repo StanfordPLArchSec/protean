@@ -16,9 +16,10 @@
 [submodule "valgrind"]
 	path = valgrind
 	url = https://sourceware.org/git/valgrind.git
-[submodule "test-suite"]
-	path = test-suite
-	url = ./test-suite
 [submodule "simpoint"]
 	path = simpoint
 	url = https://github.com/OscarLGH/SimPoint.3.2.git
+[submodule "llvm-test-suite"]
+	path = test-suite
+	url = https://github.com/llvm/llvm-test-suite
+	branch = release/16.x
