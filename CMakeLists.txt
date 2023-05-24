@@ -115,15 +115,18 @@ add_custom_target(test_suite_test ALL
 
 
 # SIM
+list(JOIN SIM_BLACKLIST "|" SIM_BLACKLIST)
 ExternalProject_Add(sim
   SOURCE_DIR ${CMAKE_SOURCE_DIR}/sim
   BINARY_DIR ${CMAKE_SOURCE_DIR}/sim/build
+  LIST_SEPARATOR "|"
   CMAKE_ARGS
     -DTEST_DIR=${test-suite_BINARY_DIR}/${TEST_SUITE_SUBDIR}
     -DGEM5_BINARY=$<TARGET_FILE:gem5::gem5>
     -DGEM5_SE_PY=${gem5_se_py}
     -DTEST_SUITE_BINARY_DIR=${test-suite_BINARY_DIR}
     -DTEST_SUITE_RUN_TYPE=${TEST_SUITE_RUN_TYPE}
+    -DSIM_BLACKLIST=${SIM_BLACKLIST}
   INSTALL_COMMAND ""
   DEPENDS test-suite gem5::gem5 gem5_se_py
   BUILD_ALWAYS On

@@ -60,7 +60,7 @@ def report_fatal_error(msg, file = sys.stderr):
 if not os.path.isdir(args.test_suite):
     print(f'{sys.argv[0]}: error: {args.test_suite} is not a directory', file = sys.stderr)
     exit(1)
-if args.force:
+if args.force and os.path.exists(args.outdir):
     shutil.rmtree(args.outdir)
 else:
     if os.path.exists(args.outdir):
@@ -157,8 +157,47 @@ def find_executable(name, root):
         if name in files:
             return os.path.join(root, name)
     return None
-    
 
+
+def execute_test(cmd, test_spec, stdout_path, stderr_path, cmdline_path = None, **kwargs) -> int:
+    copy_assets(test_spec)
+    if cmdline_path:
+        with open(cmdline_path, 'a') as f:
+            print(' '.join(cmd), file = f)
+    with jobs_sema, \
+         open(stdout_path, 'w') as stdout, \
+         open(stderr_path, 'w') as stderr:
+        result = subprocess.run(cmd,
+                                cwd = test_spec['cd'],
+                                stdin = subprocess.DEVNULL,
+                                stdout = stdout,
+                                stderr = stderr,
+                                **kwargs)
+        return result.returncode
+
+def execute_gem5_test(exe, args, se_args, test_spec, output_dir, **kwargs) -> int:
+    options = ' '.join(args)
+    gem5_cmd = [f'{gem5}/build/X86/gem5.fast',
+                f'--outdir={output_dir}/m5out',
+                f'{gem5}/configs/deprecated/example/se.py',
+                f'--output={output_dir}/stdout',
+                f'--errout={output_dir}/stderr',
+                f'--cmd={exe}',
+                f'--options={options}',
+                *se_args]
+    return execute_test(gem5_cmd, test_spec, f'{output_dir}/simout', f'{output_dir}/simerr', cmdline_path = f'{output_dir}/cmdline')
+
+def execute_verification(test_spec, output_dir, **kwargs) -> int:
+    for i, verify_command in enumerate(test_spec['verify_commands']):
+        returncode = execute_test(verify_command, test_spec, f'{output_dir}/verout-{i}', f'{output_dir}/vererr-{i}',
+                                  cmdline_path = f'{output_dir}/vercmds',
+                                  shell = True,
+                                  **kwargs)
+        if returncode != 0:
+            return returncode
+    return 0
+        
+    
 def copy_assets(test_spec):
     for copy in test_spec['cp']:
         if os.path.isdir(copy['from']):
@@ -167,48 +206,42 @@ def copy_assets(test_spec):
             shutil.copyfile(copy['from'], copy['to'])
 
 
+def parse_checkpoint_args(checkpoint_dir):
+    checkpoint_name = os.path.basename(checkpoint_dir)
+    assert checkpoint_name.startswith('cpt.')
+    checkpoint_name = checkpoint_name.removeprefix('cpt.')
+    tokens = checkpoint_name.split('_')
+    args = dict()
+    for k, v in zip(tokens[0::2], tokens[1::2]):
+        args[k] = v
+    return types.SimpleNamespace(**args)
+    
+
 def handle_benchmark_checkpoint_result(exe, test_spec, bench_name, test_name,
                                        checkpoint_dir, input_dir, parent_output_dir):
-    checkpoint_tokens = os.path.basename(checkpoint_dir).removeprefix('cpt.').split('_')
-    checkpoint_args = dict()
-    for key, value in zip(checkpoint_tokens[::2], checkpoint_tokens[1::2]):
-        checkpoint_args[key] = value
-    checkpoint_args = types.SimpleNamespace(**checkpoint_args)
+    checkpoint_args = parse_checkpoint_args(checkpoint_dir)
     checkpoint_id = int(checkpoint_args.simpoint)
     output_dir_res = f'{parent_output_dir}/{os.path.basename(checkpoint_dir)}'
+    output_dir = output_dir_res
     os.mkdir(output_dir_res)
     sub_res = lambda x: perform_test_substitutions(test_spec, bench_name, test_name, input_dir, output_dir_res)
     test_spec_res = sub_res(test_spec)
-    with jobs_sema, \
-         open(f'{output_dir_res}/simout', 'w') as simout, \
-         open(f'{output_dir_res}/simerr', 'w') as simerr:
-        options = ' '.join(test_spec_res['args'])
-        copy_assets(test_spec_res)
-        result = subprocess.run(
-            [
-                f'{args.gem5}/build/X86/gem5.fast',
-                f'--outdir={output_dir_res}/m5out',
-                f'{args.gem5}/configs/deprecated/example/se.py',
-                '--cpu-type=X86O3CPU',
-                f'--mem-size={mem_size}',
-                '--l1d_size=64kB',
-                '--l1i_size=16kB',
-                '--caches',
-                f'--checkpoint-dir={os.path.dirname(checkpoint_dir)}',
-                '--restore-simpoint-checkpoint',
-                f'--checkpoint-restore={checkpoint_id+1}',
-                f'--cmd={exe}',
-                f'--options={options}',
-                f'--output={output_dir_res}/simout',
-                f'--errout={output_dir_res}/simerr',
-            ],
-            stdin = subprocess.DEVNULL,
-            stdout = simout,
-            stderr = simerr,
-            cwd = test_spec_res['cd'],
-        )
-        if result.returncode != 0:
-            log(f'[{bench_name}->{test_name}] results execution failed for checkpoint {checkpoint_id}')
+    test_spec = test_spec_res
+
+    se_args = [
+        '--cpu-type=X86O3CPU',
+        f'--mem-size={mem_size}',
+        '--l1d_size=64kB',
+        '--l1i_size=16kB',
+        '--caches',
+        f'--checkpoint-dir={os.path.dirname(checkpoint_dir)}',
+        '--restore-simpoint-checkpoint',
+        f'--checkpoint-restore={checkpoint_id+1}',
+    ]
+    returncode = execute_gem5_test(exe, test_spec['args'], se_args, test_spec, output_dir)
+    if returncode != 0:
+        log(f'[{bench_name}->{test_name}] results execution failed for checkpoint {checkpoint_id}')
+        return returncode
 
     # Produce ipc.txt
     with open(f'{output_dir_res}/ipc.txt', 'w') as ipc_file, \
@@ -233,38 +266,29 @@ def handle_benchmark_checkpoint_result(exe, test_spec, bench_name, test_name,
 
 def generate_bbv(exe, bench_name, test_name, test_spec, input_dir, output_dir):
     os.mkdir(output_dir)
-    # Generate BBV
     test_spec = perform_test_substitutions(test_spec, bench_name, test_name, input_dir, output_dir)
-    with jobs_sema, open(f'{output_dir}/stdout', 'w') as stdout, open(f'{output_dir}/stderr', 'w') as stderr:
-        options = ' '.join(test_spec['args'])
-        copy_assets(test_spec)
-        result = subprocess.run([valgrind, '--tool=exp-bbv',
-                                 f'--bb-out-file={output_dir}/bbv.out',
-                                 f'--pc-out-file={output_dir}/pc.out',
-                                 f'--interval-size={args.interval}',
-                                 f'--log-file={output_dir}/valout',
-                                 '--',
-                                 exe, *test_spec['args'],
-                                 ],
-                                stdin = subprocess.DEVNULL,
-                                stdout = stdout,
-                                stderr = stderr,
-                                cwd = test_spec['cd'],
-                                )
-        if result.returncode != 0:
-            log(f'[{bench_name}->{test_name}] ERROR: valgrind bbv generation failed')
-            return 1
 
+    # Generate BBV
+    cmd = [valgrind, '--tool=exp-bbv',
+           f'--bb-out-file={output_dir}/bbv.out',
+           f'--pc-out-file={output_dir}/pc.out',
+           f'--interval-size={args.interval}',
+           f'--log-file={output_dir}/valout',
+           '--', exe, *test_spec['args']]
+    returncode = execute_test(cmd, test_spec, f'{output_dir}/stdout', f'{output_dir}/stderr')
+    if returncode != 0:
+        log(f'[{bench_name}->{test_name}] ERROR: valgrind bbv generation failed')
+        return 1
+    
     # Verify output
-    for i, verify_command in enumerate(test_spec['verify_commands']):
-        with jobs_sema, open(f'{output_dir}/verout-{i}', 'w') as stdout, open(f'{output_dir}/vererr-{i}', 'w') as stderr:
-            result = subprocess.run(verify_command, shell = True, stdin = subprocess.DEVNULL, stdout = stdout, stderr = stderr, cwd = test_spec['cd'])
-            if result.returncode != 0:
-                log(f'[{bench_name}->{test_name}] ERROR: valgrind bbv verification failed')
-                return 1
-    
+    returncode = execute_verification(test_spec, output_dir)
+    if returncode != 0:
+        log(f'[{bench_name}->{test_name}] ERROR: valgrind bbv verification failed')
+        return 1
+
     return 0
-    
+
+
 
 def handle_benchmark_test(exe, test_name, test_spec, parent_input_dir, parent_output_dir):
     if 'skip' in test_spec:
@@ -351,7 +375,7 @@ def handle_benchmark_test(exe, test_name, test_spec, parent_input_dir, parent_ou
     # with jobs_sema, open(f'{output_dir_bbv}/simout', 'w') as simout, open(f'{output_dir_bbv}/simerr', 'w') as simerr:
     #     options = ' '.join(test_spec_bbv['args'])
     #     copy_assets(test_spec_bbv)
-    #     result = subprocess.run([f'{args.gem5}/build/X86/gem5.fast', f'--outdir={output_dir_bbv}/m5out', f'{args.gem5}/configs/deprecated/example/se.py',
+    #     result = subprocess.run([f'{gem5}/build/X86/gem5.fast', f'--outdir={output_dir_bbv}/m5out', f'{gem5}/configs/deprecated/example/se.py',
     #                              '--cpu-type=X86NonCachingSimpleCPU', f'--mem-size={mem_size}', '--simpoint-profile', f'--output={output_dir_bbv}/stdout',
     #                              f'--errout={output_dir_bbv}/stderr',
     #                              f'--cmd={exe}',

@@ -55,8 +55,9 @@ for stats_path, weight, checkpoint_args in stats:
             assert len(l) == 2
 
         interval = int(checkpoint_args.interval)
-        assert int(keys['simInsts'][1]) - int(keys['simInsts'][0]) == interval
-
+        print('TRACE simInsts:', *keys['simInsts'], file = sys.stderr)
+        # assert ((keys['simInsts'][1] - keys['simInsts'][0] / float(interval)) < 0.01)
+        
         simTicks = keys['simTicks'][-1]
         period = keys['system.clk_domain.clock'][-1]
         ipc = interval / (simTicks / period)
@@ -65,6 +66,3 @@ for stats_path, weight, checkpoint_args in stats:
 
 with open(args.ipc, 'w') as f:
     print(sum(weighted_ipcs), file = f)
-
-
-

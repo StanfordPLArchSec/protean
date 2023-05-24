@@ -11,8 +11,7 @@ parser.add_argument('--input-rundir', required = True, type = str)
 parser.add_argument('--output-rundir', required = True, type = str) # must be able to format with an integer
 parser.add_argument('--test-suite-binary-dir', required=  True, type = str)
 parser.add_argument('--test', required = True, type = str)
-parser.add_argument('--no-verify', action = argparse.BooleanOptionalAction)
-parser.add_argument('--no-redirect', action = argparse.BooleanOptionalAction)
+parser.add_argument('--no-verify', default = False, action = 'store_true')
 parser.add_argument('se_args', nargs = '*')
 args = parser.parse_args()
 
@@ -52,15 +51,13 @@ def get_cmd_argv(cmdline, outrundir, i):
     if '>' in tokens:
         stdout_idx = tokens.index('>')
         stdout_file = tokens[stdout_idx+1]
-        if not args.no_redirect:
-            final_cmd.append(f'--output={stdout_file}')
+        final_cmd.append(f'--output={stdout_file}')
         del tokens[stdout_idx:stdout_idx+2]
 
     if '2>' in tokens:
         stderr_idx = tokens.index('2>')
         stderr_file = tokens[stderr_idx+1]
-        if not args.no_redirect:
-            final_cmd.append(f'--errout={stderr_file}')
+        final_cmd.append(f'--errout={stderr_file}')
         del tokens[stderr_idx:stderr_idx+2]
 
     final_cmd.append(f'--cmd={tokens[0]}')
@@ -134,6 +131,8 @@ for i, run in enumerate(runs):
         for line in line_by_last[last]:
             if not line.startswith('VERIFY:'):
                 continue
+            print(f'args.no_verify = {args.no_verify}', file = sys.stderr)
+            assert args.no_verify == False
             verify = line.removeprefix('VERIFY: ')
             verify = do_substitutions(verify, outrundir)
             print(verify, file = f)

@@ -9,10 +9,17 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--name', required = True)
 parser.add_argument('--llsct', required = True)
 parser.add_argument('--ipc', required = True)
+parser.add_argument('--env', action = 'append')
 parser.add_argument('cmd')
 parser.add_argument('args', nargs = '*')
 args = parser.parse_args()
 
+for env in args.env:
+    tokens = env.split('=', maxsplit = 1)
+    assert len(tokens) == 2
+    os.environ[tokens[0]] = tokens[1]
+
+    
 gem5_binary = f'{args.llsct}/gem5/build/X86/gem5.fast'
 gem5_se_py = f'{args.llsct}/gem5/configs/deprecated/example/se.py'
 bench = os.path.basename(os.path.dirname(os.getcwd()))

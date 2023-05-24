@@ -1,5 +1,7 @@
 #!/bin/bash
 
+export LLSCT=none
+
 set -e
 set -u
 set -o pipefail

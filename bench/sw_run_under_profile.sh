@@ -5,6 +5,8 @@ set -u
 set -o pipefail
 set -x
 
+export LLSCT=none
+
 script_path=${BASH_SOURCE[0]}
 bench_dir=$(dirname ${script_path})
 LLSCT=$(dirname ${bench_dir})

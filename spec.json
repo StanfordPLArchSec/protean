@@ -1,0 +1,33 @@
+{
+    "500.perlbench_r": [
+	{
+	    "args": ["-I.", "-I./lib", "makerand.pl"],
+	    "stdout": "makerand.out"
+	},
+	{
+	    "args": ["-I.", "-I./lib", "test.pl"],
+	    "stdout": "test.out"
+	}
+    ],
+    "502.gcc_r": [{
+	"args": ["t1.c", "-O3", "-finline-limit=50000", "-o", "%O/t1.opts-O3_-finline-limit_50000.s"],
+	"compare": "t1.opts-O3_-finline-limit_50000.s"
+    }],
+    "505.mcf_r": [{
+	"args": ["inp.in"],
+	"stdout": "inp.out"
+    }],
+    "520.omnetpp_r": [{
+	"args": ["-c", "General", "-r", "0"],
+	"stdout": "omnetpp.General-0.out",
+	"fpcmp": ["-a", "0.000001", "-r", "0.00001"]
+    }],
+    "523.xalancbmk_r": [{
+	"args": ["-v", "test.xml", "xalanc.xml"],
+	"compare": "compare/test-test.out"
+    }],
+    "525.x264_r": [{
+	"args": 
+    }]
+    
+}

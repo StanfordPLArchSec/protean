@@ -6,9 +6,27 @@ set -u
 
 usage() {
     cat <<EOF
-usage: $0 <llsct-root> <test-dir> <name>
+usage: $0 [-D arg]... <llsct-root> <test-dir> <name>
 EOF
 }
+
+env=()
+while getopts "hD:" optc; do
+    case $optc in
+	h)
+	    usage
+	    exit
+	    ;;
+	D)
+	    env+=("--env=$OPTARG")
+	    ;;
+	*)
+	    usage >&2
+	    exit 1
+	    ;;
+    esac
+done
+shift $((OPTIND-1))
 
 if [[ $# -ne 3 ]]; then
     usage >&2
@@ -26,7 +44,7 @@ cd ${DIR}/test-suite
 find . -name "m5out-res-$NAME-*" -type d | while read -r RESULTS_DIR; do
     rm -r $RESULTS_DIR
 done
-cmake ${LLSCT}/test-suite -DTEST_SUITE_RUN_UNDER="python3 ${LLSCT}/bench/hw_run_under.py --name=$NAME --llsct=$LLSCT --ipc=${ipcs} --"
+cmake ${LLSCT}/test-suite -DTEST_SUITE_RUN_UNDER="python3 ${LLSCT}/bench/hw_run_under.py ${env[*]} --name=$NAME --llsct=$LLSCT --ipc=${ipcs} --"
 
 run_llvm_lit() {
     no_verify=0
@@ -49,4 +67,4 @@ run_llvm_lit() {
     ${LLVM_LIT} $@ ${tests[@]}
 }
 
-run_llvm_lit --no-verify .
+run_llvm_lit --no-verify . -vva
