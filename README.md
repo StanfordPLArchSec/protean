@@ -69,9 +69,8 @@ cd ..
 
 ### Building test-suite
 ```sh
-cd test-suite
-mkdir build
-cd build
+mkdir test-suite/build
+cd test-suite/build
 test_suite_flags="-static -L $GLIBC/lib -isystem $GLIBC/include -Wl,--rpath=$GLIBC/lib -Wl,--dynamic-linker=$GLIBC/lib/ld-linux-x86-64.so.2"
 cmake .. \
       -DCMAKE_C_COMPILER=$LLVM/bin/clang \
@@ -87,3 +86,23 @@ ninja
 TEST_SUITE=$PWD
 cd ../..
 ```
+
+### Building valgrind
+We will use valgrind for profiling the SPEC CPU2017 benchmarks to produce basic block vector (BBV) files, which we will pass to SimPoint for analysis.
+```sh
+mkdir valgrind/build
+cd valgrind/build
+../configure --prefix=$PWD/../install
+make -s -j$(nproc)
+make -s -j$(nproc) install
+VALGRIND=$PWD/../install/bin/valgrind
+cd ../../
+```
+
+### Building SimPoint
+```sh
+cd simpoint
+make -s -j$(nproc)
+SIMPOINT=$PWD/bin/simpoint
+```
+
