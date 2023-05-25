@@ -62,6 +62,7 @@ cd ../..
 mkdir cpu2017
 cd cpu2017
 7z e $SPEC_ISO install_archives/cpu2017.tar.xz
+tar -xf cpu2017.tar.xz
 yes | ./install.sh
 SPEC=$PWD
 cd ..
