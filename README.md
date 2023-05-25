@@ -91,8 +91,10 @@ cd ../..
 ### Building valgrind
 We will use valgrind for profiling the SPEC CPU2017 benchmarks to produce basic block vector (BBV) files, which we will pass to SimPoint for analysis.
 ```sh
-mkdir valgrind/build
-cd valgrind/build
+cd valgrind
+./autogen.sh
+mkdir build
+cd build
 ../configure --prefix=$PWD/../install
 make -s -j$(nproc)
 make -s -j$(nproc) install
