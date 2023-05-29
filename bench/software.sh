@@ -11,7 +11,8 @@ EOF
 }
 
 num_jobs=$(nproc)
-while getopts "hj:" optc; do
+use_lto=0
+while getopts "hj:l" optc; do
     case $optc in
 	h)
 	    usage
@@ -19,6 +20,9 @@ while getopts "hj:" optc; do
 	    ;;
 	j)
 	    num_jobs="$OPTARG"
+	    ;;
+	l)
+	    use_lto=1
 	    ;;
 	*)
 	    usage >&2
@@ -42,6 +46,11 @@ LLVM_LIT=${LLSCT}/llvm/build/bin/llvm-lit
 
 extra_flags=("$@")
 base_flags=(-O3 -static)
+if [[ ${use_lto} -gt 0 ]]; then
+    lto_flags=(-flto)
+else
+    lto_flags=()
+fi
 
 if [[ -d "$OUTDIR" ]]; then
     echo "$0: output directory $OUTDIR already exists; resuming from previous build." >&2
@@ -77,8 +86,8 @@ if [[ ! -d test-suite ]]; then
 	  -B test-suite \
 	  -DCMAKE_C_COMPILER=${CLANG} \
 	  -DCMAKE_CXX_COMPILER=${CLANGXX} \
-	  -DCMAKE_C_FLAGS="${base_flags[*]} ${extra_flags[*]} ${glibc_flags[*]}" \
-	  -DCMAKE_CXX_FLAGS="${base_flags[*]} ${extra_flags[*]} ${glibc_flags[*]}" \
+	  -DCMAKE_C_FLAGS="${base_flags[*]} ${extra_flags[*]} ${glibc_flags[*]} ${lto_flags[*]}" \
+	  -DCMAKE_CXX_FLAGS="${base_flags[*]} ${extra_flags[*]} ${glibc_flags[*]} ${lto_flags[*]}" \
 	  -DTEST_SUITE_SPEC2017_ROOT=${LLSCT}/cpu2017 \
 	  -DTEST_SUITE_SUBDIRS=External \
 	  -DTEST_SUITE_COLLECT_STATS=Off \
