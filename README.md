@@ -2,7 +2,7 @@
 
 ## Prerequisites
 ```sh
-brew install cmake p7zip binutils gawk
+brew install cmake p7zip binutils gawk llvm
 ```
 
 ## Cloning
