@@ -1,0 +1,245 @@
+{
+    "500.perlbench_r": {
+	"makerand": {
+	    "args": ["-I%R", "-I%R/lib", "%R/%n.pl"],
+	    "stdout": 1,
+	    "compare": "%R/compare/%n.out"
+	},
+	"test": {"inherit": "makerand"}
+    },
+    "502.gcc_r": {
+	"skip": 1,
+	"inline_limit": {
+	    "args": ["%R/t1.c", "-O3", "-finline-limit=50000", "-o", "%T/t1.opts-O3_-finline-limit_50000.s"],
+	    "compare": [{"ref": "%R/compare/t1.opts-O3_-finline-limit_50000.s", "out": "%T/t1.opts-O3_-finline-limit_50000.s"}]
+	}
+    },
+    "505.mcf_r": {
+	"inp": {
+	    "args": ["%R/%n.in"],
+	    "stdout": 1,
+	    "compare": "%R/compare/%n.out"
+	}
+    },
+    "508.namd_r": {
+	"apoa1": {
+	    "args": ["--input", "%R/%n.input", "--iterations", "1", "--output", "%T/%n.test.output"],
+	    "compare": [{"ref": "%R/compare/%n.test.output", "out": "%T/%n.test.output"}],
+	    "verify_args": ["-a", "0.00005"]
+	}
+    },
+    "510.parest_r": {
+	"test": {
+	    "args": ["%R/%n.prm"],
+	    "cd": "%T",
+	    "compare": [
+		{
+		    "ref": "%R/compare/001-m0.vtk",
+		    "out": "%T/001-m0.vtk"
+		},
+		{
+		    "ref": "%R/compare/log",
+		    "out": "%T/log"
+		},
+		{
+		    "ref": "%R/compare/me.prm",
+		    "out": "%T/me.prm"
+		},
+		{
+		    "ref": "%R/compare/statistics",
+		    "out": "%T/statistics"
+		}
+	    ]
+	}
+    },
+    "511.povray_r": {
+	"test": {
+	    "cp": ["SPEC-benchmark-test.pov", "arrays.inc", "chars.inc", "colors.inc", "consts.inc", "debug.inc", "finish.inc", "functions.inc", "glass.inc", "glass_old.inc", "golds.inc", "logo.inc", "math.inc", "metals.inc",
+		   "rad_def.inc", "rand.inc", "screen.inc", "shapes2.inc", "shapes.inc", "shapes_old.inc", "shapesq.inc", "skies.inc", "stage1.inc", "stars.inc", "stdcam.inc", "stdinc.inc", "stoneold.inc", "stones1.inc", "stones2.inc",
+		   "stones.inc", "strings.inc", "sunpos.inc", "textures.inc", "transforms.inc", "woodmaps.inc", "woods.inc"],
+	    "args": ["%R/SPEC-benchmark-test.ini"]
+	}
+    },
+    "519.lbm_r": {
+	"lbm": {
+	    "cp": ["100_100_130_cf_a.of"],
+	    "args": ["20", "reference.dat", "0", "1", "100_100_130_cf_a.of"],
+	    "cd": "%T",
+	    "stdout": 1,
+	    "compare": "%R/compare/%n.out",
+	    "verify_args": ["-a", "0.0000001"]
+	}
+    },
+    "520.omnetpp_r": {
+	"general": {
+	    "args": ["-c", "General", "-r", "0"],
+	    "cd": "%R",
+	    "stdout": 1
+	}
+    },
+    "523.xalancbmk_r": {
+	"test": {
+	    "args": ["-v", "%R/test.xml", "%R/xalanc.xsl"],
+	    "stdout": 1
+	}
+    },
+    "525.x264_r": {
+	"buckbunny": {
+	    "args": ["--dumpyuv", "50", "--frames", "156", "-o", "BuckBunny_New.264", "%R/BuckBunny.yuv", "1280x720"],
+	    "cd": "%T",
+	    "verify_commands": [
+		"%S/imagevalidate_%i-target -avg -threshold 0.5 -maxthreshold 20 frame_50.yuv %R/compare/frame_50.org.tga > %T/imagevalidate_frame_50.out",
+		"%S/imagevalidate_%i-target -avg -threshold 0.5 -maxthreshold 20 frame_100.yuv %R/compare/frame_100.org.tga > %T/imagevalidate_frame_100.out",
+		"%S/imagevalidate_%i-target -avg -threshold 0.5 -maxthreshold 20 frame_155.yuv %R/compare/frame_155.org.tga > %T/imagevalidate_frame_155.out",
+		"%b/fpcmp-target -r 0.085 -i %S/run_test/compare/imagevalidate_frame_100.out %S/run_test/imagevalidate_frame_100.out",
+		"%b/fpcmp-target -r 0.085 -i %S/run_test/compare/imagevalidate_frame_155.out %S/run_test/imagevalidate_frame_155.out",
+		"%b/fpcmp-target -r 0.085 -i %S/run_test/compare/imagevalidate_frame_50.out %S/run_test/imagevalidate_frame_50.out"
+	    ]
+	}
+    },
+    "526.blender_r": {
+	"skip": 1,
+	"cube": {
+	    "args": ["%R/cube.blend", "--render-output", "%T/cube_", "--threads", "1", "-b", "-F", "RAWTGA", "-s", "1", "-e", "1", "-a"],
+	    "cp": ["cube_0001.tga"],
+	    "verify_commands": [
+		"%S/imagevalidate_526-target -avg -threshold 0.75 -maxthreshold 0.01 cube_0001.tga %R/compare/cube_0001.org.tga > %T/imagevalidate_cube_0001.out",
+		"%b/fpcmp-target -r 5.0e-2 -i %R/compare/imagevalidate_cube_0001.out %T/imagevalidate_cube_0001.out"
+	    ]
+	}
+    },
+    "531.deepsjeng_r": {
+	"test": {
+	    "args": ["%R/test.txt"],
+	    "stdout": 1,
+	    "compare": "%R/compare/test.out"
+	}
+    },
+    "538.imagick_r": {
+	"test": {
+	    "args": ["-limit", "disk", "0", "%R/test_input.tga", "-shear", "25", "-resize", "640x480", "-negate", "-alpha", "Off", "%T/test_output.tga"]
+	}
+    },
+    "541.leela_r": {
+	"test": {
+	    "args": ["%R/test.sgf"],
+	    "stdout": 1,
+	    "compare": "%R/compare/test.out"
+	}
+    },
+    "544.nab_r": {
+	"test": {
+	    "cp": [{"from": "%R/hkrdenq", "to": "%T/hkrdenq"}],
+	    "args": ["hkrdenq", "1930344093", "1000"],
+	    "cd": "%T",
+	    "stdout": 1
+	}
+    },
+    "557.xz_r": {
+	"0": {
+	    "args": ["%R/cpu2006docs.tar.xz", "4",
+		     "055ce243071129412e9dd0b3b69a21654033a9b723d874b2015c774fac1553d9713be561ca86f74e4f16f22e664fc17a79f30caa5ad2c04fbc447549c2810fae",
+		     "1548636", "1555348", "0"],
+	    "stdout": 1
+	},
+	"1": {
+	    "args": ["%R/cpu2006docs.tar.xz", "4",
+		     "055ce243071129412e9dd0b3b69a21654033a9b723d874b2015c774fac1553d9713be561ca86f74e4f16f22e664fc17a79f30caa5ad2c04fbc447549c2810fae",
+		     "1462248", "-1", "1"],
+	    "stdout": 1
+	},
+	"2": {
+	    "args": ["%R/cpu2006docs.tar.xz", "4",
+		     "055ce243071129412e9dd0b3b69a21654033a9b723d874b2015c774fac1553d9713be561ca86f74e4f16f22e664fc17a79f30caa5ad2c04fbc447549c2810fae",
+		     "1428548", "-1", "2"],
+	    "stdout": 1
+	},
+	"3": {
+	    "args": ["%R/cpu2006docs.tar.xz", "4",
+		     "055ce243071129412e9dd0b3b69a21654033a9b723d874b2015c774fac1553d9713be561ca86f74e4f16f22e664fc17a79f30caa5ad2c04fbc447549c2810fae",
+		     "1034828", "-1", "3e"],
+	    "stdout": 1
+	},
+	"4": {
+	    "args": ["%R/cpu2006docs.tar.xz", "4",
+		     "055ce243071129412e9dd0b3b69a21654033a9b723d874b2015c774fac1553d9713be561ca86f74e4f16f22e664fc17a79f30caa5ad2c04fbc447549c2810fae",
+		     "1061968", "-1", "4"],
+	    "stdout": 1
+	},
+	"5": {
+	    "args": ["%R/cpu2006docs.tar.xz", "4",
+		     "055ce243071129412e9dd0b3b69a21654033a9b723d874b2015c774fac1553d9713be561ca86f74e4f16f22e664fc17a79f30caa5ad2c04fbc447549c2810fae",
+		     "1034588", "-1", "4e"],
+	    "stdout": 1
+	},
+	"6": {
+	    "args": ["%R/cpu2006docs.tar.xz", "1",
+		     "055ce243071129412e9dd0b3b69a21654033a9b723d874b2015c774fac1553d9713be561ca86f74e4f16f22e664fc17a79f30caa5ad2c04fbc447549c2810fae",
+		     "650156", "-1", "0"],
+	    "stdout": 1
+	},
+	"7": {
+	    "args": ["%R/cpu2006docs.tar.xz", "1",
+		     "055ce243071129412e9dd0b3b69a21654033a9b723d874b2015c774fac1553d9713be561ca86f74e4f16f22e664fc17a79f30caa5ad2c04fbc447549c2810fae",
+		     "639996", "-1", "1"],
+	    "stdout": 1
+	},
+	"8": {
+	    "args": ["%R/cpu2006docs.tar.xz", "1",
+		     "055ce243071129412e9dd0b3b69a21654033a9b723d874b2015c774fac1553d9713be561ca86f74e4f16f22e664fc17a79f30caa5ad2c04fbc447549c2810fae",
+		     "637616", "-1", "2"],
+	    "stdout": 1
+	},
+	"9": {
+	    "args": ["%R/cpu2006docs.tar.xz", "1",
+		     "055ce243071129412e9dd0b3b69a21654033a9b723d874b2015c774fac1553d9713be561ca86f74e4f16f22e664fc17a79f30caa5ad2c04fbc447549c2810fae",
+		     "628996", "-1", "3e"],
+	    "stdout": 1
+	},
+	"10": {
+	    "args": ["%R/cpu2006docs.tar.xz", "1",
+		     "055ce243071129412e9dd0b3b69a21654033a9b723d874b2015c774fac1553d9713be561ca86f74e4f16f22e664fc17a79f30caa5ad2c04fbc447549c2810fae",
+		     "631912", "-1", "4"],
+	    "stdout": 1
+	},
+	"11": {
+	    "args": ["%R/cpu2006docs.tar.xz", "1",
+		     "055ce243071129412e9dd0b3b69a21654033a9b723d874b2015c774fac1553d9713be561ca86f74e4f16f22e664fc17a79f30caa5ad2c04fbc447549c2810fae",
+		     "629064", "-1", "4e"],
+	    "stdout": 1
+	}
+    },
+    "600.perlbench_s": {"inherit": "500.perlbench_r"},
+    "602.gcc_s": {
+	"inherit": "502.gcc_r",
+	"skip": 1
+    },
+    "605.mcf_s": {"inherit": "505.mcf_r"},
+    "619.lbm_s": {
+	"lbm": {
+	    "cp": ["200_200_260_ldc.of"],
+	    "args": ["20", "reference.dat", "0", "1", "200_200_260_ldc.of"],
+	    "cd": "%T",
+	    "stdout": 1,
+	    "compare": "%R/compare/%n.out",
+	    "verify_args": ["-a", "0.0000001"]
+	}	
+    },
+    "620.omnetpp_s": {"inherit": "520.omnetpp_r"},
+    "623.xalancbmk_s": {"inherit": "523.xalancbmk_r"},
+    "625.x264_s": {"inherit": "525.x264_r"},
+    "631.deepsjeng_s": {"inherit": "531.deepsjeng_r"},
+    "638.imagick_s": {"inherit": "538.imagick_r"},
+    "641.leela_s": {"inherit": "541.leela_r"},
+    "644.nab_s": {"inherit": "544.nab_r"},
+    "657.xz_s": {"inherit": "557.xz_r"},
+    "996.specrand_fs": {
+	"test": {
+	    "args": ["324342", "24239"],
+	    "stdout": 1
+	}
+    },
+    "997.specrand_fr": {"inherit": "996.specrand_fs"},
+    "998.specrand_is": {"inherit": "997.specrand_fr"},
+    "999.specrand_ir": {"inherit": "998.specrand_is"}
+}
