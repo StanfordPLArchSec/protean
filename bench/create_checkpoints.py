@@ -13,6 +13,9 @@ import types
 import shared
 from shared import *
 
+if 'LLSCT' not in os.environ:
+    os.environ['LLSCT'] = 'none'
+
 signal.signal(signal.SIGINT, lambda x, y: sys.exit(1))
 
 parser = argparse.ArgumentParser()
@@ -236,7 +239,9 @@ def run_benchmarks(input_dir: str, output_dir: str, bench_spec: dict):
     jobs = []
     for bench_name, bench_tests in bench_spec.items():
         bench_exe = find_executable(bench_name, args.test_suite)
-        assert bench_exe
+        if bench_exe == None:
+            print(f'ERROR: {bench_name}: missing executable', file = sys.stderr)
+            continue
         bench_input_dir = os.path.dirname(bench_exe)
         bench_output_dir = f'{args.outdir}/{bench_name}'
         job = multiprocessing.Process(target = run_benchmark, args = (bench_exe, bench_tests, bench_input_dir, f'{args.outdir}/{bench_name}'))

@@ -91,6 +91,14 @@ def merge_results(a, b) -> dict:
 
 merged_results = functools.reduce(merge_results, results_list[1:], results_list[0])
 
+# Erase any merged results that are empty
+to_del = list()
+for key, value in merged_results.items():
+    if len(value) == 0:
+        to_del.append(key)
+for key in to_del:
+    del merged_results[key]
+
 # Compute overheads for each benchmark
 bench_ipcs = dict()
 
