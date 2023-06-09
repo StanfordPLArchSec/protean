@@ -57,7 +57,11 @@
 	    "cp": ["SPEC-benchmark-test.pov", "arrays.inc", "chars.inc", "colors.inc", "consts.inc", "debug.inc", "finish.inc", "functions.inc", "glass.inc", "glass_old.inc", "golds.inc", "logo.inc", "math.inc", "metals.inc",
 		   "rad_def.inc", "rand.inc", "screen.inc", "shapes2.inc", "shapes.inc", "shapes_old.inc", "shapesq.inc", "skies.inc", "stage1.inc", "stars.inc", "stdcam.inc", "stdinc.inc", "stoneold.inc", "stones1.inc", "stones2.inc",
 		   "stones.inc", "strings.inc", "sunpos.inc", "textures.inc", "transforms.inc", "woodmaps.inc", "woods.inc"],
-	    "args": ["%R/SPEC-benchmark-test.ini"]
+	    "args": ["%R/SPEC-benchmark-test.ini"],
+	    "verify_commands": [
+		"%S/imagevalidate_511-target %T/SPEC-benchmark.tga %R/compare/SPEC-benchmark.org.tga > %T/imagevalidate_SPEC-benchmark.tga.out",
+		"%b/fpcmp-target -r 0.06 -i %R/compare/imagevalidate_SPEC-benchmark.tga.out %T/imagevalidate_SPEC-benchmark.tga.out"
+	    ]
 	}
     },
     "519.lbm_r": {
@@ -80,7 +84,8 @@
     "523.xalancbmk_r": {
 	"test": {
 	    "args": ["-v", "%R/test.xml", "%R/xalanc.xsl"],
-	    "stdout": 1
+	    "stdout": 1,
+	    "compare": "%R/compare/test-%n.out"
 	}
     },
     "525.x264_r": {
@@ -117,7 +122,11 @@
     },
     "538.imagick_r": {
 	"test": {
-	    "args": ["-limit", "disk", "0", "%R/test_input.tga", "-shear", "25", "-resize", "640x480", "-negate", "-alpha", "Off", "%T/test_output.tga"]
+	    "args": ["-limit", "disk", "0", "%R/test_input.tga", "-shear", "25", "-resize", "640x480", "-negate", "-alpha", "Off", "%T/test_output.tga"],
+	    "verify_commands": [
+		"%S/imagevalidate_538-target -avg -threshold 0.95 -maxthreshold 0.001 test_output.tga %R/compare/test_expected.tga > %T/test_validate.out",
+		"%b/fpcmp-target -r 0.01 -i %R/compare/test_validate.out %T/test_validate.out"
+	    ]
 	}
     },
     "541.leela_r": {
@@ -136,77 +145,89 @@
 	}
     },
     "557.xz_r": {
-	"0": {
+	"4-0": {
 	    "args": ["%R/cpu2006docs.tar.xz", "4",
 		     "055ce243071129412e9dd0b3b69a21654033a9b723d874b2015c774fac1553d9713be561ca86f74e4f16f22e664fc17a79f30caa5ad2c04fbc447549c2810fae",
 		     "1548636", "1555348", "0"],
-	    "stdout": 1
+	    "stdout": 1,
+	    "compare": "%R/compare/cpu2006docs.tar-%n.out"
 	},
-	"1": {
+	"4-1": {
 	    "args": ["%R/cpu2006docs.tar.xz", "4",
 		     "055ce243071129412e9dd0b3b69a21654033a9b723d874b2015c774fac1553d9713be561ca86f74e4f16f22e664fc17a79f30caa5ad2c04fbc447549c2810fae",
 		     "1462248", "-1", "1"],
-	    "stdout": 1
+	    "stdout": 1,
+	    "compare": "%R/compare/cpu2006docs.tar-%n.out"
 	},
-	"2": {
+	"4-2": {
 	    "args": ["%R/cpu2006docs.tar.xz", "4",
 		     "055ce243071129412e9dd0b3b69a21654033a9b723d874b2015c774fac1553d9713be561ca86f74e4f16f22e664fc17a79f30caa5ad2c04fbc447549c2810fae",
 		     "1428548", "-1", "2"],
-	    "stdout": 1
+	    "stdout": 1,
+	    "compare": "%R/compare/cpu2006docs.tar-%n.out"
 	},
-	"3": {
+	"4-3e": {
 	    "args": ["%R/cpu2006docs.tar.xz", "4",
 		     "055ce243071129412e9dd0b3b69a21654033a9b723d874b2015c774fac1553d9713be561ca86f74e4f16f22e664fc17a79f30caa5ad2c04fbc447549c2810fae",
 		     "1034828", "-1", "3e"],
-	    "stdout": 1
+	    "stdout": 1,
+	    "compare": "%R/compare/cpu2006docs.tar-%n.out"
 	},
-	"4": {
+	"4-4": {
 	    "args": ["%R/cpu2006docs.tar.xz", "4",
 		     "055ce243071129412e9dd0b3b69a21654033a9b723d874b2015c774fac1553d9713be561ca86f74e4f16f22e664fc17a79f30caa5ad2c04fbc447549c2810fae",
 		     "1061968", "-1", "4"],
-	    "stdout": 1
+	    "stdout": 1,
+	    "compare": "%R/compare/cpu2006docs.tar-%n.out"
 	},
-	"5": {
+	"4-4e": {
 	    "args": ["%R/cpu2006docs.tar.xz", "4",
 		     "055ce243071129412e9dd0b3b69a21654033a9b723d874b2015c774fac1553d9713be561ca86f74e4f16f22e664fc17a79f30caa5ad2c04fbc447549c2810fae",
 		     "1034588", "-1", "4e"],
-	    "stdout": 1
+	    "stdout": 1,
+	    "compare": "%R/compare/cpu2006docs.tar-%n.out"
 	},
-	"6": {
+	"1-0": {
 	    "args": ["%R/cpu2006docs.tar.xz", "1",
 		     "055ce243071129412e9dd0b3b69a21654033a9b723d874b2015c774fac1553d9713be561ca86f74e4f16f22e664fc17a79f30caa5ad2c04fbc447549c2810fae",
 		     "650156", "-1", "0"],
-	    "stdout": 1
+	    "stdout": 1,
+	    "compare": "%R/compare/cpu2006docs.tar-%n.out"
 	},
-	"7": {
+	"1-1": {
 	    "args": ["%R/cpu2006docs.tar.xz", "1",
 		     "055ce243071129412e9dd0b3b69a21654033a9b723d874b2015c774fac1553d9713be561ca86f74e4f16f22e664fc17a79f30caa5ad2c04fbc447549c2810fae",
 		     "639996", "-1", "1"],
-	    "stdout": 1
+	    "stdout": 1,
+	    "compare": "%R/compare/cpu2006docs.tar-%n.out"
 	},
-	"8": {
+	"1-2": {
 	    "args": ["%R/cpu2006docs.tar.xz", "1",
 		     "055ce243071129412e9dd0b3b69a21654033a9b723d874b2015c774fac1553d9713be561ca86f74e4f16f22e664fc17a79f30caa5ad2c04fbc447549c2810fae",
 		     "637616", "-1", "2"],
-	    "stdout": 1
+	    "stdout": 1,
+	    "compare": "%R/compare/cpu2006docs.tar-%n.out"
 	},
-	"9": {
+	"1-3e": {
 	    "args": ["%R/cpu2006docs.tar.xz", "1",
 		     "055ce243071129412e9dd0b3b69a21654033a9b723d874b2015c774fac1553d9713be561ca86f74e4f16f22e664fc17a79f30caa5ad2c04fbc447549c2810fae",
 		     "628996", "-1", "3e"],
-	    "stdout": 1
+	    "stdout": 1,
+	    "compare": "%R/compare/cpu2006docs.tar-%n.out"
 	},
-	"10": {
+	"1-4": {
 	    "args": ["%R/cpu2006docs.tar.xz", "1",
 		     "055ce243071129412e9dd0b3b69a21654033a9b723d874b2015c774fac1553d9713be561ca86f74e4f16f22e664fc17a79f30caa5ad2c04fbc447549c2810fae",
 		     "631912", "-1", "4"],
-	    "stdout": 1
+	    "stdout": 1,
+	    "compare": "%R/compare/cpu2006docs.tar-%n.out"
 	},
-	"11": {
+	"1-4e": {
 	    "args": ["%R/cpu2006docs.tar.xz", "1",
 		     "055ce243071129412e9dd0b3b69a21654033a9b723d874b2015c774fac1553d9713be561ca86f74e4f16f22e664fc17a79f30caa5ad2c04fbc447549c2810fae",
 		     "629064", "-1", "4e"],
-	    "stdout": 1
+	    "stdout": 1,
+	    "compare": "%R/compare/cpu2006docs.tar-%n.out"
 	}
     },
     "600.perlbench_s": {"inherit": "500.perlbench_r"},
