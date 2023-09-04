@@ -14,6 +14,7 @@ class DeclTab {
 public:
   virtual bool checkDeclassified(Addr base, unsigned size) = 0;
   virtual void setDeclassified(Addr base, unsigned size) = 0;
+  virtual void setDeclassified(Addr base, unsigned size, bool allocate) { setDeclassified(base, size); }
   virtual void setClassified(Addr base, unsigned size) = 0;
 protected:
 private:
@@ -23,6 +24,7 @@ class UnsizedDeclTab {
 public:
   virtual bool checkDeclassified(Addr addr) = 0;
   virtual void setDeclassified(Addr addr) = 0;
+  virtual void setDeclassified(Addr addr, bool allocate) { setDeclassified(addr); }
   virtual void setClassified(Addr addr) = 0;
 };
 
@@ -199,6 +201,7 @@ public:
   ConvertSizeDeclTab(size_t access_size, std::unique_ptr<UnsizedDeclTab>&& decltab);
   bool checkDeclassified(Addr base, unsigned size) override;
   void setDeclassified(Addr base, unsigned size) override;
+  void setDeclassified(Addr base, unsigned size, bool allocate) override;
   void setClassified(Addr base, unsigned size) override;
 private:
   size_t accessSize;
@@ -233,15 +236,22 @@ private:
 
 class CacheDeclTab final : public UnsizedDeclTab {
 public:
-  CacheDeclTab(unsigned line_size, unsigned num_lines);
+  CacheDeclTab(unsigned line_size, unsigned num_lines, unsigned num_ways);
 
   bool checkDeclassified(Addr addr) override;
   void setDeclassified(Addr addr) override;
+  void setDeclassified(Addr addr, bool allocate) override;
   void setClassified(Addr addr) override;
   
 private:
   unsigned lineSize;
   unsigned numLines;
+  unsigned numWays;
+
+  unsigned numRows() const {
+    return numLines / numWays;
+  }
+  
   struct Line {
     Addr tag;
     std::vector<bool> data;
@@ -250,10 +260,13 @@ private:
       return tag <= addr && addr < tag + data.size();
     }
   };
-  using Cache = std::vector<Line>;
-  Cache cache;
-
   Line newCacheLine() const;
+
+  using Row = std::vector<Line>;
+  Row newCacheRow() const;
+  
+  using Cache = std::vector<Row>;
+  Cache cache;
 
   struct Index {
     Addr tag;
@@ -261,5 +274,84 @@ private:
     unsigned line_idx;
   };
   Index getIndex(Addr addr) const;
+
+  Row::iterator evictLine(Row& row);
+};
+
+
+class ParallelDeclTab final : public DeclTab {
+public:
+  ParallelDeclTab(std::unique_ptr<UnsizedDeclTab>&& byteDT,
+		  std::unique_ptr<UnsizedDeclTab>&& wordDT,
+		  std::unique_ptr<UnsizedDeclTab>&& dwordDT,
+		  std::unique_ptr<UnsizedDeclTab>&& qwordDT):
+    byteDT(1, std::move(byteDT)),
+    wordDT(2, std::move(wordDT)),
+    dwordDT(4, std::move(dwordDT)),
+    qwordDT(8, std::move(qwordDT)) {}
+
+  bool checkDeclassified(Addr base, unsigned size) override;
+  void setDeclassified(Addr base, unsigned size) override;
+  void setClassified(Addr base, unsigned size) override;
   
+private:
+  ConvertSizeDeclTab byteDT;
+  ConvertSizeDeclTab wordDT;
+  ConvertSizeDeclTab dwordDT;
+  ConvertSizeDeclTab qwordDT;
+};
+
+
+class HeteroCacheDeclTab final : public DeclTab {
+public:
+  HeteroCacheDeclTab(unsigned line_size, unsigned num_lines, unsigned num_ways);
+
+  bool checkDeclassified(Addr base, unsigned size) override;
+  void setDeclassified(Addr base, unsigned size) override;
+  void setClassified(Addr base, unsigned size) override;
+
+private:
+  struct Tag {
+    Addr base;
+    unsigned scale;
+    auto operator<=>(const Tag&) const = default;
+  };
+  using Row = std::map<Tag, std::vector<bool>>;
+  using Cache = std::vector<Row>;
+
+  unsigned lineSize;
+  unsigned numWays;
+  unsigned numRows;  
+  Cache cache;
+
+  template <typename T>
+  static void assertPow2(T x) {
+    assert((x & (x - 1)) == 0);
+  }
+  static bool isAligned(Addr addr, unsigned size);
+
+  struct Index {
+    Row *row; // never null
+    Tag tag;
+    std::vector<bool> *data;
+    unsigned dataIdxBegin;
+    unsigned dataIdxEnd;
+  };
+  Index getIndex(Addr addr, unsigned orig_size, unsigned check_size, bool tight);
+
+  bool checkDeclassifiedOnce(Addr base, unsigned orig_size, unsigned check_size);
+
+  template <typename T>
+  static T div_down(T a, T b) {
+    return a / b;
+  }
+
+  template <typename T>
+  static T div_up(T a, T b) {
+    return (a + (b - 1)) / b;
+  }
+
+  void evictAndAllocate(Index& index);
+
+  static inline const std::array<unsigned, 4> check_sizes = {1, 2, 4, 8};
 };

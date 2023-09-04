@@ -32,13 +32,26 @@ int main(int argc, char *argv[]) {
       decltab = std::make_unique<ConvertSizeDeclTab>(1, std::move(shadow_dt));
     }
 
-  } else if (decltab_type == "cachebyte") {
-    unsigned line_size, num_lines;
+  } else if (decltab_type == "cachebyte" || decltab_type == "cachesplit" || decltab_type == "cachehetero") {
+    unsigned line_size, num_lines, num_ways;
     if (std::sscanf(argv[2], "line_size=%u", &line_size) != 1 ||
-	std::sscanf(argv[3], "num_lines=%u", &num_lines) != 1)
+	std::sscanf(argv[3], "num_lines=%u", &num_lines) != 1 ||
+	std::sscanf(argv[4], "num_ways=%u", &num_ways) != 1
+	)
       errx(EXIT_FAILURE, "invalid arguments to %s", decltab_type.c_str());
-    std::unique_ptr<UnsizedDeclTab> cache_dt = std::make_unique<CacheDeclTab>(line_size, num_lines);
-    decltab = std::make_unique<ConvertSizeDeclTab>(1, std::move(cache_dt));
+    if (decltab_type == "cachebyte") {
+      std::unique_ptr<UnsizedDeclTab> cache_dt = std::make_unique<CacheDeclTab>(line_size, num_lines, num_ways);
+      decltab = std::make_unique<ConvertSizeDeclTab>(1, std::move(cache_dt));
+    } else if (decltab_type == "cachesplit") {
+      std::unique_ptr<UnsizedDeclTab> byte = std::make_unique<CacheDeclTab>(line_size, num_lines, num_ways);
+      std::unique_ptr<UnsizedDeclTab> word = std::make_unique<CacheDeclTab>(line_size, num_lines, num_ways);
+      std::unique_ptr<UnsizedDeclTab> dword = std::make_unique<CacheDeclTab>(line_size, num_lines, num_ways);
+      std::unique_ptr<UnsizedDeclTab> qword = std::make_unique<CacheDeclTab>(line_size, num_lines, num_ways);
+      decltab = std::make_unique<ParallelDeclTab>(std::move(byte), std::move(word), std::move(dword), std::move(qword));
+    } else if (decltab_type == "cachehetero") {
+      decltab = std::make_unique<HeteroCacheDeclTab>(line_size, num_lines, num_ways);
+    }
+						  
   } else {
     errx(EXIT_FAILURE, "unknown decltab type: %s", decltab_type.c_str());
   }
@@ -70,8 +83,8 @@ int main(int argc, char *argv[]) {
     }
   }
 
-  const double miss_rate = (double) misses / (double) (misses + hits) * 100;
+  // const double miss_rate = (double) misses / (double) (misses + hits) * 100;
   std::cout << "hits " << hits << "\n"
-	    << "misses " << misses << "\n"
-	    << "miss-rate " << std::setprecision(3) << miss_rate << "\n";
+	    << "misses " << misses << "\n";
+  // << "miss-rate " << std::setprecision(3) << miss_rate << "\n";
 }

@@ -152,24 +152,31 @@ ConvertSizeDeclTab::ConvertSizeDeclTab(size_t access_size, std::unique_ptr<Unsiz
   accessSize(access_size), decltab(std::move(decltab)) {}
 
 bool ConvertSizeDeclTab::checkDeclassified(Addr base, unsigned size) {
-  if (size < accessSize)
-    return false;
-  for (Addr addr = align_up(base); addr + accessSize <= base + size; addr += accessSize)
-    if (!decltab->checkDeclassified(addr))
+  for (Addr addr = align_down(base); addr < base + size; addr += accessSize) {
+    assert(base <= addr && addr + accessSize <= base + size);    
+    if (!decltab->checkDeclassified(addr / accessSize))
       return false;
+  }
   return true;
 }
 
 void ConvertSizeDeclTab::setDeclassified(Addr base, unsigned size) {
-  if (size >= accessSize)
-    for (Addr addr = align_up(base); addr + accessSize <= base + size; addr += accessSize)
-      decltab->setDeclassified(addr);
+  for (Addr addr = align_up(base); addr + accessSize <= base + size; addr += accessSize) {
+    assert(base <= addr && addr + accessSize <= base + size);
+    decltab->setDeclassified(addr / accessSize);
+  }
+}
+
+void ConvertSizeDeclTab::setDeclassified(Addr base, unsigned size, bool allocate) {
+  for (Addr addr = align_up(base); addr + accessSize <= base + size; addr += accessSize) {
+    assert(base <= addr && addr + accessSize <= base + size);
+    decltab->setDeclassified(addr / accessSize, allocate);
+  }
 }
 
 void ConvertSizeDeclTab::setClassified(Addr base, unsigned size) {
-  if (size >= accessSize)
-    for (Addr addr = align_down(base); addr < base + size; addr += accessSize)
-      decltab->setClassified(addr);
+  for (Addr addr = align_down(base); addr < base + size; addr += accessSize)
+    decltab->setClassified(addr / accessSize);
 }
 
 Addr ConvertSizeDeclTab::align_down(Addr addr) const {
@@ -190,39 +197,217 @@ CacheDeclTab::Line CacheDeclTab::newCacheLine() const {
   return line;
 }
 
-CacheDeclTab::CacheDeclTab(unsigned line_size, unsigned num_lines): lineSize(line_size), numLines(num_lines) {
-  cache.resize(numLines, newCacheLine());
+CacheDeclTab::Row CacheDeclTab::newCacheRow() const {
+  return Row(numWays, newCacheLine());
+}
+
+CacheDeclTab::CacheDeclTab(unsigned line_size, unsigned num_lines, unsigned num_ways):
+  lineSize(line_size), numLines(num_lines), numWays(num_ways) {
+  cache.resize(numRows(), newCacheRow());
 }
 
 CacheDeclTab::Index CacheDeclTab::getIndex(Addr addr) const {
   Index idx;
   idx.tag = addr & ~(lineSize - 1);
-  idx.table_idx = (addr / lineSize) & (numLines - 1);
+  idx.table_idx = (addr / lineSize) & (numRows() - 1);
   idx.line_idx = addr & (lineSize - 1);
   return idx;
 }
 
 bool CacheDeclTab::checkDeclassified(Addr addr) {
   const auto [tag, table_idx, line_idx] = getIndex(addr);
-  const Line& line = cache.at(table_idx);
-  return line.tag == tag && line.data.at(line_idx);
+  const Row& row = cache.at(table_idx);
+  const auto row_it = std::find_if(row.begin(), row.end(), [&] (const Line& line) -> bool {
+    return line.tag == tag;
+  });
+  return row_it != row.end() && row_it->data.at(line_idx);
+}
+
+CacheDeclTab::Row::iterator CacheDeclTab::evictLine(Row& row) {
+  return std::next(row.begin(), std::rand() % row.size());
+}
+
+void CacheDeclTab::setDeclassified(Addr addr, bool allocate) {
+  if (!allocate) {
+    const auto [tag, table_idx, line_idx] = getIndex(addr);
+    Row& row = cache.at(table_idx);
+    const auto row_it = std::find_if(row.begin(), row.end(), [&] (const Line& line) -> bool {
+      return line.tag == tag;
+    });
+    if (row_it == row.end())
+      return;
+  }
+  setDeclassified(addr);
 }
 
 void CacheDeclTab::setDeclassified(Addr addr) {
   const auto [tag, table_idx, line_idx] = getIndex(addr);
-  Line& line = cache.at(table_idx);
-
-  if (line.tag != tag) {
-    line = newCacheLine();
-    line.tag = tag;
+  Row& row = cache.at(table_idx);
+  auto row_it = std::find_if(row.begin(), row.end(), [&] (const Line& line) -> bool {
+    return line.tag == tag;
+  });
+  if (row_it == row.end()) {
+    row_it = evictLine(row);
+    *row_it = newCacheLine();
+    row_it->tag = tag;
   }
-  
+  Line& line = *row_it;
   line.data.at(line_idx) = true;
 }
 
 void CacheDeclTab::setClassified(Addr addr) {
   const auto [tag, table_idx, line_idx] = getIndex(addr);
-  Line& line = cache.at(table_idx);
-  if (line.tag == tag)
-    line.data.at(line_idx) = false;
+  Row& row = cache.at(table_idx);
+  const auto row_it = std::find_if(row.begin(), row.end(), [&] (const Line& line) -> bool {
+    return line.tag == tag;
+  });
+  if (row_it == row.end())
+    return;
+  Line& line = *row_it;
+  line.data.at(line_idx) = false;
+}
+
+// ======== PARALLEL DECLASSIFICATION TABLE ======== //
+bool ParallelDeclTab::checkDeclassified(Addr base, unsigned size) {
+  return
+    byteDT.checkDeclassified(base, size) ||
+    wordDT.checkDeclassified(base, size) ||
+    dwordDT.checkDeclassified(base, size) ||
+    qwordDT.checkDeclassified(base, size);
+}
+
+void ParallelDeclTab::setDeclassified(Addr base, unsigned size) {
+  static const std::vector<std::pair<unsigned, ConvertSizeDeclTab ParallelDeclTab::*>> dts = {
+    {1, &ParallelDeclTab::byteDT},
+    {2, &ParallelDeclTab::wordDT},
+    {4, &ParallelDeclTab::dwordDT},
+    {8, &ParallelDeclTab::qwordDT},
+  };
+  for (const auto [dt_size, dt_memb] : dts) {
+    ConvertSizeDeclTab& dt = this->*dt_memb;
+    dt.setDeclassified(base, size, size == dt_size);
+  }
+}
+
+void ParallelDeclTab::setClassified(Addr base, unsigned size) {
+  byteDT.setClassified(base, size);
+  wordDT.setClassified(base, size);
+  dwordDT.setClassified(base, size);
+  qwordDT.setClassified(base, size);
+}
+
+// ======== HETEROGENOUS CACHE DECLASSIFICATION TABLE ====== //
+
+HeteroCacheDeclTab::HeteroCacheDeclTab(unsigned line_size, unsigned num_lines, unsigned num_ways):
+  lineSize(line_size), numWays(num_ways) {
+  numRows = num_lines / num_ways;
+  cache = Cache(numRows);
+}
+
+bool HeteroCacheDeclTab::isAligned(Addr addr, unsigned size) {
+  return (addr & (size - 1)) == 0;
+}
+
+HeteroCacheDeclTab::Index HeteroCacheDeclTab::getIndex(Addr addr, unsigned orig_scale, unsigned line_scale, bool tight) {
+  assert(isAligned(addr, orig_scale));
+  Index index;  
+
+  // compute tag
+  index.tag.base = addr / (line_scale * lineSize);
+  index.tag.scale = line_scale;
+
+  // compute row
+  const unsigned rowIdx = index.tag.base & (numRows - 1);
+  index.row = &cache.at(rowIdx);
+
+  // compute access indices
+  if (tight) {
+    index.dataIdxBegin = div_up<Addr>(addr, line_scale) - index.tag.base * lineSize;
+    index.dataIdxEnd = div_down<Addr>(addr + orig_scale, line_scale) - index.tag.base * lineSize;
+    assert(index.dataIdxEnd <= lineSize);
+  } else {
+    index.dataIdxBegin = div_down<Addr>(addr, line_scale) - index.tag.base * lineSize;
+    index.dataIdxEnd = div_up<Addr>(addr + orig_scale, line_scale) - index.tag.base * lineSize;
+    assert(index.dataIdxBegin < index.dataIdxEnd);
+    assert(index.dataIdxEnd <= lineSize);
+  }
+
+  // try to find cache line, if present
+  const auto it = index.row->find(index.tag);
+  if (it == index.row->end()) {
+    index.data = nullptr;
+  } else {
+    index.data = &it->second;
+  }
+  
+  return index;
+}
+
+bool HeteroCacheDeclTab::checkDeclassifiedOnce(Addr base, unsigned orig_size, unsigned check_size) {
+  const Index index = getIndex(base, orig_size, check_size, /*tight*/false);
+  if (!index.data)
+    return false;
+  for (unsigned dataIdx = index.dataIdxBegin; dataIdx < index.dataIdxEnd; ++dataIdx) {
+    if (!index.data->at(dataIdx))
+      return false;
+  }
+  return true;
+}
+
+bool HeteroCacheDeclTab::checkDeclassified(Addr base, unsigned orig_size) {
+  if (!isAligned(base, orig_size))
+    return false;
+  for (unsigned check_size : this->check_sizes)
+    if (checkDeclassifiedOnce(base, orig_size, check_size))
+      return true;
+  return false;
+}
+
+void HeteroCacheDeclTab::setDeclassified(Addr base, unsigned orig_size) {
+  if (!isAligned(base, orig_size))
+    return;
+  for (unsigned check_size : check_sizes) {
+    Index index = getIndex(base, orig_size, check_size, /*tight*/true);
+    if (!index.data && check_size == orig_size)
+      evictAndAllocate(index);
+    if (index.data) {
+      for (unsigned dataIdx = index.dataIdxBegin; dataIdx < index.dataIdxEnd; ++dataIdx) {
+	index.data->at(dataIdx) = true;
+      }
+    }
+  }
+}
+
+void HeteroCacheDeclTab::setClassified(Addr base, unsigned orig_size) {
+  if (!isAligned(base, orig_size))
+    return;
+  for (unsigned check_size : check_sizes) {
+    Index index = getIndex(base, orig_size, check_size, /*tight*/false);
+    if (index.data) {
+      for (unsigned dataIdx = index.dataIdxBegin; dataIdx < index.dataIdxEnd; ++dataIdx) {
+	index.data->at(dataIdx) = false;
+      }
+    }
+  }
+}
+
+void HeteroCacheDeclTab::evictAndAllocate(Index& index) {
+  assert(!index.data);
+  Row& row = *index.row;
+  if (row.size() == numWays) {
+    // Evict
+    // Find which row has the lowest occupancy rate.
+    Tag min_tag;
+    unsigned min_val = std::numeric_limits<unsigned>::max();
+    for (const auto& [tag, data] : row) {
+      const unsigned val = std::count(data.begin(), data.end(), true);
+      if (val < min_val) {
+	min_tag = tag;
+	min_val = val;
+      }
+    }
+    row.erase(min_tag);
+  }
+  auto& data = row[index.tag] = std::vector<bool>(lineSize, false);
+  index.data = &data;
 }
