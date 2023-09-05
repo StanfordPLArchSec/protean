@@ -25,6 +25,8 @@ parser.add_argument('--outdir', required = True)
 parser.add_argument('--llsct', required = True)
 parser.add_argument('--jobs', '-j', type = int, default = multiprocessing.cpu_count() + 2)
 parser.add_argument('--interval', type = int, default = 10000000)
+parser.add_argument('--warmup', type = int, default = 10000)
+parser.add_argument('--mem-size', type = int, default = 1024 * 1024 * 1024) # 1 GB???
 args = parser.parse_args()
 
 # Make paths absolute
@@ -39,6 +41,12 @@ gem5_exe = f'{gem5_dir}/build/X86/gem5.fast'
 gem5_se_py = f'{gem5_dir}/configs/deprecated/example/se.py'
 simpoint_exe = f'{args.llsct}/simpoint/bin/simpoint'
 valgrind_exe = f'{args.llsct}/valgrind/install/bin/valgrind'
+checkpoint_exe = f'{args.llsct}/checkpoint/build/checkpointer'
+
+os.environ['TARGET_ISA'] = 'X86'
+
+# random arguments
+fast_checkpoints = False
 
 benchspec = load_benchspec(args.benchspec)
 
@@ -46,8 +54,6 @@ shared.jobs_sema = multiprocessing.BoundedSemaphore(args.jobs)
 
 # Create output directory if it doesn't exist
 os.makedirs(args.outdir, exist_ok = True)
-
-mem_size = 8589934592
 
 def execute_gem5_test(cmd: list, se_args: list, test_spec: dict, output_dir: str, **kwargs) -> int:
     assert len(cmd) >= 1
@@ -74,7 +80,7 @@ def run_benchmark_test_host(bench_exe: str, test_name: str, test_spec: dict, inp
     os.makedirs(output_dir, exist_ok = True)
     bench_name = os.path.basename(bench_exe)
     test_spec = perform_test_substitutions(test_spec, bench_name, test_name, input_dir, output_dir, test_suite = args.test_suite)
-    cmd = [bench_exe, *test_spec['args']]
+    cmd = test_spec['cmd']
     returncode = execute_test(cmd, test_spec, stdout = f'{output_dir}/stdout', stderr = f'{output_dir}/stderr', cmdline = f'{output_dir}/cmdline')
     if returncode != 0:
         print(f'ERROR: {bench_name}->{test_name}: host run failed', file = sys.stderr)
@@ -90,6 +96,35 @@ def run_benchmark_test_host(bench_exe: str, test_name: str, test_spec: dict, inp
     
     return 0
 
+def run_benchmark_test_kvm(bench_exe: str, test_name: str, test_spec: dict, input_dir: str, output_dir: str) -> int:
+    if check_success(output_dir):
+        return 0
+
+    os.makedirs(output_dir, exist_ok = True)
+
+    bench_name = os.path.basename(bench_exe)
+    test_spec = perform_test_substitutions(test_spec, bench_name, test_name, input_dir, output_dir, test_suite = args.test_suite)
+    cmd = test_spec['cmd']
+    se_args = [
+        '--cpu-type=X86KvmCPU',
+        f'--mem-size={args.mem_size}',
+    ]
+    returncode = execute_gem5_test(cmd, se_args, test_spec, output_dir)
+    if returncode != 0:
+        print(f'ERROR: {bench_name}->{test_name}: kvm run failed', file = sys.stderr)
+        return returncode
+
+    returncode = execute_verification(test_spec, output_dir)
+    if returncode != 0:
+        print(f'ERROR: {bench_name}->{test_name}: kvm verification failed', file = sys.stderr)
+        return returncode
+
+    mark_success(output_dir)
+    print(f'DONE: {bench_name}->{test_name}: kvm', file = sys.stderr)
+    
+    return 0
+    
+
 def run_benchmark_test_bbv(bench_exe: str, test_name: str, test_spec: dict, input_dir: str, output_dir: str) -> int:
     if check_success(output_dir):
         return 0
@@ -98,23 +133,33 @@ def run_benchmark_test_bbv(bench_exe: str, test_name: str, test_spec: dict, inpu
     bench_name = os.path.basename(bench_exe)
     test_spec = perform_test_substitutions(test_spec, bench_name, test_name, input_dir, output_dir, test_suite = args.test_suite)
 
-    cmd = [
-        valgrind_exe,
-        '--tool=exp-bbv',
-        f'--bb-out-file={output_dir}/bbv.out',
-        f'--pc-out-file={output_dir}/pc.out',
-        f'--interval-size={args.interval}',
-        f'--log-file={output_dir}/valout',
-        '--', bench_exe, *test_spec['args']
+    se_args = [
+        '--cpu-type=X86KvmCPU',
+        f'--mem-size={args.mem_size}',
+        '--simpoint-profile',
+        f'--simpoint-interval={args.interval}',
     ]
-    returncode = execute_test(cmd, test_spec, stdout = f'{output_dir}/stdout', stderr = f'{output_dir}/stderr', cmdline = f'{output_dir}/cmdline')
+
+    if False:
+        returncode = execute_gem5_test(test_spec['cmd'], se_args, test_spec, output_dir)
+    else:
+        cmd = [
+            valgrind_exe,
+            '--tool=exp-bbv',
+            f'--bb-out-file={output_dir}/bbv.out',
+            f'--pc-out-file={output_dir}/pc.out',
+            f'--interval-size={args.interval}',
+            f'--log-file={output_dir}/valout',
+            '--', *test_spec['cmd']
+        ]
+        returncode = execute_test(cmd, test_spec, stdout = f'{output_dir}/stdout', stderr = f'{output_dir}/stderr', cmdline = f'{output_dir}/cmdline')
     if returncode != 0:
-        print(f'ERROR: {bench_name}->{test_name}: valgrind run failed', file = sys.stderr)
+        print(f'ERROR: {bench_name}->{test_name}: bbv run failed', file = sys.stderr)
         return returncode
 
     returncode = execute_verification(test_spec, output_dir)
     if returncode != 0:
-        print(f'ERROR: {bench_name}->{test_name}: valgrind verification failed', file = sys.stderr)
+        print(f'ERROR: {bench_name}->{test_name}: bbv verification failed', file = sys.stderr)
         return returncode
 
     mark_success(output_dir)
@@ -160,12 +205,26 @@ def run_benchmark_test_cpt(bench_exe: str, test_name: str, test_spec: dict, inpu
     bench_name = os.path.basename(bench_exe)
     test_spec = perform_test_substitutions(test_spec, bench_name, test_name, input_dir, output_dir, test_suite = args.test_suite)
 
-    se_args = [
-        '--cpu-type=X86NonCachingSimpleCPU',
-        f'--mem-size={mem_size}',
-        f'--take-simpoint-checkpoint={output_dir}/../spt/simpoints.out,{output_dir}/../spt/weights.out,{args.interval},10000',
-    ]
-    returncode = execute_gem5_test([bench_exe, *test_spec['args']], se_args, test_spec, output_dir)
+    if fast_checkpoints:
+        fast_args = [
+            checkpoint_exe,
+            '-s', f'{output_dir}/../spt/simpoints.out',
+            '-w', f'{output_dir}/../spt/weights.out',
+            '-I', f'{args.interval}',
+            '-W', f'{args.warmup}',
+            '-O', f'{output_dir}/m5out', # just for backwards-compatibility?
+            '-z', f'{args.mem_size}',
+            '--', *test_spec['cmd']
+        ]
+        returncode = execute_test(fast_args, test_spec, stdout = f'{output_dir}/stdout', stderr = f'{output_dir}/stderr', cmdline = f'{output_dir}/cmdline')
+    else:
+        se_args = [
+            '--cpu-type=X86KvmCPU',
+            f'--mem-size={args.mem_size}',
+            f'--take-simpoint-checkpoint={output_dir}/../spt/simpoints.out,{output_dir}/../spt/weights.out,{args.interval},{args.warmup}',
+        ]
+        returncode = execute_gem5_test(test_spec['cmd'], se_args, test_spec, output_dir)
+
     if returncode != 0:
         print(f'ERROR: {bench_name}->{test_name}: checkpoint step failed', file = sys.stderr)
         return returncode
@@ -182,10 +241,15 @@ def run_benchmark_test(bench_exe: str, test_name: str, test_spec: dict, input_di
 
     bench_name = os.path.basename(bench_exe)
 
-    expand_test_spec(test_spec)
+    expand_test_spec(bench_exe, test_spec)
 
     # 1. Run+verify the test on the host.
     returncode = run_benchmark_test_host(bench_exe, test_name, test_spec, input_dir, f'{output_dir}/host')
+    if returncode != 0:
+        return returncode
+
+    # 1.5 Run+verfiry kvm output
+    returncode = run_benchmark_test_kvm(bench_exe, test_name, test_spec, input_dir, f'{output_dir}/kvm')
     if returncode != 0:
         return returncode
 
