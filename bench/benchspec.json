@@ -5,7 +5,13 @@
 	    "stdout": 1,
 	    "compare": "%R/compare/%n.out"
 	},
-	"test": {"inherit": "makerand"}
+	"test": {
+	    "cd": "%R",
+	    "stdout": 1,
+	    "exe": "../%N",
+	    "args": ["-I%R", "-I%R/lib", "%R/%n.pl"],
+	    "compare": "%R/compare/%n.out"
+	}
     },
     "502.gcc_r": {
 	"skip": 1,
@@ -76,9 +82,11 @@
     },
     "520.omnetpp_r": {
 	"general": {
+	    "cp": ["omnetpp.ini", "ned"],
 	    "args": ["-c", "General", "-r", "0"],
-	    "cd": "%R",
-	    "stdout": 1
+	    "cd": "%T",
+	    "compare": [{"ref": "%R/compare/General-0.sca", "out": "%T/General-0.sca"}],
+	    "verify_args": ["-a", "0.000001", "-r", "0.00001"]
 	}
     },
     "523.xalancbmk_r": {
@@ -96,9 +104,9 @@
 		"%S/imagevalidate_%i-target -avg -threshold 0.5 -maxthreshold 20 frame_50.yuv %R/compare/frame_50.org.tga > %T/imagevalidate_frame_50.out",
 		"%S/imagevalidate_%i-target -avg -threshold 0.5 -maxthreshold 20 frame_100.yuv %R/compare/frame_100.org.tga > %T/imagevalidate_frame_100.out",
 		"%S/imagevalidate_%i-target -avg -threshold 0.5 -maxthreshold 20 frame_155.yuv %R/compare/frame_155.org.tga > %T/imagevalidate_frame_155.out",
-		"%b/fpcmp-target -r 0.085 -i %S/run_test/compare/imagevalidate_frame_100.out %S/run_test/imagevalidate_frame_100.out",
-		"%b/fpcmp-target -r 0.085 -i %S/run_test/compare/imagevalidate_frame_155.out %S/run_test/imagevalidate_frame_155.out",
-		"%b/fpcmp-target -r 0.085 -i %S/run_test/compare/imagevalidate_frame_50.out %S/run_test/imagevalidate_frame_50.out"
+		"%b/fpcmp-target -r 0.085 -i %S/run_test/compare/imagevalidate_frame_100.out %T/imagevalidate_frame_100.out",
+		"%b/fpcmp-target -r 0.085 -i %S/run_test/compare/imagevalidate_frame_155.out %T/imagevalidate_frame_155.out",
+		"%b/fpcmp-target -r 0.085 -i %S/run_test/compare/imagevalidate_frame_50.out %T/imagevalidate_frame_50.out"
 	    ]
 	}
     },
@@ -124,7 +132,7 @@
 	"test": {
 	    "args": ["-limit", "disk", "0", "%R/test_input.tga", "-shear", "25", "-resize", "640x480", "-negate", "-alpha", "Off", "%T/test_output.tga"],
 	    "verify_commands": [
-		"%S/imagevalidate_538-target -avg -threshold 0.95 -maxthreshold 0.001 test_output.tga %R/compare/test_expected.tga > %T/test_validate.out",
+		"%S/imagevalidate_%i-target -avg -threshold 0.95 -maxthreshold 0.001 test_output.tga %R/compare/test_expected.tga > %T/test_validate.out",
 		"%b/fpcmp-target -r 0.01 -i %R/compare/test_validate.out %T/test_validate.out"
 	    ]
 	}
@@ -141,89 +149,103 @@
 	    "cp": [{"from": "%R/hkrdenq", "to": "%T/hkrdenq"}],
 	    "args": ["hkrdenq", "1930344093", "1000"],
 	    "cd": "%T",
-	    "stdout": 1
+	    "stdout": 1,
+	    "compare": "%R/compare/hkrdenq.out",
+	    "verify_args": ["-r", "0.01"]
 	}
     },
     "557.xz_r": {
 	"4-0": {
-	    "args": ["%R/cpu2006docs.tar.xz", "4",
+	    "cd": "%R",
+	    "args": ["cpu2006docs.tar.xz", "4",
 		     "055ce243071129412e9dd0b3b69a21654033a9b723d874b2015c774fac1553d9713be561ca86f74e4f16f22e664fc17a79f30caa5ad2c04fbc447549c2810fae",
 		     "1548636", "1555348", "0"],
 	    "stdout": 1,
 	    "compare": "%R/compare/cpu2006docs.tar-%n.out"
 	},
 	"4-1": {
-	    "args": ["%R/cpu2006docs.tar.xz", "4",
+	    "cd": "%R",
+	    "args": ["cpu2006docs.tar.xz", "4",
 		     "055ce243071129412e9dd0b3b69a21654033a9b723d874b2015c774fac1553d9713be561ca86f74e4f16f22e664fc17a79f30caa5ad2c04fbc447549c2810fae",
 		     "1462248", "-1", "1"],
 	    "stdout": 1,
 	    "compare": "%R/compare/cpu2006docs.tar-%n.out"
 	},
 	"4-2": {
-	    "args": ["%R/cpu2006docs.tar.xz", "4",
+	    "cd": "%R",
+	    "args": ["cpu2006docs.tar.xz", "4",
 		     "055ce243071129412e9dd0b3b69a21654033a9b723d874b2015c774fac1553d9713be561ca86f74e4f16f22e664fc17a79f30caa5ad2c04fbc447549c2810fae",
 		     "1428548", "-1", "2"],
 	    "stdout": 1,
 	    "compare": "%R/compare/cpu2006docs.tar-%n.out"
 	},
 	"4-3e": {
-	    "args": ["%R/cpu2006docs.tar.xz", "4",
+	    "cd": "%R",
+	    "args": ["cpu2006docs.tar.xz", "4",
 		     "055ce243071129412e9dd0b3b69a21654033a9b723d874b2015c774fac1553d9713be561ca86f74e4f16f22e664fc17a79f30caa5ad2c04fbc447549c2810fae",
 		     "1034828", "-1", "3e"],
 	    "stdout": 1,
 	    "compare": "%R/compare/cpu2006docs.tar-%n.out"
 	},
 	"4-4": {
-	    "args": ["%R/cpu2006docs.tar.xz", "4",
+	    "cd": "%R",
+	    "args": ["cpu2006docs.tar.xz", "4",
 		     "055ce243071129412e9dd0b3b69a21654033a9b723d874b2015c774fac1553d9713be561ca86f74e4f16f22e664fc17a79f30caa5ad2c04fbc447549c2810fae",
 		     "1061968", "-1", "4"],
 	    "stdout": 1,
 	    "compare": "%R/compare/cpu2006docs.tar-%n.out"
 	},
 	"4-4e": {
-	    "args": ["%R/cpu2006docs.tar.xz", "4",
+	    "cd": "%R",
+	    "args": ["cpu2006docs.tar.xz", "4",
 		     "055ce243071129412e9dd0b3b69a21654033a9b723d874b2015c774fac1553d9713be561ca86f74e4f16f22e664fc17a79f30caa5ad2c04fbc447549c2810fae",
 		     "1034588", "-1", "4e"],
 	    "stdout": 1,
 	    "compare": "%R/compare/cpu2006docs.tar-%n.out"
 	},
 	"1-0": {
-	    "args": ["%R/cpu2006docs.tar.xz", "1",
+	    "cd": "%R",
+	    "args": ["cpu2006docs.tar.xz", "1",
 		     "055ce243071129412e9dd0b3b69a21654033a9b723d874b2015c774fac1553d9713be561ca86f74e4f16f22e664fc17a79f30caa5ad2c04fbc447549c2810fae",
 		     "650156", "-1", "0"],
 	    "stdout": 1,
 	    "compare": "%R/compare/cpu2006docs.tar-%n.out"
 	},
 	"1-1": {
-	    "args": ["%R/cpu2006docs.tar.xz", "1",
+	    "cd": "%R",
+	    "args": ["cpu2006docs.tar.xz", "1",
 		     "055ce243071129412e9dd0b3b69a21654033a9b723d874b2015c774fac1553d9713be561ca86f74e4f16f22e664fc17a79f30caa5ad2c04fbc447549c2810fae",
 		     "639996", "-1", "1"],
 	    "stdout": 1,
 	    "compare": "%R/compare/cpu2006docs.tar-%n.out"
 	},
 	"1-2": {
-	    "args": ["%R/cpu2006docs.tar.xz", "1",
+	    "cd": "%R",
+	    "args": ["cpu2006docs.tar.xz", "1",
 		     "055ce243071129412e9dd0b3b69a21654033a9b723d874b2015c774fac1553d9713be561ca86f74e4f16f22e664fc17a79f30caa5ad2c04fbc447549c2810fae",
 		     "637616", "-1", "2"],
 	    "stdout": 1,
 	    "compare": "%R/compare/cpu2006docs.tar-%n.out"
 	},
 	"1-3e": {
-	    "args": ["%R/cpu2006docs.tar.xz", "1",
+	    "cd": "%R",	    
+	    "args": ["cpu2006docs.tar.xz", "1",
 		     "055ce243071129412e9dd0b3b69a21654033a9b723d874b2015c774fac1553d9713be561ca86f74e4f16f22e664fc17a79f30caa5ad2c04fbc447549c2810fae",
 		     "628996", "-1", "3e"],
 	    "stdout": 1,
 	    "compare": "%R/compare/cpu2006docs.tar-%n.out"
 	},
 	"1-4": {
-	    "args": ["%R/cpu2006docs.tar.xz", "1",
+	    "cd": "%R",	    
+	    "args": ["cpu2006docs.tar.xz", "1",
 		     "055ce243071129412e9dd0b3b69a21654033a9b723d874b2015c774fac1553d9713be561ca86f74e4f16f22e664fc17a79f30caa5ad2c04fbc447549c2810fae",
 		     "631912", "-1", "4"],
 	    "stdout": 1,
 	    "compare": "%R/compare/cpu2006docs.tar-%n.out"
 	},
 	"1-4e": {
-	    "args": ["%R/cpu2006docs.tar.xz", "1",
+	    "cd": "%R",	    
+	    "args": ["cpu2006docs.tar.xz", "1",
 		     "055ce243071129412e9dd0b3b69a21654033a9b723d874b2015c774fac1553d9713be561ca86f74e4f16f22e664fc17a79f30caa5ad2c04fbc447549c2810fae",
 		     "629064", "-1", "4e"],
 	    "stdout": 1,
@@ -257,7 +279,8 @@
     "996.specrand_fs": {
 	"test": {
 	    "args": ["324342", "24239"],
-	    "stdout": 1
+	    "stdout": 1,
+	    "compare": "%R/compare/rand.24239.out"
 	}
     },
     "997.specrand_fr": {"inherit": "996.specrand_fs"},
