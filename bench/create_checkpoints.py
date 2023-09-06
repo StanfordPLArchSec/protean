@@ -9,6 +9,10 @@ import signal
 import copy
 import glob
 import types
+import colorama
+
+DONE = f'{colorama.Fore.GREEN}DONE{colorama.Style.RESET_ALL}'
+ERROR = f'{colorama.Fore.RED}ERROR{colorama.Style.RESET_ALL}'
 
 import shared
 from shared import *
@@ -24,9 +28,7 @@ parser.add_argument('--test-suite', required = True)
 parser.add_argument('--outdir', required = True)
 parser.add_argument('--llsct', required = True)
 parser.add_argument('--jobs', '-j', type = int, default = multiprocessing.cpu_count() + 2)
-parser.add_argument('--interval', type = int, default = 10000000)
 parser.add_argument('--warmup', type = int, default = 10000)
-parser.add_argument('--mem-size', type = int, default = 1024 * 1024 * 1024) # 1 GB???
 args = parser.parse_args()
 
 # Make paths absolute
@@ -83,16 +85,16 @@ def run_benchmark_test_host(bench_exe: str, test_name: str, test_spec: dict, inp
     cmd = test_spec['cmd']
     returncode = execute_test(cmd, test_spec, stdout = f'{output_dir}/stdout', stderr = f'{output_dir}/stderr', cmdline = f'{output_dir}/cmdline')
     if returncode != 0:
-        print(f'ERROR: {bench_name}->{test_name}: host run failed', file = sys.stderr)
+        print(f'{ERROR}: {bench_name}->{test_name}: host run failed', file = sys.stderr)
         return returncode
 
     returncode = execute_verification(test_spec, output_dir)
     if returncode != 0:
-        print(f'ERROR: {bench_name}->{test_name}: host verification failed', file = sys.stderr)
+        print(f'{ERROR}: {bench_name}->{test_name}: host verification failed', file = sys.stderr)
         return returncode
 
     mark_success(output_dir)
-    print(f'DONE: {bench_name}->{test_name}: host', file = sys.stderr)
+    print(f'{DONE}: {bench_name}->{test_name}: host', file = sys.stderr)
     
     return 0
 
@@ -105,22 +107,24 @@ def run_benchmark_test_kvm(bench_exe: str, test_name: str, test_spec: dict, inpu
     bench_name = os.path.basename(bench_exe)
     test_spec = perform_test_substitutions(test_spec, bench_name, test_name, input_dir, output_dir, test_suite = args.test_suite)
     cmd = test_spec['cmd']
+    cpu = test_spec['cpu']
+    memsize = test_spec['memsize']
     se_args = [
-        '--cpu-type=X86KvmCPU',
-        f'--mem-size={args.mem_size}',
+        f'--cpu-type={cpu}',
+        f'--mem-size={memsize}',
     ]
     returncode = execute_gem5_test(cmd, se_args, test_spec, output_dir)
     if returncode != 0:
-        print(f'ERROR: {bench_name}->{test_name}: kvm run failed', file = sys.stderr)
+        print(f'{ERROR}: {bench_name}->{test_name}: kvm run failed', file = sys.stderr)
         return returncode
 
     returncode = execute_verification(test_spec, output_dir)
     if returncode != 0:
-        print(f'ERROR: {bench_name}->{test_name}: kvm verification failed', file = sys.stderr)
+        print(f'{ERROR}: {bench_name}->{test_name}: kvm verification failed', file = sys.stderr)
         return returncode
 
     mark_success(output_dir)
-    print(f'DONE: {bench_name}->{test_name}: kvm', file = sys.stderr)
+    print(f'{DONE}: {bench_name}->{test_name}: kvm', file = sys.stderr)
     
     return 0
     
@@ -132,17 +136,12 @@ def run_benchmark_test_bbv(bench_exe: str, test_name: str, test_spec: dict, inpu
     os.makedirs(output_dir, exist_ok = True)
     bench_name = os.path.basename(bench_exe)
     test_spec = perform_test_substitutions(test_spec, bench_name, test_name, input_dir, output_dir, test_suite = args.test_suite)
+    # cpu = test_spec['cpu']
+    cpu = test_spec['bbvcpu']
+    memsize = test_spec['memsize']
+    interval = test_spec['interval']
 
-    se_args = [
-        '--cpu-type=X86KvmCPU',
-        f'--mem-size={args.mem_size}',
-        '--simpoint-profile',
-        f'--simpoint-interval={args.interval}',
-    ]
-
-    if False:
-        returncode = execute_gem5_test(test_spec['cmd'], se_args, test_spec, output_dir)
-    else:
+    if cpu == 'valgrind':
         cmd = [
             valgrind_exe,
             '--tool=exp-bbv',
@@ -150,20 +149,33 @@ def run_benchmark_test_bbv(bench_exe: str, test_name: str, test_spec: dict, inpu
             f'--pc-out-file={output_dir}/pc.out',
             f'--interval-size={args.interval}',
             f'--log-file={output_dir}/valout',
-            '--', *test_spec['cmd']
+            '--', *test_spec['cmd'],
         ]
-        returncode = execute_test(cmd, test_spec, stdout = f'{output_dir}/stdout', stderr = f'{output_dir}/stderr', cmdline = f'{output_dir}/cmdline')
+        returncode = execute_test(cmd, test_spec, stdout = f'{output_dir}/stdout',
+                                  stderr = f'{output_dir}/stderr', cmdline = f'{output_dir}/cmdline')
+        with gzip.open(f'{output_dir}/bbv.out', 'r') as f_in, \
+             gzip.open(f'{output_dir}/m5out/simpoint.bb.gz', 'wb') as f_out:
+            shutil.copyfileobj(f_in, f_out)
+    else:
+        se_args = [
+            f'--cpu-type={cpu}',
+            f'--mem-size={memsize}',
+            '--simpoint-profile',
+            f'--simpoint-interval={interval}',
+        ]
+        returncode = execute_gem5_test(test_spec['cmd'], se_args, test_spec, output_dir)
+    
     if returncode != 0:
-        print(f'ERROR: {bench_name}->{test_name}: bbv run failed', file = sys.stderr)
+        print(f'{ERROR}: {bench_name}->{test_name}: bbv run failed', file = sys.stderr)
         return returncode
 
     returncode = execute_verification(test_spec, output_dir)
     if returncode != 0:
-        print(f'ERROR: {bench_name}->{test_name}: bbv verification failed', file = sys.stderr)
+        print(f'{ERROR}: {bench_name}->{test_name}: bbv verification failed', file = sys.stderr)
         return returncode
 
     mark_success(output_dir)
-    print(f'DONE: {bench_name}->{test_name}: bbv', file = sys.stderr)
+    print(f'{DONE}: {bench_name}->{test_name}: bbv', file = sys.stderr)
 
     return 0
 
@@ -178,21 +190,23 @@ def run_benchmark_test_spt(bench_exe: str, test_name: str, test_spec: dict, inpu
 
     cmd = [
         simpoint_exe,
-        '-loadFVFile', f'{output_dir}/../bbv/bbv.out',
+        '-loadFVFile', f'{output_dir}/../bbv/m5out/simpoint.bb.gz',
         '-maxK', '30',
         '-saveSimpoints', f'{output_dir}/simpoints.out',
-        '-saveSimpointWeights', f'{output_dir}/weights.out'
+        '-saveSimpointWeights', f'{output_dir}/weights.out',
+        '-inputVectorsGzipped',
     ]
     returncode = execute_test(cmd, test_spec, stdout = f'{output_dir}/stdout', stderr = f'{output_dir}/stderr', cmdline = f'{output_dir}/cmdline')
     if returncode != 0:
-        print(f'ERROR: {bench_name}->{test_name}: simpoint processing error', file = sys.stderr)
+        print(f'{ERROR}: {bench_name}->{test_name}: simpoint processing error', file = sys.stderr)
         return returncode
 
-    assert os.path.exists(f'{output_dir}/simpoints.out')
-    assert os.path.exists(f'{output_dir}/weights.out')
+    if not (os.path.exists(f'{output_dir}/simpoints.out') and os.path.exists(f'{output_dir}/weights.out')):
+        print(f'{ERROR}: {bench_name}->{test_name}: simpoint did not produce {output_dir}/simpoints.out or weights.out')
+        return 1
 
     mark_success(output_dir)
-    print(f'DONE: {bench_name}->{test_name}: spt', file = sys.stderr)
+    print(f'{DONE}: {bench_name}->{test_name}: spt', file = sys.stderr)
 
     return 0
 
@@ -205,32 +219,22 @@ def run_benchmark_test_cpt(bench_exe: str, test_name: str, test_spec: dict, inpu
     bench_name = os.path.basename(bench_exe)
     test_spec = perform_test_substitutions(test_spec, bench_name, test_name, input_dir, output_dir, test_suite = args.test_suite)
 
-    if fast_checkpoints:
-        fast_args = [
-            checkpoint_exe,
-            '-s', f'{output_dir}/../spt/simpoints.out',
-            '-w', f'{output_dir}/../spt/weights.out',
-            '-I', f'{args.interval}',
-            '-W', f'{args.warmup}',
-            '-O', f'{output_dir}/m5out', # just for backwards-compatibility?
-            '-z', f'{args.mem_size}',
-            '--', *test_spec['cmd']
-        ]
-        returncode = execute_test(fast_args, test_spec, stdout = f'{output_dir}/stdout', stderr = f'{output_dir}/stderr', cmdline = f'{output_dir}/cmdline')
-    else:
-        se_args = [
-            '--cpu-type=X86KvmCPU',
-            f'--mem-size={args.mem_size}',
-            f'--take-simpoint-checkpoint={output_dir}/../spt/simpoints.out,{output_dir}/../spt/weights.out,{args.interval},{args.warmup}',
-        ]
-        returncode = execute_gem5_test(test_spec['cmd'], se_args, test_spec, output_dir)
+    cpu = test_spec['cpu']
+    memsize = test_spec['memsize']
+    interval = test_spec['interval']
+    se_args = [
+        f'--cpu-type={cpu}',
+        f'--mem-size={memsize}',
+        f'--take-simpoint-checkpoint={output_dir}/../spt/simpoints.out,{output_dir}/../spt/weights.out,{interval},{args.warmup}',
+    ]
+    returncode = execute_gem5_test(test_spec['cmd'], se_args, test_spec, output_dir)
 
     if returncode != 0:
-        print(f'ERROR: {bench_name}->{test_name}: checkpoint step failed', file = sys.stderr)
+        print(f'{ERROR}: {bench_name}->{test_name}: checkpoint step failed', file = sys.stderr)
         return returncode
 
     mark_success(output_dir)
-    print(f'DONE: {bench_name}->{test_name}: cpt', file = sys.stderr)
+    print(f'{DONE}: {bench_name}->{test_name}: cpt', file = sys.stderr)
 
     return 0
 
@@ -268,7 +272,7 @@ def run_benchmark_test(bench_exe: str, test_name: str, test_spec: dict, input_di
     if returncode != 0:
         sys.exit(returncode)
 
-    print(f'DONE: {bench_name}->{test_name}', file = sys.stderr)
+    print(f'{DONE}: {bench_name}->{test_name}', file = sys.stderr)
 
     return 0
 
@@ -294,7 +298,7 @@ def run_benchmark(bench_exe: str, bench_tests: list, input_dir: str, output_dir:
             returncode = 1
 
     if returncode == 0:
-        print(f'DONE: {bench_name}', file = sys.stderr)
+        print(f'{DONE}: {bench_name}', file = sys.stderr)
     
     sys.exit(returncode)
     
@@ -304,7 +308,7 @@ def run_benchmarks(input_dir: str, output_dir: str, bench_spec: dict):
     for bench_name, bench_tests in bench_spec.items():
         bench_exe = find_executable(bench_name, args.test_suite)
         if bench_exe == None:
-            print(f'ERROR: {bench_name}: missing executable', file = sys.stderr)
+            print(f'{ERROR}: {bench_name}: missing executable', file = sys.stderr)
             continue
         bench_input_dir = os.path.dirname(bench_exe)
         bench_output_dir = f'{args.outdir}/{bench_name}'

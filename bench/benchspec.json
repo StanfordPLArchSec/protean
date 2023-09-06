@@ -6,6 +6,7 @@
 	    "compare": "%R/compare/%n.out"
 	},
 	"test": {
+	    "cpu": "X86NonCachingSimpleCPU",
 	    "cd": "%R",
 	    "stdout": 1,
 	    "exe": "../%N",
@@ -14,14 +15,17 @@
 	}
     },
     "502.gcc_r": {
-	"skip": 1,
 	"inline_limit": {
+	    "cpu": "X86NonCachingSimpleCPU",
+	    "interval": 1000000,
 	    "args": ["%R/t1.c", "-O3", "-finline-limit=50000", "-o", "%T/t1.opts-O3_-finline-limit_50000.s"],
 	    "compare": [{"ref": "%R/compare/t1.opts-O3_-finline-limit_50000.s", "out": "%T/t1.opts-O3_-finline-limit_50000.s"}]
 	}
     },
     "505.mcf_r": {
 	"inp": {
+	    "cpu": "X86NonCachingSimpleCPU",
+	    "memsize": "1GB",
 	    "args": ["%R/%n.in"],
 	    "stdout": 1,
 	    "compare": "%R/compare/%n.out"
@@ -29,6 +33,7 @@
     },
     "508.namd_r": {
 	"apoa1": {
+	    "cpu": "X86NonCachingSimpleCPU",
 	    "args": ["--input", "%R/%n.input", "--iterations", "1", "--output", "%T/%n.test.output"],
 	    "compare": [{"ref": "%R/compare/%n.test.output", "out": "%T/%n.test.output"}],
 	    "verify_args": ["-a", "0.00005"]
@@ -36,6 +41,7 @@
     },
     "510.parest_r": {
 	"test": {
+	    "cpu": "X86NonCachingSimpleCPU",
 	    "args": ["%R/%n.prm"],
 	    "cd": "%T",
 	    "compare": [
@@ -60,6 +66,7 @@
     },
     "511.povray_r": {
 	"test": {
+	    "cpu": "X86NonCachingSimpleCPU",
 	    "cp": ["SPEC-benchmark-test.pov", "arrays.inc", "chars.inc", "colors.inc", "consts.inc", "debug.inc", "finish.inc", "functions.inc", "glass.inc", "glass_old.inc", "golds.inc", "logo.inc", "math.inc", "metals.inc",
 		   "rad_def.inc", "rand.inc", "screen.inc", "shapes2.inc", "shapes.inc", "shapes_old.inc", "shapesq.inc", "skies.inc", "stage1.inc", "stars.inc", "stdcam.inc", "stdinc.inc", "stoneold.inc", "stones1.inc", "stones2.inc",
 		   "stones.inc", "strings.inc", "sunpos.inc", "textures.inc", "transforms.inc", "woodmaps.inc", "woods.inc"],
@@ -72,6 +79,7 @@
     },
     "519.lbm_r": {
 	"lbm": {
+	    "cpu": "X86NonCachingSimpleCPU",
 	    "cp": ["100_100_130_cf_a.of"],
 	    "args": ["20", "reference.dat", "0", "1", "100_100_130_cf_a.of"],
 	    "cd": "%T",
@@ -82,6 +90,7 @@
     },
     "520.omnetpp_r": {
 	"general": {
+	    "cpu": "X86NonCachingSimpleCPU",
 	    "cp": ["omnetpp.ini", "ned"],
 	    "args": ["-c", "General", "-r", "0"],
 	    "cd": "%T",
@@ -91,12 +100,14 @@
     },
     "523.xalancbmk_r": {
 	"test": {
+	    "cpu": "X86NonCachingSimpleCPU",
 	    "args": ["-v", "%R/test.xml", "%R/xalanc.xsl"],
 	    "stdout": 1,
 	    "compare": "%R/compare/test-%n.out"
 	}
     },
     "525.x264_r": {
+	"skip": 1,
 	"buckbunny": {
 	    "args": ["--dumpyuv", "50", "--frames", "156", "-o", "BuckBunny_New.264", "%R/BuckBunny.yuv", "1280x720"],
 	    "cd": "%T",
@@ -123,6 +134,8 @@
     },
     "531.deepsjeng_r": {
 	"test": {
+	    "cpu": "X86NonCachingSimpleCPU",
+	    "memsize": "8GB",
 	    "args": ["%R/test.txt"],
 	    "stdout": 1,
 	    "compare": "%R/compare/test.out"
@@ -130,6 +143,7 @@
     },
     "538.imagick_r": {
 	"test": {
+	    "cpu": "X86NonCachingSimpleCPU",
 	    "args": ["-limit", "disk", "0", "%R/test_input.tga", "-shear", "25", "-resize", "640x480", "-negate", "-alpha", "Off", "%T/test_output.tga"],
 	    "verify_commands": [
 		"%S/imagevalidate_%i-target -avg -threshold 0.95 -maxthreshold 0.001 test_output.tga %R/compare/test_expected.tga > %T/test_validate.out",
@@ -156,6 +170,8 @@
     },
     "557.xz_r": {
 	"4-0": {
+	    "cpu": "X86NonCachingSimpleCPU",
+	    "memsize": "1GB",
 	    "cd": "%R",
 	    "args": ["cpu2006docs.tar.xz", "4",
 		     "055ce243071129412e9dd0b3b69a21654033a9b723d874b2015c774fac1553d9713be561ca86f74e4f16f22e664fc17a79f30caa5ad2c04fbc447549c2810fae",
@@ -164,6 +180,8 @@
 	    "compare": "%R/compare/cpu2006docs.tar-%n.out"
 	},
 	"4-1": {
+	    "cpu": "X86NonCachingSimpleCPU",
+	    "memsize": "1GB",
 	    "cd": "%R",
 	    "args": ["cpu2006docs.tar.xz", "4",
 		     "055ce243071129412e9dd0b3b69a21654033a9b723d874b2015c774fac1553d9713be561ca86f74e4f16f22e664fc17a79f30caa5ad2c04fbc447549c2810fae",
@@ -172,6 +190,8 @@
 	    "compare": "%R/compare/cpu2006docs.tar-%n.out"
 	},
 	"4-2": {
+	    "cpu": "X86NonCachingSimpleCPU",
+	    "memsize": "1GB",
 	    "cd": "%R",
 	    "args": ["cpu2006docs.tar.xz", "4",
 		     "055ce243071129412e9dd0b3b69a21654033a9b723d874b2015c774fac1553d9713be561ca86f74e4f16f22e664fc17a79f30caa5ad2c04fbc447549c2810fae",
@@ -180,6 +200,8 @@
 	    "compare": "%R/compare/cpu2006docs.tar-%n.out"
 	},
 	"4-3e": {
+	    "cpu": "X86NonCachingSimpleCPU",
+	    "memsize": "1GB",
 	    "cd": "%R",
 	    "args": ["cpu2006docs.tar.xz", "4",
 		     "055ce243071129412e9dd0b3b69a21654033a9b723d874b2015c774fac1553d9713be561ca86f74e4f16f22e664fc17a79f30caa5ad2c04fbc447549c2810fae",
@@ -188,6 +210,8 @@
 	    "compare": "%R/compare/cpu2006docs.tar-%n.out"
 	},
 	"4-4": {
+	    "cpu": "X86NonCachingSimpleCPU",
+	    "memsize": "1GB",
 	    "cd": "%R",
 	    "args": ["cpu2006docs.tar.xz", "4",
 		     "055ce243071129412e9dd0b3b69a21654033a9b723d874b2015c774fac1553d9713be561ca86f74e4f16f22e664fc17a79f30caa5ad2c04fbc447549c2810fae",
@@ -196,6 +220,8 @@
 	    "compare": "%R/compare/cpu2006docs.tar-%n.out"
 	},
 	"4-4e": {
+	    "cpu": "X86NonCachingSimpleCPU",
+	    "memsize": "1GB",
 	    "cd": "%R",
 	    "args": ["cpu2006docs.tar.xz", "4",
 		     "055ce243071129412e9dd0b3b69a21654033a9b723d874b2015c774fac1553d9713be561ca86f74e4f16f22e664fc17a79f30caa5ad2c04fbc447549c2810fae",
@@ -204,6 +230,8 @@
 	    "compare": "%R/compare/cpu2006docs.tar-%n.out"
 	},
 	"1-0": {
+	    "cpu": "X86NonCachingSimpleCPU",
+	    "memsize": "1GB",
 	    "cd": "%R",
 	    "args": ["cpu2006docs.tar.xz", "1",
 		     "055ce243071129412e9dd0b3b69a21654033a9b723d874b2015c774fac1553d9713be561ca86f74e4f16f22e664fc17a79f30caa5ad2c04fbc447549c2810fae",
@@ -212,6 +240,8 @@
 	    "compare": "%R/compare/cpu2006docs.tar-%n.out"
 	},
 	"1-1": {
+	    "cpu": "X86NonCachingSimpleCPU",
+	    "memsize": "1GB",
 	    "cd": "%R",
 	    "args": ["cpu2006docs.tar.xz", "1",
 		     "055ce243071129412e9dd0b3b69a21654033a9b723d874b2015c774fac1553d9713be561ca86f74e4f16f22e664fc17a79f30caa5ad2c04fbc447549c2810fae",
@@ -220,6 +250,8 @@
 	    "compare": "%R/compare/cpu2006docs.tar-%n.out"
 	},
 	"1-2": {
+	    "cpu": "X86NonCachingSimpleCPU",
+	    "memsize": "1GB",
 	    "cd": "%R",
 	    "args": ["cpu2006docs.tar.xz", "1",
 		     "055ce243071129412e9dd0b3b69a21654033a9b723d874b2015c774fac1553d9713be561ca86f74e4f16f22e664fc17a79f30caa5ad2c04fbc447549c2810fae",
@@ -228,6 +260,8 @@
 	    "compare": "%R/compare/cpu2006docs.tar-%n.out"
 	},
 	"1-3e": {
+	    "cpu": "X86NonCachingSimpleCPU",
+	    "memsize": "1GB",
 	    "cd": "%R",	    
 	    "args": ["cpu2006docs.tar.xz", "1",
 		     "055ce243071129412e9dd0b3b69a21654033a9b723d874b2015c774fac1553d9713be561ca86f74e4f16f22e664fc17a79f30caa5ad2c04fbc447549c2810fae",
@@ -236,6 +270,8 @@
 	    "compare": "%R/compare/cpu2006docs.tar-%n.out"
 	},
 	"1-4": {
+	    "cpu": "X86NonCachingSimpleCPU",
+	    "memsize": "1GB",
 	    "cd": "%R",	    
 	    "args": ["cpu2006docs.tar.xz", "1",
 		     "055ce243071129412e9dd0b3b69a21654033a9b723d874b2015c774fac1553d9713be561ca86f74e4f16f22e664fc17a79f30caa5ad2c04fbc447549c2810fae",
@@ -244,6 +280,8 @@
 	    "compare": "%R/compare/cpu2006docs.tar-%n.out"
 	},
 	"1-4e": {
+	    "cpu": "X86NonCachingSimpleCPU",
+	    "memsize": "1GB",
 	    "cd": "%R",	    
 	    "args": ["cpu2006docs.tar.xz", "1",
 		     "055ce243071129412e9dd0b3b69a21654033a9b723d874b2015c774fac1553d9713be561ca86f74e4f16f22e664fc17a79f30caa5ad2c04fbc447549c2810fae",
@@ -254,12 +292,13 @@
     },
     "600.perlbench_s": {"inherit": "500.perlbench_r"},
     "602.gcc_s": {
-	"inherit": "502.gcc_r",
-	"skip": 1
+	"inherit": "502.gcc_r"
     },
     "605.mcf_s": {"inherit": "505.mcf_r"},
     "619.lbm_s": {
 	"lbm": {
+	    "cpu": "X86NonCachingSimpleCPU",
+	    "memsize": "4GB",
 	    "cp": ["200_200_260_ldc.of"],
 	    "args": ["20", "reference.dat", "0", "1", "200_200_260_ldc.of"],
 	    "cd": "%T",
@@ -277,6 +316,7 @@
     "644.nab_s": {"inherit": "544.nab_r"},
     "657.xz_s": {"inherit": "557.xz_r"},
     "996.specrand_fs": {
+	"skip": 1,
 	"test": {
 	    "args": ["324342", "24239"],
 	    "stdout": 1,

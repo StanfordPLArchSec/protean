@@ -3,6 +3,7 @@ import os
 import sys
 import signal
 import multiprocessing
+import gzip
 
 import shared
 from shared import *
@@ -12,8 +13,11 @@ parser.add_argument('--outdir', required = True)
 parser.add_argument('--cptdir', required = True)
 parser.add_argument('--bindir', required = True)
 parser.add_argument('--benchspec', required = True)
-parser.add_argument('--llsct', required = True)
 parser.add_argument('--jobs', '-j', type = int, default = multiprocessing.cpu_count() + 2)
+parser.add_argument('--gem5', type = str, required = True)
+parser.add_argument('--se', type = str, required = True)
+parser.add_argument('--gem5-opt', action = "append", type = str, default = [])
+parser.add_argument('extra_se_options', nargs = '*')
 
 args = parser.parse_args()
 
@@ -21,18 +25,17 @@ args.outdir = os.path.abspath(args.outdir)
 args.cptdir = os.path.abspath(args.cptdir)
 args.bindir = os.path.abspath(args.bindir)
 args.benchspec = os.path.abspath(args.benchspec)
-args.llsct = os.path.abspath(args.llsct)
+args.gem5 = os.path.abspath(args.gem5)
+args.se = os.path.abspath(args.se)
 
 signal.signal(signal.SIGINT, lambda x, y: sys.exit(1))
 
 
-gem5_dir = f'{args.llsct}/gem5'
-gem5_exe = f'{gem5_dir}/build/X86/gem5.fast'
-gem5_se_py = f'{gem5_dir}/configs/deprecated/example/se.py'
+gem5_exe = args.gem5
+gem5_se_py = args.se
 
 benchspec = load_benchspec(args.benchspec)
 shared.jobs_sema = multiprocessing.BoundedSemaphore(args.jobs)
-mem_size = 8589934592
 
 def execute_gem5_test(cmd: list, se_args: list, test_spec: dict, output_dir: str, **kwargs) -> int:
     assert len(cmd) >= 1
@@ -41,15 +44,18 @@ def execute_gem5_test(cmd: list, se_args: list, test_spec: dict, output_dir: str
     gem5_cmd = [
         gem5_exe,
         f'--outdir={output_dir}/m5out',
+        f'--debug-file={output_dir}/dbgout.gz',
+        *args.gem5_opt,
         gem5_se_py,
         f'--output={output_dir}/stdout',
         f'--errout={output_dir}/stderr',
         f'--cmd={exe}',
         f'--options={argstr}',
-        *se_args
+        *se_args,
     ]
-    return execute_test(gem5_cmd, test_spec, stdout = f'{output_dir}/simout', stderr = f'{output_dir}/simerr', cmdline = f'{output_dir}/cmdline', **kwargs)
-
+    return execute_test(gem5_cmd, test_spec, stdout = f'{output_dir}/simout',
+                        stderr = f'{output_dir}/simerr', cmdline = f'{output_dir}/cmdline',
+                        **kwargs)
 
 def run_benchmark_test_checkpoint(bench_exe: str, test_name: str, test_spec: dict, bindir: str, cptdir: str, outdir: str) -> int:
     if check_success(outdir):
@@ -61,6 +67,7 @@ def run_benchmark_test_checkpoint(bench_exe: str, test_name: str, test_spec: dic
 
     checkpoint_args = parse_checkpoint_args(outdir)
     checkpoint_id = int(checkpoint_args.simpoint)
+    mem_size = test_spec['memsize']
 
     se_args = [
         '--cpu-type=X86O3CPU',
@@ -71,8 +78,9 @@ def run_benchmark_test_checkpoint(bench_exe: str, test_name: str, test_spec: dic
         f'--checkpoint-dir={cptdir}/m5out',
         '--restore-simpoint-checkpoint',
         f'--checkpoint-restore={checkpoint_id+1}',
+        *args.extra_se_options,
     ]
-    returncode = execute_gem5_test([bench_exe, *test_spec['args']], se_args, test_spec, outdir)
+    returncode = execute_gem5_test(test_spec['cmd'], se_args, test_spec, outdir)
     if returncode != 0:
         print(f'ERROR: {bench_name}->{test_name}->{checkpoint_id}: failed')
         return returncode
@@ -106,7 +114,7 @@ def run_benchmark_test(bench_exe: str, test_name: str, test_spec: dict, bindir: 
         return 0
 
     bench_name = os.path.basename(bench_exe)
-    expand_test_spec(test_spec)
+    expand_test_spec(bench_exe, test_spec)
 
     jobs = []
     for checkpoint_dir in glob.glob(f'{cptdir}/m5out/cpt.*'):
