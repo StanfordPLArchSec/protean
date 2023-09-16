@@ -12,3 +12,9 @@ add_pin_tool(FrameForwarding FrameForwarding.cpp)
 add_pin_tool(Declassify Declassify.cpp Declassify.h)
 
 add_executable(process-declassify process-declassify.cc)
+
+add_pin_tool(InstructionCount InstructionCount.cpp)
+
+add_pin_tool(Checkpointer Checkpointer.cpp MiscRegs.h)
+
+add_pin_tool(Test Test.cpp)
