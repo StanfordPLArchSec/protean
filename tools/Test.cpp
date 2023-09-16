@@ -8,9 +8,11 @@
 #include <sys/utsname.h>
 #include <sys/sysinfo.h>
 #include <sys/mman.h>
+#include <set>
 
 namespace gem5 {
   constexpr ADDRINT mmap_end = 0x6ffff7ff0000ULL;
+  constexpr ADDRINT vsyscall_page = 0xffffffffff600000ULL;
 }
 
 static ADDRINT entrypoint = 0;
@@ -21,6 +23,9 @@ static bool use_host;
 static unsigned long memsize = 512 * 1024 * 1024;
 static int verbose = 0;
 static FILE *syscall_file;
+static ADDRINT vsyscall_base;
+static ADDRINT vsyscall_size;
+static std::map<ADDRINT, std::string> asmtab;
 
 
 static void PIN_SafeCopyCheck(void *dst, const void *src, size_t size) {
@@ -42,6 +47,13 @@ static std::string ReadString(ADDRINT app_addr) {
   return s;
 }
 
+void SafeMemset(void *dst_, int value, size_t size) {
+  char *dst = (char *) dst_;
+  for (size_t i = 0; i < size; ++i) {
+    char c = value;
+    PIN_SafeCopyCheck(dst + i, &c, 1);
+  }
+}
 
 
 static void PushStack(uint64_t& sp, const void *data, size_t size) {
@@ -96,12 +108,7 @@ static void InitializeStack(ADDRINT *rsp_ptr) {
   fprintf(stderr, "stack end=%lx\n", stack_end);
 
   // Get some information before we modify the stack
-#if 0
-  const ADDRINT at_phnum = ForceGetAuxv(AT_PHNUM);
-  const ADDRINT at_phent = ForceGetAuxv(AT_PHNUM);
-  const ADDRINT at_phdr = ForceGetAuxv(AT_PHDR);
-#endif
-  const ADDRINT at_sysinfo_ehdr = ForceGetAuxv(AT_SYSINFO_EHDR);
+  [[maybe_unused]] const ADDRINT at_sysinfo_ehdr = ForceGetAuxv(AT_SYSINFO_EHDR);
   
   // Now, copy in data
   uint64_t sp = stack_end;
@@ -159,8 +166,12 @@ static void InitializeStack(ADDRINT *rsp_ptr) {
   PushStackAuxv(sp, AT_CLKTCK, 100);
   PushStackAuxv(sp, AT_PAGESZ, 0x1000);
   PushStackAuxv(sp, AT_HWCAP, 0x78bfbff);
-  PushStackAuxv(sp, AT_SYSINFO_EHDR, at_sysinfo_ehdr);
+  PushStackAuxv(sp, AT_SYSINFO_EHDR, gem5::vsyscall_page);
   fprintf(stderr, "auxv %p\n", (void *) sp);
+
+  // vsyscall stuff
+  vsyscall_base = gem5::vsyscall_page;
+  vsyscall_size = 0x1000;
 
   // envp array
   PushStackZero(sp, 8);
@@ -374,6 +385,8 @@ bool MmapSyscall(Args args, ADDRINT& ret) {
 }
 
 bool MremapSyscall(Args args, ADDRINT& ret) {
+  if (use_host)
+    return false;
   fprintf(syscall_file, "info: mremap: %p %zu %zu %d %p\n",
 	  (void *) args(0), args(1), args(2), (int) args(3), (void *) args(4));
   fprintf(stderr, "fatal: no support for mremap yet\n");
@@ -470,6 +483,7 @@ static void HandleSyscallEntry(THREADID threadIndex, CONTEXT *ctx, SYSCALL_STAND
     {SYS_write, HostSyscall},
     {SYS_munmap, HostSyscall},
     {SYS_mremap, MremapSyscall},
+    {SYS_gettimeofday, HostSyscall},
   };
 
   const auto it = handlers.find(nr);
@@ -546,6 +560,55 @@ static void InstrumentInstruction_CPUID(INS ins, void *) {
   }
 }
 
+static void HandleVsyscallRead(void *inst, void *addr, CONTEXT *ctx, ADDRINT inst_size) {
+  if ((ADDRINT) addr >= vsyscall_base && (ADDRINT) addr < vsyscall_base + vsyscall_size) {
+    const std::string& disasm = asmtab.at((ADDRINT) inst);
+    fprintf(stderr, "vsyscall read: pc %p addr %p asm \"%s\"\n", inst, addr, disasm.c_str());
+    if (disasm == "mov rax, qword ptr [rdi+0x20]") {
+      PIN_SetContextReg(ctx, REG_RAX, 0);
+    } else if (disasm == "movzx r8d, word ptr [rdi+0x38]") {
+      PIN_SetContextReg(ctx, REG_R8, 0);
+    } else if (disasm == "mov rax, qword ptr [rdx]") {
+      PIN_SetContextReg(ctx, REG_RAX, 0);
+    } else {
+      fprintf(stderr, "fatal: unhandled vsyscall access\n");
+      exit(1);
+    }
+    PIN_SetContextReg(ctx, REG_RIP, PIN_GetContextReg(ctx, REG_RIP) + inst_size);
+    PIN_ExecuteAt(ctx);
+  }
+
+}
+
+static void HandleVsyscallWrite(void *inst, void *addr) {
+  if ((ADDRINT) addr >= vsyscall_base && (ADDRINT) addr < vsyscall_base + vsyscall_size) {
+    fprintf(stderr, "vsyscall write: pc %p addr %p\n", inst, addr);
+    fprintf(stderr, "fatal: vsyscall write\n");
+    exit(1);
+  }
+}
+
+static void InstrumentInstruction_Vsyscall(INS ins, void *) {
+  RTN rtn = INS_Rtn(ins);
+  static const std::set<std::string> whitelist = {
+    "_dl_non_dynamic_init",
+  };
+  if (whitelist.find(RTN_Name(rtn)) == whitelist.end())
+    return;
+
+  for (uint32_t i = 0; i < INS_MemoryOperandCount(ins); ++i) {
+    if (INS_MemoryOperandIsRead(ins, i)) {
+      INS_InsertPredicatedCall(ins, IPOINT_BEFORE, (AFUNPTR) HandleVsyscallRead,
+			       IARG_INST_PTR, IARG_MEMORYOP_EA, i, IARG_CONTEXT, IARG_ADDRINT, INS_Size(ins), IARG_END);
+      asmtab[INS_Address(ins)] = INS_Disassemble(ins);
+    }
+    if (INS_MemoryOperandIsWritten(ins, i)) {
+      INS_InsertPredicatedCall(ins, IPOINT_BEFORE, (AFUNPTR) HandleVsyscallWrite,
+			       IARG_INST_PTR, IARG_MEMORYOP_EA, i, IARG_END);
+    }
+  }
+}
+
 static void InstrumentImage(IMG img, void *v) {
   if (IMG_IsMainExecutable(img)) {
     entrypoint = IMG_EntryAddress(img);
@@ -571,6 +634,7 @@ static KNOB<std::string> KnobSyscallLog(KNOB_MODE_WRITEONCE, "pintool", "s", "",
 static KNOB<int> KnobVerbose(KNOB_MODE_WRITEONCE, "pintool", "v", "", "verbose mode");
 
 int main(int argc, char *argv[]) {
+  PIN_InitSymbols();
   if (PIN_Init(argc, argv))
     return 1;
 
@@ -613,6 +677,8 @@ int main(int argc, char *argv[]) {
 #if 0
   INS_AddInstrumentFunction(InstrumentInstruction_Syscall, 0);
 #endif
+
+  INS_AddInstrumentFunction(InstrumentInstruction_Vsyscall, 0);
 
   use_host = (KnobHost.Value() != 0);
   verbose = KnobVerbose.Value();
