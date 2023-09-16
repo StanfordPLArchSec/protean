@@ -9,6 +9,11 @@
 #include <sys/sysinfo.h>
 #include <sys/mman.h>
 #include <set>
+#include <sys/time.h>
+#include <sys/resource.h>
+#include <sys/stat.h>
+
+#include "Vsyscall.h"
 
 namespace gem5 {
   constexpr ADDRINT mmap_end = 0x6ffff7ff0000ULL;
@@ -26,6 +31,7 @@ static FILE *syscall_file;
 static ADDRINT vsyscall_base;
 static ADDRINT vsyscall_size;
 static std::map<ADDRINT, std::string> asmtab;
+static VsyscallPage vsyscall;
 
 
 static void PIN_SafeCopyCheck(void *dst, const void *src, size_t size) {
@@ -417,29 +423,93 @@ static bool ReadLinkSyscall(Args args, ADDRINT& ret) {
 
 static bool OpenAtSyscall(Args args, ADDRINT& ret) {
   const std::string path = ReadString(args(1));
-  fprintf(stderr, "info: openat: %d %s %d %d\n",
+  fprintf(syscall_file, "info: openat: %d %s %d %d\n",
 	  (int) args(0), path.c_str(), (int) args(2), (int) args(3));
-  fprintf(stderr, "warn: using host implementation of openat, not gem5 emulation for now\n");
+  fprintf(syscall_file, "warn: using host implementation of openat, not gem5 emulation for now\n");
   return false;
 }
 
 static bool ReadSyscall(Args args, ADDRINT& ret) {
-  fprintf(stderr, "info: read: %d %p %zu\n",
+  fprintf(syscall_file, "info: read: %d %p %zu\n",
 	  (int) args(0), (void *) args(1), args(2));
-  fprintf(stderr, "warn: using host implementation of read, not gem5 emulation for now\n");
+  fprintf(syscall_file, "warn: using host implementation of read, not gem5 emulation for now\n");
   return false;
 }
 
+static const char *getcwd_buf;
 static bool GetCWDSyscall(Args args, ADDRINT& ret) {
-  fprintf(stderr, "info: getcwd: %p %zu\n",
+  fprintf(syscall_file, "info: getcwd: %p %zu\n",
 	  (void *) args(0), args(1));
-  fprintf(stderr, "warn: using host implementation for getcwd, not gem5 emulation for now\n");
+  fprintf(syscall_file, "warn: using host implementation for getcwd, not gem5 emulation for now\n");
+  getcwd_buf = (char *) args(0);
   return false;
 }
 
 static bool BrkSyscall(Args args, ADDRINT& ret) {
   fprintf(syscall_file, "info: brk: %p\n", (void *) args(0));
-  fprintf(stderr, "warn: using host implementation for brk\n");
+  fprintf(syscall_file, "warn: using host implementation for brk\n");
+  return false;
+}
+
+static bool Prlimit64Syscall(Args args, ADDRINT& ret) {
+  fprintf(syscall_file, "info: prlimit64: %d %d %p %p\n",
+	  (int) args(0), (int) args(1), (void *) args(2), (void *) args(3));
+  const int resource = args(1);
+  const struct rlimit *new_limit_ptr = (const struct rlimit *) args(2);
+  struct rlimit *old_limit_ptr = (struct rlimit *) args(3);
+  if (new_limit_ptr != nullptr)
+    fprintf(syscall_file, "warn: prlimit64: ignoring new rlimit\n");
+
+  struct rlimit old_limit;
+  PIN_SafeCopyCheck(&old_limit, old_limit_ptr, sizeof old_limit);
+  
+  switch (resource) {
+  case RLIMIT_STACK:
+    old_limit.rlim_cur = old_limit.rlim_max = 8 * 1024 * 1024;
+    break;
+  case RLIMIT_DATA:
+    old_limit.rlim_cur = old_limit.rlim_max = 256 * 1024 * 1024;
+    break;
+  default:
+    fprintf(syscall_file, "warn: prlimit64: unimplemented resource %d\n", resource);
+    ret = -EINVAL;
+    return true;
+  }
+
+  PIN_SafeCopyCheck(old_limit_ptr, &old_limit, sizeof old_limit);
+
+  ret = 0;
+  return true;
+}
+
+static struct stat *newfstatat_buf;
+static bool NewfstatatSyscall(Args args, ADDRINT& ret) {
+  const std::string path = ReadString(args(1));
+  fprintf(syscall_file, "info: newfstatat: %d \"%s\" %p %d\n",
+	  (int) args(0), path.c_str(), (void *) args(2), (int) args(3));
+
+  if (const char *stat_path = getenv("STAT")) {
+    FILE *f = fopen(stat_path, "a");
+    struct stat st;
+    fprintf(f, "stat: %s\n", path.c_str());
+    if (syscall(SYS_newfstatat, (int) args(0), path.c_str(), &st, (int) args(3)) == 0) {
+      fprintf(f, "dev %lu\n", st.st_dev);
+      fprintf(f, "ino %lu\n", st.st_ino);
+      fprintf(f, "mode %d\n", st.st_mode);
+      fprintf(f, "nlink %ld\n", st.st_nlink);
+      fprintf(f, "uid %d\n", st.st_uid);
+      fprintf(f, "gid %d\n", st.st_gid);
+      fprintf(f, "rdev %ld\n", st.st_rdev);
+      fprintf(f, "size %zu\n", st.st_size);
+      fprintf(f, "blksize %zu\n", st.st_blksize);
+      fprintf(f, "blocks %zu\n", st.st_blocks);
+    }
+    fprintf(f, "\n");
+    fclose(f);
+  }
+
+  newfstatat_buf = (struct stat *) args(2);
+  
   return false;
 }
 
@@ -469,13 +539,13 @@ static void HandleSyscallEntry(THREADID threadIndex, CONTEXT *ctx, SYSCALL_STAND
     {SYS_set_robust_list, HostSyscall},
     {334, HostSyscall}, // rseq
     {SYS_uname, UnameSyscall},
-    {SYS_prlimit64, HostSyscall},
+    {SYS_prlimit64, Prlimit64Syscall},
     {318, GetRandomSyscall}, // getrandom
     {10, HostSyscall},
     {SYS_mmap, MmapSyscall},
     {SYS_sysinfo, SysInfoSyscall},
     {SYS_readlink, ReadLinkSyscall},
-    {SYS_newfstatat, HostSyscall},
+    {SYS_newfstatat, NewfstatatSyscall},
     {SYS_openat, OpenAtSyscall},
     {SYS_read, ReadSyscall},
     {SYS_getcwd, GetCWDSyscall},
@@ -506,6 +576,18 @@ static void HandleSyscallExit(THREADID threadIndex, CONTEXT *ctx, SYSCALL_STANDA
     sysemu = true;
     sysemu_return = 100;
   }
+
+  if (syscall_nr == SYS_newfstatat) {
+    // fix up the block size I guess
+    decltype(newfstatat_buf->st_blksize) blksize = 0x2000; // to match gem5's block size
+    PIN_SafeCopyCheck(&newfstatat_buf->st_blksize, &blksize, sizeof blksize);
+  }
+
+  if (syscall_nr == SYS_getcwd) {
+    const auto path = ReadString((ADDRINT) getcwd_buf);
+    fprintf(syscall_file, "getcwd: returned \"%s\"\n", path.c_str());
+  }
+  
   if (sysemu) {
     PIN_SetContextReg(ctx, REG_RAX, sysemu_return);
   }
@@ -561,15 +643,19 @@ static void InstrumentInstruction_CPUID(INS ins, void *) {
 }
 
 static void HandleVsyscallRead(void *inst, void *addr, CONTEXT *ctx, ADDRINT inst_size) {
-  if ((ADDRINT) addr >= vsyscall_base && (ADDRINT) addr < vsyscall_base + vsyscall_size) {
+  if (vsyscall.contains((ADDRINT) addr)) {
+    uint8_t *ptr = vsyscall.getPointer((ADDRINT) addr);
+    
     const std::string& disasm = asmtab.at((ADDRINT) inst);
     fprintf(stderr, "vsyscall read: pc %p addr %p asm \"%s\"\n", inst, addr, disasm.c_str());
-    if (disasm == "mov rax, qword ptr [rdi+0x20]") {
-      PIN_SetContextReg(ctx, REG_RAX, 0);
+    if (disasm == "mov rax, qword ptr [rdi+0x20]" ||
+	disasm == "mov rax, qword ptr [rdx+0x10]" ||
+	disasm == "mov rax, qword ptr [rdx]"
+	) {
+      PIN_SetContextRegval(ctx, REG_RAX, ptr);
     } else if (disasm == "movzx r8d, word ptr [rdi+0x38]") {
-      PIN_SetContextReg(ctx, REG_R8, 0);
-    } else if (disasm == "mov rax, qword ptr [rdx]") {
-      PIN_SetContextReg(ctx, REG_RAX, 0);
+      uint32_t data = * (uint16_t *) ptr;
+      PIN_SetContextRegval(ctx, REG_R8D, (const uint8_t *) &data);
     } else {
       fprintf(stderr, "fatal: unhandled vsyscall access\n");
       exit(1);
@@ -613,6 +699,23 @@ static void InstrumentImage(IMG img, void *v) {
   if (IMG_IsMainExecutable(img)) {
     entrypoint = IMG_EntryAddress(img);
     exe_base = (void *) IMG_LowAddress(img);
+  }
+}
+
+static void DebugEnter() {
+  fprintf(stderr, "_IO_file_doallocate enter\n");
+}
+
+static void DebugExit() {
+  fprintf(stderr, "_IO_file_doallocate exit\n");
+}
+
+static void InstrumentRoutine_Debug(RTN rtn, void *) {
+  if (RTN_Name(rtn) == "_IO_file_doallocate") {
+    RTN_Open(rtn);
+    RTN_InsertCall(rtn, IPOINT_BEFORE, (AFUNPTR) DebugEnter, IARG_END);
+    RTN_InsertCall(rtn, IPOINT_AFTER, (AFUNPTR) DebugExit, IARG_END);
+    RTN_Close(rtn);
   }
 }
 
@@ -679,6 +782,8 @@ int main(int argc, char *argv[]) {
 #endif
 
   INS_AddInstrumentFunction(InstrumentInstruction_Vsyscall, 0);
+
+  RTN_AddInstrumentFunction(InstrumentRoutine_Debug, 0);
 
   use_host = (KnobHost.Value() != 0);
   verbose = KnobVerbose.Value();
