@@ -7,6 +7,11 @@
 #include <asm/unistd_64.h>
 #include <sys/utsname.h>
 #include <sys/sysinfo.h>
+#include <sys/mman.h>
+
+namespace gem5 {
+  constexpr ADDRINT mmap_end = 0x6ffff7ff0000ULL;
+}
 
 static ADDRINT entrypoint = 0;
 static std::string filename;
@@ -14,6 +19,9 @@ static std::vector<std::string> args;
 static void *exe_base;
 static bool use_host;
 static unsigned long memsize = 512 * 1024 * 1024;
+static int verbose = 0;
+static FILE *syscall_file;
+
 
 static void PIN_SafeCopyCheck(void *dst, const void *src, size_t size) {
   if (PIN_SafeCopy(dst, src, size) != size) {
@@ -292,8 +300,17 @@ using syscall_handler_t = bool (Args args, ADDRINT&);
 class Args {
 public:
   Args(CONTEXT *ctx, SYSCALL_STANDARD std): ctx(ctx), std(std) {}
+  ADDRINT get(unsigned i) const {
+    return PIN_GetSyscallArgument(ctx, std, i);    
+  }
   ADDRINT operator()(unsigned i) const {
-    return PIN_GetSyscallArgument(ctx, std, i);
+    return get(i);
+  }
+  void set(unsigned i, ADDRINT value) {
+    PIN_SetSyscallArgument(ctx, std, i, value);
+  }
+  void operator()(unsigned i, ADDRINT value) {
+    set(i, value);
   }
 private:
   CONTEXT *ctx;
@@ -340,8 +357,28 @@ static bool GetRandomSyscall(Args args, ADDRINT& ret) {
   return true;
 }
 
-static bool MmapSyscall(Args, ADDRINT&) {
+static ADDRINT mmap_begin = gem5::mmap_end;
+bool MmapSyscall(Args args, ADDRINT& ret) {
+  fprintf(syscall_file, "info: mmap: %p %zu %d %d %d %zd\n",
+	  (void *) args(0), args(1), (int) args(2), (int) args(3), (int) args(4), args(5));
+  if (args(0) == 0) {
+    const size_t length = args(1);
+    mmap_begin -= length;
+    args(0, mmap_begin);
+    args(3, args(3) | MAP_FIXED);
+    return false;
+  }
+  
   fprintf(stderr, "stub: mmap: using host version, which diverges from gem5\n");
+  return false;
+}
+
+bool MremapSyscall(Args args, ADDRINT& ret) {
+  fprintf(syscall_file, "info: mremap: %p %zu %zu %d %p\n",
+	  (void *) args(0), args(1), args(2), (int) args(3), (void *) args(4));
+  fprintf(stderr, "fatal: no support for mremap yet\n");
+  exit(1);
+
   return false;
 }
 
@@ -365,7 +402,35 @@ static bool ReadLinkSyscall(Args args, ADDRINT& ret) {
   return false;
 }
 
-static bool HostSyscall(Args, ADDRINT&) {
+static bool OpenAtSyscall(Args args, ADDRINT& ret) {
+  const std::string path = ReadString(args(1));
+  fprintf(stderr, "info: openat: %d %s %d %d\n",
+	  (int) args(0), path.c_str(), (int) args(2), (int) args(3));
+  fprintf(stderr, "warn: using host implementation of openat, not gem5 emulation for now\n");
+  return false;
+}
+
+static bool ReadSyscall(Args args, ADDRINT& ret) {
+  fprintf(stderr, "info: read: %d %p %zu\n",
+	  (int) args(0), (void *) args(1), args(2));
+  fprintf(stderr, "warn: using host implementation of read, not gem5 emulation for now\n");
+  return false;
+}
+
+static bool GetCWDSyscall(Args args, ADDRINT& ret) {
+  fprintf(stderr, "info: getcwd: %p %zu\n",
+	  (void *) args(0), args(1));
+  fprintf(stderr, "warn: using host implementation for getcwd, not gem5 emulation for now\n");
+  return false;
+}
+
+static bool BrkSyscall(Args args, ADDRINT& ret) {
+  fprintf(syscall_file, "info: brk: %p\n", (void *) args(0));
+  fprintf(stderr, "warn: using host implementation for brk\n");
+  return false;
+}
+
+bool HostSyscall(Args, ADDRINT&) {
   return false;
 }
 
@@ -377,7 +442,7 @@ static void HandleSyscallEntry(THREADID threadIndex, CONTEXT *ctx, SYSCALL_STAND
   syscall_nr = nr;
   Args args(ctx, std);
 
-  fprintf(stderr, "syscall %lu at inst %p\n", nr, (void *) PIN_GetContextReg(ctx, REG_RIP));
+  fprintf(syscall_file, "syscall %lu at inst %p\n", nr, (void *) PIN_GetContextReg(ctx, REG_RIP));
 
   const auto unhandled_syscall = [nr] () {
     fprintf(stderr, "unhandled syscall: %lu\n", nr);
@@ -386,7 +451,7 @@ static void HandleSyscallEntry(THREADID threadIndex, CONTEXT *ctx, SYSCALL_STAND
 
   static const std::map<ADDRINT, syscall_handler_t *> handlers = {
     {SYS_arch_prctl, HandleArchPrctl},
-    {SYS_brk, HostSyscall},
+    {SYS_brk, BrkSyscall},
     {SYS_set_tid_address, HostSyscall},
     {SYS_set_robust_list, HostSyscall},
     {334, HostSyscall}, // rseq
@@ -397,6 +462,14 @@ static void HandleSyscallEntry(THREADID threadIndex, CONTEXT *ctx, SYSCALL_STAND
     {SYS_mmap, MmapSyscall},
     {SYS_sysinfo, SysInfoSyscall},
     {SYS_readlink, ReadLinkSyscall},
+    {SYS_newfstatat, HostSyscall},
+    {SYS_openat, OpenAtSyscall},
+    {SYS_read, ReadSyscall},
+    {SYS_getcwd, GetCWDSyscall},
+    {SYS_close, HostSyscall},
+    {SYS_write, HostSyscall},
+    {SYS_munmap, HostSyscall},
+    {SYS_mremap, MremapSyscall},
   };
 
   const auto it = handlers.find(nr);
@@ -414,7 +487,6 @@ static void HandleSyscallEntry(THREADID threadIndex, CONTEXT *ctx, SYSCALL_STAND
   }
 }
 
-FILE *syscall_file;
 static void HandleSyscallExit(THREADID threadIndex, CONTEXT *ctx, SYSCALL_STANDARD std, VOID *v) {
   if (syscall_nr == SYS_set_tid_address) {
     sysemu = true;
@@ -423,8 +495,7 @@ static void HandleSyscallExit(THREADID threadIndex, CONTEXT *ctx, SYSCALL_STANDA
   if (sysemu) {
     PIN_SetContextReg(ctx, REG_RAX, sysemu_return);
   }
-  if (syscall_file)
-    fprintf(syscall_file, "syscall Returned %ld.\n", PIN_GetSyscallReturn(ctx, std));
+  fprintf(syscall_file, "syscall %d returned %ld.\n", (int) syscall_nr, PIN_GetSyscallReturn(ctx, std));
 }
 #endif
 
@@ -495,8 +566,9 @@ static char **find_args_start(char **argv) {
 }
 
 static KNOB<std::string> KnobTrace(KNOB_MODE_WRITEONCE, "pintool", "x", "", "specify trace file");
-static KNOB<std::string> KnobHost(KNOB_MODE_WRITEONCE, "pintool", "H", "0", "use host system calls by default");
+static KNOB<int> KnobHost(KNOB_MODE_WRITEONCE, "pintool", "H", "0", "use host system calls by default");
 static KNOB<std::string> KnobSyscallLog(KNOB_MODE_WRITEONCE, "pintool", "s", "", "specify syscall log");
+static KNOB<int> KnobVerbose(KNOB_MODE_WRITEONCE, "pintool", "v", "", "verbose mode");
 
 int main(int argc, char *argv[]) {
   if (PIN_Init(argc, argv))
@@ -512,11 +584,9 @@ int main(int argc, char *argv[]) {
     }
   }
 
-  if (KnobSyscallLog.Value().empty()) {
-    syscall_file = nullptr;
-  } else {
+  syscall_file = stderr;
+  if (!KnobSyscallLog.Value().empty())
     syscall_file = fopen(KnobSyscallLog.Value().c_str(), "w");
-  }
 
   char **args = find_args_start(argv);
   if (!args) {
@@ -544,10 +614,8 @@ int main(int argc, char *argv[]) {
   INS_AddInstrumentFunction(InstrumentInstruction_Syscall, 0);
 #endif
 
-  if (getenv("HOST"))
-    use_host = true;
-  else
-    use_host = false;
+  use_host = (KnobHost.Value() != 0);
+  verbose = KnobVerbose.Value();
 
   if (const char *memsizestr = getenv("MEMSIZE"))
     memsize = strtoul(memsizestr, nullptr, 0);
