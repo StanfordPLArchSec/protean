@@ -12,6 +12,7 @@
 #include <sys/time.h>
 #include <sys/resource.h>
 #include <sys/stat.h>
+#include <sys/time.h>
 
 #include "Vsyscall.h"
 #include "Trace.h"
@@ -400,11 +401,7 @@ static bool UnameSyscall(Args args, ADDRINT& ret) {
 }
 
 static bool GetRandomSyscall(Args args, ADDRINT& ret) {
-  char *out = (char *) args(0);
-  for (ADDRINT i = 0; i < args(1); ++i) {
-    char c = 0x42;
-    PIN_SafeCopyCheck(out, &c, 1);
-  }
+  SafeMemset((char *) args(0), 0x42, args(1));
   ret = args(1);
   return true;
 }
@@ -570,6 +567,12 @@ bool StubSyscall(Args, ADDRINT& ret) {
   return true;
 }
 
+bool GetTimeOfDaySyscall(Args args, ADDRINT& ret) {
+  SafeMemset((void *) args(0), 0, sizeof(struct timeval));
+  ret = 0;
+  return true;
+}
+
 
 static void HandleSyscallEntry(THREADID threadIndex, CONTEXT *ctx, SYSCALL_STANDARD std, VOID *v) {
   sysemu = false;
@@ -584,17 +587,23 @@ static void HandleSyscallEntry(THREADID threadIndex, CONTEXT *ctx, SYSCALL_STAND
     exit(1);
   };
 
+#ifndef SYS_rseq
+# define SYS_rseq 334
+#endif
+#ifndef SYS_getrandom
+# define SYS_getrandom 318
+#endif
+  
   static const std::map<ADDRINT, syscall_handler_t *> handlers = {
     {SYS_arch_prctl, HandleArchPrctl},
     {SYS_brk, BrkSyscall},
-    {SYS_set_tid_address, HostSyscall},
-    {SYS_set_robust_list, HostSyscall},
-    // {334, HostSyscall}, // rseq
-    {334, StubSyscall},
+    {SYS_set_tid_address, /* HostSyscall */ StubSyscall},
+    {SYS_set_robust_list, /* HostSyscall */ StubSyscall},
+    {SYS_rseq, StubSyscall},
     {SYS_uname, UnameSyscall},
     {SYS_prlimit64, Prlimit64Syscall},
-    {318, GetRandomSyscall}, // getrandom
-    {10, HostSyscall},
+    {SYS_getrandom, GetRandomSyscall}, // getrandom
+    {SYS_mprotect, /* HostSyscall */ StubSyscall},
     {SYS_mmap, MmapSyscall},
     {SYS_sysinfo, SysInfoSyscall},
     {SYS_readlink, ReadLinkSyscall},
@@ -604,9 +613,9 @@ static void HandleSyscallEntry(THREADID threadIndex, CONTEXT *ctx, SYSCALL_STAND
     {SYS_getcwd, GetCWDSyscall},
     {SYS_close, HostSyscall},
     {SYS_write, HostSyscall},
-    {SYS_munmap, HostSyscall},
+    {SYS_munmap, /* HostSyscall */ StubSyscall},
     {SYS_mremap, MremapSyscall},
-    {SYS_gettimeofday, HostSyscall},
+    {SYS_gettimeofday, /* HostSyscall */ GetTimeOfDaySyscall},
     {SYS_exit_group, HostSyscall},
   };
 
