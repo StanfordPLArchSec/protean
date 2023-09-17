@@ -14,6 +14,7 @@
 #include <sys/stat.h>
 
 #include "Vsyscall.h"
+#include "Trace.h"
 
 namespace gem5 {
   constexpr ADDRINT mmap_end = 0x6ffff7ff0000ULL;
@@ -235,6 +236,40 @@ static void Trace_StringOp(ADDRINT inst) {
   trace_last_inst = inst;
 }
 
+static void TraceExec(ADDRINT id) {  
+  if (fwrite(&id, sizeof id, 1, trace_file) != 1)
+    abort();
+}
+
+void InstrumentTrace_TraceExec(TRACE trace, void *v) {
+  static uint32_t trace_bbl_counter = 0;
+  for (BBL bbl = TRACE_BblHead(trace); BBL_Valid(bbl); bbl = BBL_Next(bbl)) {
+    const uint64_t id = trace_bbl_counter++;
+    uint64_t len = 0;
+    for (INS ins = BBL_InsHead(bbl); INS_Valid(ins); ins = INS_Next(ins)) {
+      if (!INS_IsSyscall(ins))
+	++len;
+    }
+    
+    // const uint64_t len = BBL_NumIns(bbl);
+    const trace_t reg = TRACE_REG_VALUE | (len << 32) | (id << 0);
+    fwrite(&reg, sizeof reg, 1, trace_file);
+    
+    // write instruction addresses
+    for (INS ins = BBL_InsHead(bbl); INS_Valid(ins); ins = INS_Next(ins)) {
+      if (!INS_IsSyscall(ins)) {
+	const uint64_t addr = INS_Address(ins);
+	fwrite(&addr, sizeof addr, 1, trace_file);
+      }
+    }
+
+    // instrument to print out just id
+    const uint64_t execval = (uint64_t) id | (2UL << 62);
+    BBL_InsertCall(bbl, IPOINT_BEFORE, (AFUNPTR) TraceExec,
+		   IARG_ADDRINT, execval, IARG_END);
+  }
+}
+
 void InstrumentInstruction_Trace(INS ins, void *) {
   if (INS_Opcode(ins) == XED_ICLASS_SYSCALL)
     return;
@@ -391,14 +426,24 @@ bool MmapSyscall(Args args, ADDRINT& ret) {
 }
 
 bool MremapSyscall(Args args, ADDRINT& ret) {
-  if (use_host)
-    return false;
   fprintf(syscall_file, "info: mremap: %p %zu %zu %d %p\n",
 	  (void *) args(0), args(1), args(2), (int) args(3), (void *) args(4));
-  fprintf(stderr, "fatal: no support for mremap yet\n");
-  exit(1);
 
-  return false;
+  const int flags = args(3);
+  ADDRINT old_size = args(1);
+  ADDRINT new_size = args(2);
+
+  if (new_size > old_size && flags == MREMAP_MAYMOVE) {
+    mmap_begin -= new_size;
+    args(3, flags | MREMAP_FIXED);
+    args(4, mmap_begin);
+    return false;
+  } else if (use_host) {
+    return false;
+  } else {
+    fprintf(stderr, "fatal: no support for mremap yet\n");
+    exit(1);
+  }
 }
 
 static bool SysInfoSyscall(Args args, ADDRINT& ret) {
@@ -513,12 +558,19 @@ static bool NewfstatatSyscall(Args args, ADDRINT& ret) {
   return false;
 }
 
+static ADDRINT syscall_nr;
+
 bool HostSyscall(Args, ADDRINT&) {
   return false;
 }
 
+bool StubSyscall(Args, ADDRINT& ret) {
+  fprintf(syscall_file, "warn: stub: syscall %lu\n", syscall_nr);
+  ret = 0;
+  return true;
+}
 
-static ADDRINT syscall_nr;
+
 static void HandleSyscallEntry(THREADID threadIndex, CONTEXT *ctx, SYSCALL_STANDARD std, VOID *v) {
   sysemu = false;
   const ADDRINT nr = PIN_GetSyscallNumber(ctx, SYSCALL_STANDARD_IA32E_LINUX);
@@ -537,7 +589,8 @@ static void HandleSyscallEntry(THREADID threadIndex, CONTEXT *ctx, SYSCALL_STAND
     {SYS_brk, BrkSyscall},
     {SYS_set_tid_address, HostSyscall},
     {SYS_set_robust_list, HostSyscall},
-    {334, HostSyscall}, // rseq
+    // {334, HostSyscall}, // rseq
+    {334, StubSyscall},
     {SYS_uname, UnameSyscall},
     {SYS_prlimit64, Prlimit64Syscall},
     {318, GetRandomSyscall}, // getrandom
@@ -554,6 +607,7 @@ static void HandleSyscallEntry(THREADID threadIndex, CONTEXT *ctx, SYSCALL_STAND
     {SYS_munmap, HostSyscall},
     {SYS_mremap, MremapSyscall},
     {SYS_gettimeofday, HostSyscall},
+    {SYS_exit_group, HostSyscall},
   };
 
   const auto it = handlers.find(nr);
@@ -771,6 +825,7 @@ int main(int argc, char *argv[]) {
   INS_AddInstrumentFunction(InstrumentInstruction_CPUID, 0);
   if (trace_file) {
     INS_AddInstrumentFunction(InstrumentInstruction_Trace, 0);
+    // TRACE_AddInstrumentFunction(InstrumentTrace_TraceExec, 0);
   }
 
 #if 1
