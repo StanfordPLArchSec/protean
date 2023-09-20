@@ -556,24 +556,10 @@ static bool NewfstatatSyscall(Args args, ADDRINT& ret) {
   fprintf(syscall_file, "info: newfstatat: %d \"%s\" %p %d\n",
 	  (int) args(0), path.c_str(), (void *) args(2), (int) args(3));
 
-  if (const char *stat_path = getenv("STAT")) {
-    FILE *f = fopen(stat_path, "a");
-    struct stat st;
-    fprintf(f, "stat: %s\n", path.c_str());
-    if (syscall(SYS_newfstatat, (int) args(0), path.c_str(), &st, (int) args(3)) == 0) {
-      fprintf(f, "dev %lu\n", st.st_dev);
-      fprintf(f, "ino %lu\n", st.st_ino);
-      fprintf(f, "mode %d\n", st.st_mode);
-      fprintf(f, "nlink %ld\n", st.st_nlink);
-      fprintf(f, "uid %d\n", st.st_uid);
-      fprintf(f, "gid %d\n", st.st_gid);
-      fprintf(f, "rdev %ld\n", st.st_rdev);
-      fprintf(f, "size %zu\n", st.st_size);
-      fprintf(f, "blksize %zu\n", st.st_blksize);
-      fprintf(f, "blocks %zu\n", st.st_blocks);
-    }
-    fprintf(f, "\n");
-    fclose(f);
+  if (path.empty() && (int) args(0) == 1) {
+    fprintf(stderr, "info: newfstatat: mimicing gem5 for empty path with stdout fileno\n");
+    ret = -2;
+    return true;
   }
 
   newfstatat_buf = (struct stat *) args(2);
