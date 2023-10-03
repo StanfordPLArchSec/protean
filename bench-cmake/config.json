@@ -1,4 +1,8 @@
 {
+    "variables": {
+	"llsct": ".."
+    },
+    
     "sw": {
 	"_default": {
 	    "spec2017": "../cpu2017",
@@ -59,5 +63,34 @@
 	    "inherit": "_default",
 	    "src": "../spt"
 	}
+    },
+
+    "hwmode": {
+	"_default": {
+	    "gem5_opts": [],
+	    "script_opts": []
+	},
+
+	"base": {
+	    "inherit": "_default"
+	},
+	"llsct-declassify-all-shadow": {
+	    "inherit": "_default",
+	    "+script_opts": [
+		"--llsct-declassify=1",
+		"--llsct-declassify-entries=-1",
+		"--llsct-declassify-all=1",
+		"--llsct-declassift-impl=shadow"
+	    ]
+	},
+	"spt": {
+	    "inherit": "_default",
+	    "+script_opts": ["--enableSPT=1"]
+	}
+    },
+
+    "experiments": {
+	"unsafe-baseline": {"sw": "base", "sim": "base", "hwmode": "base"},
+	"unsafe-baseline-lto": {"sw": "base-lto", "sim": "base", "hwmode": "base"}
     }
 }

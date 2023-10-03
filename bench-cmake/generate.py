@@ -60,26 +60,28 @@ def abs_config_path(path: str) -> str:
         return path
     return os.path.abspath(os.path.join(os.path.dirname(args.config), path))
 
-def prepare_sw_config(sw_config_in: dict) -> types.SimpleNamespace:
-    for key in ['spec2017', 'test-suite', 'cc', 'cxx']:
-        sw_config_in[key] = abs_config_path(sw_config_in[key])
-    sw_config_in = dict(map(lambda p: (p[0].replace('-', '_'), p[1]), sw_config_in.items()))
-    sw_config_out = types.SimpleNamespace(**sw_config_in)
-    return sw_config_out
+def prepare_subconfig(config: dict, path_keys) -> types.SimpleNamespace:
+    for key in path_keys:
+        if key not in config:
+            print(config)
+        assert key in config
+        config[key] = abs_config_path(config[key])
+    config = dict(map(lambda p: (p[0].replace('-', '_'), p[1]), config.items()))
+    config = types.SimpleNamespace(**config)
+    return config
 
-def prepare_sim_config(sim_config: dict) -> types.SimpleNamespace:
-    for key in ['src']:
-        sim_config[key] = abs_config_path(sim_config[key])
-    return types.SimpleNamespace(**dict(map(lambda p: (p[0].replace('-', '_'), p[1]), sim_config.items())))
+def process_subconfigs(configs, path_keys):
+    configs = resolve_inheritance(configs)
+    for name, config in configs.items():
+        config = prepare_subconfig(config, path_keys)
+        configs[name] = config
+    return configs
 
 def process_config(config_in: dict) -> types.SimpleNamespace:
-    sw_configs = resolve_inheritance(config_in['sw'])
-    sw_configs = dict([(p[0], prepare_sw_config(p[1])) for p in sw_configs.items()])
-
-    sim_configs = resolve_inheritance(config_in['sim'])
-    sim_configs = dict([(p[0], prepare_sim_config(p[1])) for p in sim_configs.items()])
-    
-    return types.SimpleNamespace(sw=sw_configs, sim=sim_configs)
+    sw_configs = process_subconfigs(config_in['sw'], ['spec2017', 'test-suite', 'cc', 'cxx'])
+    sim_configs = process_subconfigs(config_in['sim'], ['src'])
+    hwmode_configs = process_subconfigs(config_in['hwmode'], [])
+    return types.SimpleNamespace(sw=sw_configs, sim=sim_configs, hwmode=hwmode_configs)
 
 config = process_config(config)
 
