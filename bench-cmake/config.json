@@ -1,0 +1,42 @@
+{
+    "sw": {
+	"_default": {
+	    "spec2017": "../cpu2017",
+	    "test-suite": "../test-suite",
+	    "cc": "../llvm/build/bin/clang",
+	    "cxx": "../llvm/build/bin/clang++",
+	    "cmake_build_type": "Release",
+	    "test_suite_run_type": "ref",
+	    "cflags": [],
+	    "ldflags": ["-static", "-fuse-ld=lld"]
+	},
+	"_lto": {
+	    "inherit": "_default",
+	    "+cflags": ["-flto"],
+	    "+ldflags": ["-flto"]
+	},
+
+	"base": {
+	    "inherit": "_default"
+	},
+	"base-lto": {
+	    "inherit": "_lto"
+	},
+
+	"llsct": {
+	    "inherit": "_default",
+	    "+cflags": [
+		"-mllvm", "-llsct",
+		"-mllvm", "-llsct-declassify",
+		"-fpass-plugin=/home/nmosier/llsct2/passes/build/libDeclassifyPass.so"
+	    ]
+	},
+	"llsct-lto": {
+	    "inherit": "_lto",
+	    "+ldflags": [
+		"-Wl,-mllvm,-llsct,-mllvm,-llsct-declassify",
+		"-Wl,--load-pass-plugin=/home/nmosier/llsct2/passes/build/libDeclassifyPass.so"
+	    ]
+	}
+    }
+}
