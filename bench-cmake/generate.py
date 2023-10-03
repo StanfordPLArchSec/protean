@@ -67,10 +67,19 @@ def prepare_sw_config(sw_config_in: dict) -> types.SimpleNamespace:
     sw_config_out = types.SimpleNamespace(**sw_config_in)
     return sw_config_out
 
+def prepare_sim_config(sim_config: dict) -> types.SimpleNamespace:
+    for key in ['src']:
+        sim_config[key] = abs_config_path(sim_config[key])
+    return types.SimpleNamespace(**dict(map(lambda p: (p[0].replace('-', '_'), p[1]), sim_config.items())))
+
 def process_config(config_in: dict) -> types.SimpleNamespace:
     sw_configs = resolve_inheritance(config_in['sw'])
     sw_configs = dict([(p[0], prepare_sw_config(p[1])) for p in sw_configs.items()])
-    return types.SimpleNamespace(sw=sw_configs)
+
+    sim_configs = resolve_inheritance(config_in['sim'])
+    sim_configs = dict([(p[0], prepare_sim_config(p[1])) for p in sim_configs.items()])
+    
+    return types.SimpleNamespace(sw=sw_configs, sim=sim_configs)
 
 config = process_config(config)
 
@@ -81,6 +90,7 @@ def generate_top_cmakelists():
 project(llsct-results)
 include(ExternalProject)
 add_subdirectory(sw)
+add_subdirectory(sim)
 '''
     with open('CMakeLists.txt', 'w') as f:
         f.write(content)
@@ -91,9 +101,9 @@ def generate_sw_cmakelists(sw_configs):
             f.write(f'add_subdirectory({sw_config})\n')
 
 def generate_sw_subdir(name, config):
-    dir = 'sw/' + name
+    dir = os.path.join('sw', name)
     os.makedirs(dir, exist_ok=True)
-    with open(dir + '/CMakeLists.txt', 'w') as f:
+    with open(os.path.join(dir, 'CMakeLists.txt'), 'w') as f:
         cflags = ' '.join(config.cflags)
         ldflags = ' '.join(config.ldflags)
         content = f'''
@@ -111,12 +121,59 @@ ExternalProject_Add({name}-test-suite
         -DTEST_SUITE_SUBDIRS=External
         -DTEST_SUITE_SPEC2017_ROOT={config.spec2017}
         -DTEST_SUITE_RUN_TYPE={config.test_suite_run_type}
+        INSTALL_COMMAND ""
 )
 '''
         f.write(content)
 
+        content = f'''
+ExternalProject_Add_Step({name}-test-suite clean
+        COMMAND cmake --build ${{CMAKE_CURRENT_BINARY_DIR}}/build --target clean
+        DEPENDEES configure
+        DEPENDERS build
+)
+'''
+        # f.write(content)
+
+        content = f'''
+add_executable(cc IMPORTED)
+add_executable(cxx IMPORTED)
+set_property(TARGET cc PROPERTY IMPORTED_LOCATION {config.cc})
+set_property(TARGET cxx PROPERTY IMPORTED_LOCATION {config.cxx})
+add_dependencies({name}-test-suite cc cxx)
+'''
+        # f.write(content)
+
+
+def generate_sim_cmakelists(sw_configs):
+    with open('sim/CMakeLists.txt', 'w') as f:
+        for sw_config in sw_configs:
+            f.write(f'add_subdirectory({sw_config})\n')
+        
+def generate_sim_subdir(name, config):
+    dir = os.path.join('sim', name)
+    os.makedirs(dir, exist_ok=True)
+    with open(os.path.join(dir, 'CMakeLists.txt'), 'w') as f:
+        sconsopts = ' '.join(config.sconsopts)
+        content = f'''
+add_custom_command(
+        OUTPUT {config.target}
+        COMMAND scons -C {config.src} {config.target} {sconsopts}
+)
+add_custom_target(sim-{name} ALL
+        DEPENDS {config.target}
+)
+'''
+        f.write(content)
+        
+        
 generate_top_cmakelists()
 os.makedirs('sw', exist_ok=True)
 generate_sw_cmakelists(config.sw)
 for name, sw_config in config.sw.items():
     generate_sw_subdir(name, sw_config)
+
+os.makedirs('sim', exist_ok=True)
+generate_sim_cmakelists(config.sim)
+for name, sim_config in config.sim.items():
+    generate_sim_subdir(name, sim_config)

@@ -38,5 +38,26 @@
 		"-Wl,--load-pass-plugin=/home/nmosier/llsct2/passes/build/libDeclassifyPass.so"
 	    ]
 	}
+    },
+
+    "sim": {
+	"_default": {
+	    "target": "build/X86/gem5.fast",
+	    "script": "configs/deprecated/example/se.py",
+	    "sconsopts": ["--ignore-style", "-j25"]
+	},
+	
+	"base": {
+	    "inherit": "_default",
+	    "src": "../gem5-spec2017"
+	},
+	"llsct": {
+	    "inherit": "_default",
+	    "src": "../gem5"
+	},
+	"spt": {
+	    "inherit": "_default",
+	    "src": "../spt"
+	}
     }
 }
