@@ -81,7 +81,8 @@ def process_config(config_in: dict) -> types.SimpleNamespace:
     sw_configs = process_subconfigs(config_in['sw'], ['spec2017', 'test-suite', 'cc', 'cxx'])
     sim_configs = process_subconfigs(config_in['sim'], ['src'])
     hwmode_configs = process_subconfigs(config_in['hwmode'], [])
-    return types.SimpleNamespace(sw=sw_configs, sim=sim_configs, hwmode=hwmode_configs)
+    vars = prepare_subconfig(config_in['vars'], ['benchspec', 'llsct'])
+    return types.SimpleNamespace(sw=sw_configs, sim=sim_configs, hwmode=hwmode_configs, vars=vars)
 
 config = process_config(config)
 
@@ -93,15 +94,18 @@ project(llsct-results)
 include(ExternalProject)
 add_subdirectory(sw)
 add_subdirectory(sim)
+add_subdirectory(cpt)
 '''
     with open('CMakeLists.txt', 'w') as f:
         f.write(content)
-    
-def generate_sw_cmakelists(sw_configs):
-    with open('sw/CMakeLists.txt', 'w') as f:
-        for sw_config in sw_configs:
-            f.write(f'add_subdirectory({sw_config})\n')
 
+def generate_intermediate_cmakelists(dir, subdirs):
+    path = os.path.join(dir, 'CMakeLists.txt')
+    with open(path, 'w') as f:
+        for subdir in subdirs:
+            f.write(f'add_subdirectory({subdir})\n')
+    
+        
 def generate_sw_subdir(name, config):
     dir = os.path.join('sw', name)
     os.makedirs(dir, exist_ok=True)
@@ -147,11 +151,6 @@ add_dependencies({name}-test-suite cc cxx)
         # f.write(content)
 
 
-def generate_sim_cmakelists(sw_configs):
-    with open('sim/CMakeLists.txt', 'w') as f:
-        for sw_config in sw_configs:
-            f.write(f'add_subdirectory({sw_config})\n')
-        
 def generate_sim_subdir(name, config):
     dir = os.path.join('sim', name)
     os.makedirs(dir, exist_ok=True)
@@ -168,14 +167,79 @@ add_custom_target(sim-{name} ALL
 '''
         f.write(content)
         
+def generate_cpt_subdir(name, config):
+    dir = os.path.join('cpt', name)
+    os.makedirs(dir, exist_ok=True)
+
+    sim_name = config.vars.checkpoint_sim
+    sim_config = config.sim[sim_name]
+
+    gem5_exe = f'${{CMAKE_BINARY_DIR}}/sim/{sim_name}/{sim_config.target}'
+    se_py = f'{sim_config.src}/{sim_config.script}'
+
+    test_suite = f'${{CMAKE_BINARY_DIR}}/sw/{name}/build'
+    
+    with open(os.path.join(dir, 'CMakeLists.txt'), 'w') as f:
+        content = f'''
+make_directory(${{CMAKE_CURRENT_BINARY_DIR}}/stamp)
+add_custom_command(
+  OUTPUT stamp/clean
+  COMMAND rm -rf cpt
+  COMMAND touch stamp/clean
+  DEPENDS {gem5_exe} {se_py} {config.vars.benchspec}
+)
+add_custom_command(
+  OUTPUT stamp/run
+  COMMAND python3 {config.vars.llsct}/bench/create_checkpoints.py --benchspec {config.vars.benchspec} --test-suite {test_suite} --outdir cpt --llsct {config.vars.llsct} --gem5 {gem5_exe} --se {se_py}
+  COMMAND touch stamp/run
+  DEPENDS {gem5_exe} {se_py} {config.vars.benchspec} stamp/clean
+)
+add_custom_target(cpt-{name} DEPENDS stamp/run)
+'''
+        f.write(content)
         
+def generate_experiments_cmakelist(config):
+    with open('exp/CMakeLists.txt', 'w') as f:
+        for name in config.experiments:
+            f.write(f'add_subdirectory({name})\n')
+        
+def generate_exp_subdir(exp_name, config):
+    exp = config.experiments[exp_name]
+    sw = config.sw[exp.sw]
+    sim = config.sim[exp.sim]
+    hwmode = config.hwmode[exp.hwmode]
+    vars = config.vars
+
+    with open(f'exp/{exp_name}/CMakeLists.txt', 'w') as f:
+        test_suite = f'${{CMAKE_BINARY_DIR}}/sw/{exp.sw}/build'
+        gem5_exe = f'${{CMAKE_BINARY_DIR}}/sim/{exp.sim}/{sim.target}'
+        script_py = f'{sim.src}/{sim.script}'
+        
+        content = f'''
+make_directory(stamp)
+
+add_custom_command(
+  OUTPUT cpt/stamp
+  COMMAND python3 {vars.llsct}/bench/create_checkpoints.py --benchspec {vars.benchspec} --test-suite {test_suite} --outdir cpt --llsct {vars.llsct} --gem5 {gem5_exe} --se {script_py}'
+  DEPENDS {vars.llsct}/bench/create_checkpoints.py {vars.benchspec} {test_suite} {gem5_exe} {script_py}
+'''
+        f.write(content)
+
 generate_top_cmakelists()
 os.makedirs('sw', exist_ok=True)
-generate_sw_cmakelists(config.sw)
+generate_intermediate_cmakelists('sw', config.sw)
 for name, sw_config in config.sw.items():
     generate_sw_subdir(name, sw_config)
 
 os.makedirs('sim', exist_ok=True)
-generate_sim_cmakelists(config.sim)
+generate_intermediate_cmakelists('sim', config.sim)
 for name, sim_config in config.sim.items():
     generate_sim_subdir(name, sim_config)
+
+os.makedirs('cpt', exist_ok=True)
+generate_intermediate_cmakelists('cpt', config.sw)
+for name in config.sw:
+    generate_cpt_subdir(name, config)
+    
+# os.makedirs('exp', exist_ok=True)
+# generate_experiments_cmakelists(config)

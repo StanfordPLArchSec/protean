@@ -1,6 +1,8 @@
 {
-    "variables": {
-	"llsct": ".."
+    "vars": {
+	"llsct": "..",
+	"benchspec": "../bench/bench-ref.json",
+	"checkpoint-sim": "base"
     },
     
     "sw": {
@@ -89,7 +91,7 @@
 	}
     },
 
-    "experiments": {
+    "exp": {
 	"unsafe-baseline": {"sw": "base", "sim": "base", "hwmode": "base"},
 	"unsafe-baseline-lto": {"sw": "base-lto", "sim": "base", "hwmode": "base"}
     }
