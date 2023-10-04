@@ -94,6 +94,13 @@ ninja.rule(
     description = '($id) $desc',
 )
 
+## copy-checkpoint -- srcdir, dst, dep
+ninja.rule(
+    name = 'copy-checkpoint',
+    command = 'mkdir -p $dst/$i && if [ -d $src/$prefix* ]; then cp -r $src/$prefix* $dst/$i/; fi && touch $out',
+    description = '($id) Copy checkpoint $i',
+)
+
 # Define builds
 
 # dummy output
@@ -163,7 +170,7 @@ for sw_name, sw_config in config.sw.items():
         exe = os.path.join(bench_dir, bench_name)
         rsrc_dir = os.path.join(bench_dir, f'run_{sw_config.test_suite_run_type}')
 
-        for subdir in ['host', 'bbv', 'kvm']:
+        for subdir in ['host', 'kvm', 'bbv', 'cpt']:
             dir = os.path.join('cpt', sw_name, bench_name, subdir)
             stamp = os.path.join(dir, 'copy.stamp')
             ninja.build(
@@ -178,7 +185,12 @@ for sw_name, sw_config in config.sw.items():
                 },
             )
 
-        # shared verification stuff
+        # shared variables
+        sim_name = config.vars.checkpoint_sim
+        sim_config = config.sim[sim_name]
+        gem5_exe = os.path.join('sim', sim_name, sim_config.target)
+        se_py = os.path.join(sim_config.src, sim_config.script)
+        sim_run_args = ' '.join(bench_spec.litargs)        
         verify_path = os.path.abspath(os.path.join('sw', sw_name, 'tools'))
         verify_rawcmds = ' && '.join(bench_spec.verify)
         verify_rawcmds = verify_rawcmds.replace('%b', verify_path)
@@ -216,6 +228,56 @@ for sw_name, sw_config in config.sw.items():
             }
         )
 
+        ## kvm
+        kvm_subdir = os.path.join('cpt', sw_name, bench_name, 'kvm')
+        
+        ### kvm run
+        kvm_m5_output = os.path.join(kvm_subdir, 'm5out', 'stats.txt')
+        kvm_run_outputs = [os.path.join(kvm_subdir, output) for output in bench_spec.outputs]
+        kvm_outputs = [kvm_m5_output, *kvm_run_outputs]
+        assert len(kvm_outputs) >= 1
+        kvm_run_cmd = [
+            'cd', kvm_subdir, '&&',
+            os.path.abspath(gem5_exe),
+            se_py,
+            '--cpu-type=X86KvmCPU',
+            f'--mem-size={config.vars.memsize}',
+            f'--options="{sim_run_args}"',
+            f'--cmd={os.path.abspath(exe)}',
+        ]
+        if bench_spec.stdout:
+            kvm_run_cmd.append(f'--output={os.path.abspath(os.path.join(kvm_subdir, bench_spec.stdout))}')
+        ninja.build(
+            outputs = kvm_outputs,
+            rule = 'custom-command',
+            inputs = [
+                exe,
+                os.path.join(kvm_subdir, 'copy.stamp'),
+                os.path.join(host_subdir, 'verify.stamp'),
+            ],
+            variables = {
+                'cmd': ' '.join(kvm_run_cmd),
+                'id': f'{sw_name}->{bench_name}->kvm->run',
+                'desc': 'Run under KVM',
+            },
+        )
+
+        ### kvm verify
+        kvm_verify_stamp = os.path.join(kvm_subdir, 'verify.stamp')
+        kvm_verify_cmd = f'cd {kvm_subdir} && {verify_rawcmds}'
+        ninja.build(
+            outputs = kvm_verify_stamp,
+            rule = 'stamped-custom-command',
+            inputs = kvm_run_outputs,
+            variables = {
+                'cmd': kvm_verify_cmd,
+                'stamp': 'verify.stamp',
+                'id': f'{sw_name}->{bench_name}->kvm->verify',
+                'desc': 'Verify KVM benchmark results',
+            },
+        )
+
+        
         ## bbv
         bbv_subdir = os.path.join('cpt', sw_name, bench_name, 'bbv')
 
@@ -228,6 +290,7 @@ for sw_name, sw_config in config.sw.items():
         bbv_run_cmd = [
             'cd', bbv_subdir, '&&',
             config.vars.valgrind, '--tool=exp-bbv', '--bb-out-file=bbv.out', f'--interval-size={config.vars.interval}',
+            '--log-file=valout',
             '--quiet',
             '--', os.path.abspath(exe), *bench_spec.args,
         ]
@@ -281,8 +344,76 @@ for sw_name, sw_config in config.sw.items():
             }
         )
         
+        ## checkpoints
+        cpt_subdir = os.path.join('cpt', sw_name, bench_name, 'cpt')
+
+        ### checkpoint run/collect
+        cpt_run_outputs = [os.path.join(cpt_subdir, output) for output in bench_spec.outputs]
+        cpt_m5_output = os.path.join(cpt_subdir, 'm5out', 'stats.txt')
+        cpt_outputs = [cpt_m5_output, *cpt_run_outputs]
+        cpt_run_cmd = [
+            'cd', cpt_subdir, '&&',
+            'rm -r m5out &&',
+            os.path.abspath(gem5_exe),
+            se_py,
+            '--cpu-type=X86KvmCPU',
+            f'--mem-size={config.vars.memsize}',
+            f'--take-simpoint-checkpoint={os.path.abspath(spt_simpoints)},{os.path.abspath(spt_weights)},{config.vars.interval},{config.vars.warmup}',
+            f'--options="{sim_run_args}"',
+            f'--cmd={os.path.abspath(exe)}',
+        ]
+        if bench_spec.stdout:
+            cpt_run_cmd.append(f'--output={os.path.abspath(os.path.join(cpt_subdir, bench_spec.stdout))}')
+        ninja.build(
+            outputs = cpt_outputs,
+            rule = 'custom-command',
+            inputs = [
+                exe,
+                bbv_verify_stamp,
+                os.path.join('cpt', sw_name, bench_name, 'cpt', 'copy.stamp'),
+                *spt_outputs,
+                kvm_verify_stamp,
+            ],
+            variables = {
+                'cmd': ' '.join(cpt_run_cmd),
+                'id': f'{sw_name}->{bench_name}->cpt',
+                'desc': 'Take checkpoints',
+            },
+        )
+        
+        ### checkpoint verify
+        # cpt_verify_stamp = os.path.join(cpt_subdir, 'verify.stamp')
+        # cpt_verify_cmd = f'cd {cpt_subdir} && {verify_rawcmds}'
+        # ninja.build(
+        #     outputs = cpt_verify_stamp,
+        #     rule = 'stamped-custom-command',
+        #     inputs = cpt_run_outputs,
+        #     variables = {
+        #         'cmd': cpt_verify_cmd,
+        #         'stamp': 'verify.stamp',
+        #         'id': f'{sw_name}->{bench_name}->cpt->verify',
+        #         'desc': 'Verify checkpoint results',
+        #     },
+        # )
+        
+        # NOTE: Need to copy checkpoints. We will create them directly under cpt/{sw_name}/{bench_name}/cpt.
+        # Create phony checkpoints. These will required a DEPFILE.
+        
+        for i in range(config.vars.num_simpoints):
+            prefix = f'cpt.simpoint_{i:02}_'
+            stamp = os.path.join(cpt_subdir, str(i), 'copy.stamp')
+            ninja.build(
+                outputs = stamp,
+                rule = 'copy-checkpoint',
+                inputs = cpt_m5_output,
+                variables = {
+                    'stamp': stamp,
+                    'dst': cpt_subdir,
+                    'i': str(i),
+                    'src': os.path.join(cpt_subdir, 'm5out'),
+                    'id': f'{sw_name}->{bench_name}->cpt->{i}',
+                    'prefix': prefix,
+                },
+            )
         
         
-            
-            
-            
