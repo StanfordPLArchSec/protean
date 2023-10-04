@@ -4,7 +4,9 @@
 	"valgrind": "../valgrind/install/bin/valgrind",
 	"interval": 1000000,
 	"simpoint": "../simpoint/bin/simpoint",
-	"num_simpoints": 5
+	"num_simpoints": 5,
+	"memsize": "2GB",
+	"warmup": 10000
     },
     
     "sw": {

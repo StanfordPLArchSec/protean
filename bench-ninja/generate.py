@@ -415,5 +415,76 @@ for sw_name, sw_config in config.sw.items():
                     'prefix': prefix,
                 },
             )
-        
-        
+
+
+# run experiments
+for exp_name, exp_config in config.exp.items():
+    exp_dir = os.path.join('exp', exp_name)
+    sw_name = exp_config.sw
+    sw_config = config.sw[sw_name]
+    hw_name = exp_config.hwmode
+    hw_config = config.hwmode[hw_name]
+
+    for bench_name, bench_spec in benchspec.items():
+        bench_dir = os.path.join('sw', sw_name, 'External', 'SPEC', 'CINT2017speed', bench_name)
+        bench_exe = os.path.join(bench_dir, bench_name)
+        rsrc_dir = os.path.join(bench_dir, f'run_{sw_config.test_suite_run_type}')
+        cpt_dir = os.path.join('cpt', sw_name, bench_name, 'cpt', 'm5out')
+        sim_run_args = ' '.join(bench_spec.litargs)
+            
+        for cpt_idx in range(config.vars.num_simpoints):
+            subdir = os.path.join(exp_dir, bench_name, str(cpt_idx))
+            copy_stamp = os.path.join(subdir, 'copy.stamp')
+
+            # Copy resource dir
+            ninja.build(
+                outputs = copy_stamp,
+                rule = 'copy-resource-dir',
+                inputs = bench_exe,
+                variables = {
+                    'src': rsrc_dir,
+                    'dst': subdir,
+                    'stamp': copy_stamp,
+                    'id': f'exp->{exp_name}->copy',
+                },
+            )
+            
+            # Resume from checkpoint
+            stats = os.path.join(subdir, 'm5out', 'stats.txt')
+            run_stamp = os.path.join(subdir, 'run.stamp')
+            exp_run_cmd = [
+                f'if [ -d {cpt_dir}/cpt.simpoint_{cpt_idx:02}_* ]; then '
+                f'cd {subdir} && rm -rf m5out &&',
+                os.path.abspath(gem5_exe),
+                *hw_config.gem5_opts,
+                se_py,
+                f'--cmd={os.path.abspath(bench_exe)}',
+                f'--options="{sim_run_args}"',
+                '--cpu-type=X86O3CPU',
+                f'--mem-size={config.vars.memsize}',
+                '--caches',
+                '--l1d_size=64kB',
+                '--l1i_size=16kB',
+                f'--checkpoint-dir={os.path.abspath(cpt_dir)}',
+                '--restore-simpoint-checkpoint',
+                f'--checkpoint-restore={cpt_idx + 1}',
+                *hw_config.script_opts,
+                f'; fi && touch run.stamp'
+            ]
+
+            ninja.build(
+                outputs = run_stamp,
+                rule = 'custom-command',
+                inputs = [
+                    gem5_exe,
+                    se_py,
+                    bench_exe,
+                    copy_stamp,
+                    os.path.join(cpt_dir, 'stats.txt'),
+                ],
+                variables = {
+                    'cmd': ' '.join(exp_run_cmd),
+                    'id': f'exp->{exp_name}->{cpt_idx}',
+                    'desc': 'Resume from checkpoints',
+                },
+            )
