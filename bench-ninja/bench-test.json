@@ -1,0 +1,11 @@
+{
+    "600.perlbench_s": {
+	"args": "-I. -I./lib makerand.pl > makerand.out",
+	"verify": "%b/fpcmp-target -i compare/makerand.out makerand.out"
+    },
+    "602.gcc_s": {
+	"args": "t1.c -O3 -finline-limit=50000 -o t1.opts-O3_-finline-limit_50000.s",
+	"outputs": ["t1.opts-O3_-finline-limit_50000.s"],
+	"verify": "%b/fpcmp-target -i compare/t1.opts-O3_-finline-limit_50000.s t1.opts-O3_-finline-limit_50000.s"
+    }
+}

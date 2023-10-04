@@ -66,7 +66,7 @@ def process_config(config_in: dict, reldir: str) -> types.SimpleNamespace:
     sim_configs = process_subconfigs(config_in['sim'], ['src'], reldir)
     hwmode_configs = process_subconfigs(config_in['hwmode'], [], reldir)
     exp_configs = process_subconfigs(config_in['exp'], [], reldir)
-    vars = prepare_subconfig(config_in['vars'], ['benchspec', 'llsct'], reldir)
+    vars = prepare_subconfig(config_in['vars'], ['valgrind', 'simpoint'], reldir)
     return types.SimpleNamespace(sw=sw_configs, sim=sim_configs, hwmode=hwmode_configs, vars=vars, exp=exp_configs)
 
 
@@ -75,4 +75,24 @@ def abspath_rel(path: str, reldir: str) -> str:
         return path
     return os.path.abspath(os.path.join(reldir, path))
     
-    
+
+
+
+def process_benchspec(benchspec: dict) -> dict:
+    for bench_name, bench_spec in benchspec.items():
+        bench_spec['exe'] = bench_name
+        if 'outputs' not in bench_spec:
+            bench_spec['outputs'] = list()
+        bench_spec['args'] = bench_spec['args'].split()
+        if '>' in bench_spec['args']:
+            idx = bench_spec['args'].index('>')
+            bench_spec['stdout'] = bench_spec['args'][idx + 1]
+            bench_spec['outputs'].append(bench_spec['stdout'])
+        bench_spec = types.SimpleNamespace(**bench_spec)
+
+        if type(bench_spec.verify) is not list:
+            bench_spec.verify = [bench_spec.verify]
+
+        benchspec[bench_name] = bench_spec
+
+    return benchspec

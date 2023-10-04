@@ -1,8 +1,10 @@
 {
     "vars": {
-	"llsct": "..",
-	"benchspec": "../bench/bench-test.json",
-	"checkpoint-sim": "base"
+	"checkpoint-sim": "base",
+	"valgrind": "../valgrind/install/bin/valgrind",
+	"interval": 1000000,
+	"simpoint": "../simpoint/bin/simpoint",
+	"num_simpoints": 5
     },
     
     "sw": {
@@ -12,7 +14,7 @@
 	    "cc": "../llvm/build/bin/clang",
 	    "cxx": "../llvm/build/bin/clang++",
 	    "cmake_build_type": "Release",
-	    "test_suite_run_type": "ref",
+	    "test_suite_run_type": "test",
 	    "cflags": [],
 	    "ldflags": ["-static", "-fuse-ld=lld"]
 	},
