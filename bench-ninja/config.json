@@ -1,0 +1,98 @@
+{
+    "vars": {
+	"llsct": "..",
+	"benchspec": "../bench/bench-test.json",
+	"checkpoint-sim": "base"
+    },
+    
+    "sw": {
+	"_default": {
+	    "spec2017": "../cpu2017",
+	    "test-suite": "../test-suite",
+	    "cc": "../llvm/build/bin/clang",
+	    "cxx": "../llvm/build/bin/clang++",
+	    "cmake_build_type": "Release",
+	    "test_suite_run_type": "ref",
+	    "cflags": [],
+	    "ldflags": ["-static", "-fuse-ld=lld"]
+	},
+	"_lto": {
+	    "inherit": "_default",
+	    "+cflags": ["-flto"],
+	    "+ldflags": ["-flto"]
+	},
+
+	"base": {
+	    "inherit": "_default"
+	},
+	"base-lto": {
+	    "inherit": "_lto"
+	},
+
+	"llsct": {
+	    "inherit": "_default",
+	    "+cflags": [
+		"-mllvm", "-llsct",
+		"-mllvm", "-llsct-declassify",
+		"-fpass-plugin=/home/nmosier/llsct2/passes/build/libDeclassifyPass.so"
+	    ]
+	},
+	"llsct-lto": {
+	    "inherit": "_lto",
+	    "+ldflags": [
+		"-Wl,-mllvm,-llsct,-mllvm,-llsct-declassify",
+		"-Wl,--load-pass-plugin=/home/nmosier/llsct2/passes/build/libDeclassifyPass.so"
+	    ]
+	}
+    },
+
+    "sim": {
+	"_default": {
+	    "target": "build/X86/gem5.fast",
+	    "script": "configs/deprecated/example/se.py",
+	    "sconsopts": ["--ignore-style", "-j25"]
+	},
+	
+	"base": {
+	    "inherit": "_default",
+	    "src": "../gem5-spec2017"
+	},
+	"llsct": {
+	    "inherit": "_default",
+	    "src": "../gem5"
+	},
+	"spt": {
+	    "inherit": "_default",
+	    "src": "../spt"
+	}
+    },
+
+    "hwmode": {
+	"_default": {
+	    "gem5_opts": [],
+	    "script_opts": []
+	},
+
+	"base": {
+	    "inherit": "_default"
+	},
+	"llsct-declassify-all-shadow": {
+	    "inherit": "_default",
+	    "+script_opts": [
+		"--llsct-declassify=1",
+		"--llsct-declassify-entries=-1",
+		"--llsct-declassify-all=1",
+		"--llsct-declassift-impl=shadow"
+	    ]
+	},
+	"spt": {
+	    "inherit": "_default",
+	    "+script_opts": ["--enableSPT=1"]
+	}
+    },
+
+    "exp": {
+	"unsafe-baseline": {"sw": "base", "sim": "base", "hwmode": "base"},
+	"unsafe-baseline-lto": {"sw": "base-lto", "sim": "base", "hwmode": "base"}
+    }
+}
