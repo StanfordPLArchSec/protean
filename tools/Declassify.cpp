@@ -17,8 +17,11 @@ using std::cerr;
 using std::endl;
 using std::string;
 
+using store_id_t = uint16_t;
+
 KNOB<string> OutputFile(KNOB_MODE_WRITEONCE, "pintool", "o", "", "specify file name for output");
 FILE *trace;
+unsigned long staticAccessCount = 0;
 
 static void RecordAccess(void *inst, void *addr, uint32_t mode) {
   Record record;
@@ -46,8 +49,8 @@ static void MemoryAccess(INS ins, uint32_t memOp, uint8_t access) {
   INS_InsertPredicatedCall(ins, IPOINT_BEFORE, (AFUNPTR)RecordAccess,
 			   IARG_INST_PTR, IARG_MEMORYOP_EA, memOp,
 			   IARG_UINT32, mode, IARG_END);
+  ++staticAccessCount;
 }
-
 
 static void Instruction(INS ins, void *v) {
   uint32_t memOperands = INS_MemoryOperandCount(ins);
@@ -55,9 +58,13 @@ static void Instruction(INS ins, void *v) {
   for (uint32_t memOp = 0; memOp < memOperands; ++memOp) {
     if (INS_MemoryOperandIsRead(ins, memOp))
       MemoryAccess(ins, memOp, AC_READ);
-    if (INS_MemoryOperandIsWritten(ins, memOp))
+    if (INS_MemoryOperandIsWritten(ins, memOp)) 
       MemoryAccess(ins, memOp, AC_WRITE);
   }
+}
+
+static void Fini(int32_t code, void *v) {
+  fprintf(stderr, "%lu distinct accesses\n", staticAccessCount);
 }
 
 static int32_t usage() {
@@ -66,6 +73,7 @@ static int32_t usage() {
   return -1;
 }
 
+static char buffer[1024 * 1024 * 1024];
 
 int main(int argc, char *argv[]) {
   if (PIN_Init(argc, argv))
@@ -74,6 +82,15 @@ int main(int argc, char *argv[]) {
   if (filename.empty())
     return usage();
   trace = fopen(filename.c_str(), "w");
+  errno = 0;
+  if (setvbuf(trace, buffer, _IOFBF, sizeof buffer)) {
+    if (errno)
+      perror("setvbuf");
+    else
+      fprintf(stderr, "setvbuf failed\n");
+    return 1;
+  }
   INS_AddInstrumentFunction(Instruction, 0);
+  PIN_AddFiniFunction(Fini, 0);
   PIN_StartProgram();
 }
