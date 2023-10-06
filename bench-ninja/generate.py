@@ -208,7 +208,10 @@ for sw_name, sw_config in config.sw.items():
         host_outputs = [os.path.join(host_subdir, output) for output in bench_spec.outputs]
         assert len(host_outputs) > 0
         host_run_args = ' '.join(bench_spec.args)
-        host_run_cmd = f'cd {host_subdir} && {os.path.abspath(exe)} {host_run_args}'
+        host_run_cmd = f'cd {host_subdir} && {os.path.abspath(exe)} {host_run_args} 2> stderr'
+        if not bench_spec.stdout:
+            host_run_cmd += ' > stdout'
+        
         ninja.build(
             outputs = host_outputs,
             rule = 'custom-command',
@@ -239,30 +242,38 @@ for sw_name, sw_config in config.sw.items():
         kvm_subdir = os.path.join('cpt', sw_name, bench_name, 'kvm')
         
         ### kvm run
-        kvm_m5_output = os.path.join(kvm_subdir, 'm5out', 'stats.txt')
+        kvm_run_stamp = os.path.join(kvm_subdir, 'run.stamp')
         kvm_run_outputs = [os.path.join(kvm_subdir, output) for output in bench_spec.outputs]
-        kvm_outputs = [kvm_m5_output, *kvm_run_outputs]
+        kvm_outputs = [kvm_run_stamp, *kvm_run_outputs]
         assert len(kvm_outputs) >= 1
         kvm_run_cmd = [
             'cd', kvm_subdir, '&&',
             os.path.abspath(gem5_exe),
+            '-r', '-e',
+            '--debug-flag=KvmRun,Kvm',
             se_py,
             '--cpu-type=X86KvmCPU',
             f'--mem-size={config.vars.memsize}',
             f'--options="{sim_run_args}"',
             f'--cmd={os.path.abspath(exe)}',
+            f'--errout=stderr',
         ]
         if bench_spec.stdout:
             kvm_run_cmd.append(f'--output={os.path.abspath(os.path.join(kvm_subdir, bench_spec.stdout))}')
+        else:
+            kvm_run_cmd.append(f'--output=stdout')
         ninja.build(
             outputs = kvm_outputs,
-            rule = 'custom-command',
+            rule = 'stamped-custom-command',
             inputs = [
                 exe,
                 os.path.join(kvm_subdir, 'copy.stamp'),
                 os.path.join(host_subdir, 'verify.stamp'),
+                gem5_exe,
+                se_py
             ],
             variables = {
+                'stamp': 'run.stamp',
                 'cmd': ' '.join(kvm_run_cmd),
                 'id': f'{sw_name}->{bench_name}->kvm->run',
                 'desc': 'Run under KVM',
@@ -275,7 +286,7 @@ for sw_name, sw_config in config.sw.items():
         ninja.build(
             outputs = kvm_verify_stamp,
             rule = 'stamped-custom-command',
-            inputs = kvm_run_outputs,
+            inputs = kvm_outputs,
             variables = {
                 'cmd': kvm_verify_cmd,
                 'stamp': 'verify.stamp',
@@ -300,7 +311,10 @@ for sw_name, sw_config in config.sw.items():
             '--log-file=valout',
             '--quiet',
             '--', os.path.abspath(exe), *bench_spec.args,
+            '2>', 'stderr',
         ]
+        if not bench_spec.stdout:
+            bbv_run_cmd.extend(['>', 'stdout'])
         ninja.build(
             outputs = bbv_outputs,
             rule = 'custom-command',
@@ -339,6 +353,8 @@ for sw_name, sw_config in config.sw.items():
         spt_cmd = [
             config.vars.simpoint, '-loadFVFile', bbv_file, '-maxK', str(config.vars.num_simpoints),
             '-saveSimpoints', spt_simpoints, '-saveSimpointWeights', spt_weights,
+            '>', os.path.join(spt_subdir, 'stdout'),
+            '2>', os.path.join(spt_subdir, 'stderr'),
         ]
         ninja.build(
             outputs = spt_outputs,
@@ -356,32 +372,42 @@ for sw_name, sw_config in config.sw.items():
 
         ### checkpoint run/collect
         cpt_run_outputs = [os.path.join(cpt_subdir, output) for output in bench_spec.outputs]
-        cpt_m5_output = os.path.join(cpt_subdir, 'm5out', 'stats.txt')
-        cpt_outputs = [cpt_m5_output, *cpt_run_outputs]
+        cpt_run_stamp = os.path.join(cpt_subdir, 'run.stamp')
+        cpt_outputs = [cpt_run_stamp, *cpt_run_outputs]
         cpt_run_cmd = [
             'cd', cpt_subdir, '&&',
-            'rm -r m5out &&',
+            'rm -rf m5out &&',
             os.path.abspath(gem5_exe),
+            "--debug-flag=KvmRun,Kvm",
+            '-r', '-e', # redirect to simout and simerr
             se_py,
             '--cpu-type=X86KvmCPU',
             f'--mem-size={config.vars.memsize}',
             f'--take-simpoint-checkpoint={os.path.abspath(spt_simpoints)},{os.path.abspath(spt_weights)},{config.vars.interval},{config.vars.warmup}',
             f'--options="{sim_run_args}"',
             f'--cmd={os.path.abspath(exe)}',
+            f'--errout=stderr',
         ]
         if bench_spec.stdout:
             cpt_run_cmd.append(f'--output={os.path.abspath(os.path.join(cpt_subdir, bench_spec.stdout))}')
+        else:
+            cpt_run_cmd.append(f'--output=stdout')
+        
+        cpt_run_cmd.append(f' && expected_simpoints="$$(wc -l < {os.path.abspath(spt_simpoints)})" actual_simpoints="$$(echo {os.path.abspath(cpt_subdir)}/m5out/cpt.simpoint_* | wc -w)" && if [ "$$expected_simpoints" -ne "$$actual_simpoints" ]; then echo "unexpected number of checkpoints (expected $$expected_simpoints, got $$actual_simpoints)"; exit 1; fi')
         ninja.build(
             outputs = cpt_outputs,
-            rule = 'custom-command',
+            rule = 'stamped-custom-command',
             inputs = [
                 exe,
                 bbv_verify_stamp,
                 os.path.join('cpt', sw_name, bench_name, 'cpt', 'copy.stamp'),
                 *spt_outputs,
                 kvm_verify_stamp,
+                gem5_exe,
+                se_py
             ],
             variables = {
+                'stamp': 'run.stamp',
                 'cmd': ' '.join(cpt_run_cmd),
                 'id': f'{sw_name}->{bench_name}->cpt',
                 'desc': 'Take checkpoints',
@@ -389,36 +415,36 @@ for sw_name, sw_config in config.sw.items():
         )
         
         ### checkpoint verify
-        # cpt_verify_stamp = os.path.join(cpt_subdir, 'verify.stamp')
-        # cpt_verify_cmd = f'cd {cpt_subdir} && {verify_rawcmds}'
-        # ninja.build(
-        #     outputs = cpt_verify_stamp,
-        #     rule = 'stamped-custom-command',
-        #     inputs = cpt_run_outputs,
-        #     variables = {
-        #         'cmd': cpt_verify_cmd,
-        #         'stamp': 'verify.stamp',
-        #         'id': f'{sw_name}->{bench_name}->cpt->verify',
-        #         'desc': 'Verify checkpoint results',
-        #     },
-        # )
+        cpt_verify_stamp = os.path.join(cpt_subdir, 'verify.stamp')
+        cpt_verify_cmd = f'cd {cpt_subdir} && {verify_rawcmds}'
+        ninja.build(
+            outputs = cpt_verify_stamp,
+            rule = 'stamped-custom-command',
+            inputs = cpt_run_outputs,
+            variables = {
+                'cmd': cpt_verify_cmd,
+                'stamp': 'verify.stamp',
+                'id': f'{sw_name}->{bench_name}->cpt->verify',
+                'desc': 'Verify checkpoint results',
+            },
+        )
 
         # checkpoint validation -- ensure we got the right number of checkpoints
-        cpt_count_stamp = os.path.join(cpt_subdir, 'count.stamp')
-        ninja.build(
-            outputs = cpt_count_stamp,
-            rule = 'stamped-custom-command',
-            inputs = [
-                spt_simpoints,
-                cpt_m5_output
-            ],
-            variables = {
-                'stamp': cpt_count_stamp,
-                'cmd': f'[ $$(wc -l < {spt_simpoints}) -eq $$(echo {cpt_subdir}/m5out/cpt.simpoint_* | wc -w) ]',
-                'id': f'{sw_name}->{bench_name}->cpt',
-                'desc': 'Validating checkpoint counts'
-            }
-        )
+        # cpt_count_stamp = os.path.join(cpt_subdir, 'count.stamp')
+        # ninja.build(
+        #     outputs = cpt_count_stamp,
+        #     rule = 'stamped-custom-command',
+        #     inputs = [
+        #         spt_simpoints,
+        #         *cpt_outputs,
+        #     ],
+        #     variables = {
+        #         'stamp': cpt_count_stamp,
+        #         'cmd': f'[ $$(wc -l < {spt_simpoints}) -eq $$(echo {cpt_subdir}/m5out/cpt.simpoint_* | wc -w) ]',
+        #         'id': f'{sw_name}->{bench_name}->cpt',
+        #         'desc': 'Validating checkpoint counts'
+        #     }
+        # )
         
         # NOTE: Need to copy checkpoints. We will create them directly under cpt/{sw_name}/{bench_name}/cpt.
         # Create phony checkpoints. These will required a DEPFILE.
@@ -478,7 +504,6 @@ for exp_name, exp_config in config.exp.items():
             )
             
             # Resume from checkpoint
-            stats = os.path.join(subdir, 'm5out', 'stats.txt')
             run_stamp = os.path.join(subdir, 'run.stamp')
             exp_run_cmd = [
                 f'if [ -d {cpt_dir}/cpt.simpoint_{cpt_idx:02}_* ]; then '
@@ -508,8 +533,7 @@ for exp_name, exp_config in config.exp.items():
                     se_py,
                     bench_exe,
                     copy_stamp,
-                    os.path.join(cpt_dir, 'stats.txt'),
-                    os.path.join(cpt_dir, '..', 'count.stamp'),
+                    os.path.join(cpt_dir, '..', 'run.stamp'),
                 ],
                 variables = {
                     'cmd': ' '.join(exp_run_cmd),
@@ -523,7 +547,7 @@ for exp_name, exp_config in config.exp.items():
                 outputs = os.path.join(subdir, 'ipc.txt'),
                 rule = 'generate-leaf-ipc',
                 inputs = run_stamp,
-                variables = {'stats': stats},
+                variables = {'stats': os.path.join(subdir, 'm5out', 'stats.txt') },
             )
 
         # Generate ipc.txt for benchmark
@@ -537,7 +561,6 @@ for exp_name, exp_config in config.exp.items():
             inputs = [
                 *generate_bench_ipc_inputs,
                 generate_bench_ipc_py,
-                os.path.join(cpt_dir, 'stats.txt'),
             ],
             variables = {
                 'cmd': ' '.join(generate_bench_ipc_cmd),
