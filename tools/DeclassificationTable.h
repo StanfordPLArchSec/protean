@@ -164,89 +164,98 @@ public:
   static inline constexpr unsigned TableSizeBits = TableSizeBits_;
   static inline constexpr size_t TableSize = 1 << TableSizeBits;
 
-  bool checkDeclassified(ADDRINT eff_addr, unsigned eff_size) {
-    ADDRINT addr = eff_addr;
-    unsigned size = eff_size;
-    bool declassified = false;
-    for (unsigned table_idx = 0; table_idx < NumTables; ++table_idx) {
+  ParallelDeclassificationTable() {
+    std::fill(stats_evictions.begin(), stats_evictions.end(), 0UL);
+    std::fill(stats_upgrades.begin(), stats_upgrades.end(), 0UL);
+  }
+
+  bool checkDeclassified(ADDRINT addr, unsigned size) {
+    for (Table& table : tables) {
       const unsigned line_off = addr & (LineSize - 1);
       const ADDRINT tag = addr >> LineSizeBits;
       const unsigned line_idx = tag & (TableSize - 1);
-      const Line& line = tables[table_idx][line_idx];
+      const Line& line = table[line_idx];
       if (line && line.tag == tag) {
-	declassified =
-	  std::reduce(line.entries.begin() + line_off,
-		      line.entries.begin() + line_off + size,
-		      true,
-		      std::logical_and<bool>());
-	break;
+	assert(line_off + size <= line.entries.size());
+	const auto it = line.entries.begin() + line_off;
+	const bool declassified = std::reduce(it, it + size, true, std::logical_and<bool>());
+	return declassified;
       }
 
-      // Update
+      // next
       addr = tag;
-      size = div_up<unsigned>(size, LineSize);
-    }
-    if (declassified) {
-      ++stat_hits; 
-    } else {
-      ++stat_misses;
+      size = 1;
     }
     return false;
   }
 
-  void setDeclassified(ADDRINT eff_addr, unsigned eff_size) {
-    if (checkDeclassified(eff_addr, eff_size))
-      return;
-
-    // At this point, we know that there are no entries for which the bit is set,
-    // so we can safely allocate a bottom-level line.
-    const ADDRINT bottom_tag = eff_addr >> LineSizeBits;
-    const ADDRINT line_idx = bottom_tag & (TableSize - 1);
-    const ADDRINT line_off = eff_addr & (LineSize - 1);
-    Line& bottom_line = tables[0][line_idx];
-
-    // Force-allocate a line if necessary.
-    if (!(bottom_line && bottom_line.tag == bottom_tag)) {
-      bottom_line.valid = true;
-      bottom_line.tag = bottom_tag;
-      std::fill(bottom_line.entries.begin(), bottom_line.entries.end(), false);
-    }
-      
-    // Set declassified bits.
-    std::fill_n(bottom_line.entries.begin() + line_off, eff_size, true);
-
-    // Try to promote the line.
-    tryPromoteLine(bottom_line, 0);
-  }
-
-  void setClassified(ADDRINT eff_addr, unsigned eff_size, ADDRINT) {
-    // Use naive strategy for now:
-    // Simply zero out any corresponding bits at any level.
-
-    ADDRINT addr = eff_addr;
-    unsigned size = eff_size;
+  void setDeclassified(ADDRINT addr, unsigned size) {
     for (unsigned table_idx = 0; table_idx < NumTables; ++table_idx) {
+      Table& table = tables[table_idx];
       const unsigned line_off = addr & (LineSize - 1);
       const ADDRINT tag = addr >> LineSizeBits;
       const unsigned line_idx = tag & (TableSize - 1);
+      Line& line = table[line_idx];
+      if (!(line && line.tag == tag)) {
+	if (line.valid) {
+	  ++stats_evictions[table_idx];
+	} else {
+	  line.valid = true;
+	}
+	line.tag = tag;
+	std::fill(line.entries.begin(), line.entries.end(), false);
+      }
 
-      Line& line = tables[table_idx][line_idx];
+      std::fill_n(line.entries.begin() + line_off, size, true);
+
+      if (table_idx == NumTables - 1)
+	break;
+
+      const bool all_declassified =
+	std::reduce(line.entries.begin(), line.entries.end(), true, std::logical_and<bool>());
+
+      if (!all_declassified)
+	break;
+
+      line.valid = false;
+      ++stats_upgrades[table_idx];
+
+      addr = tag;
+      size = 1;
+    }
+  }
+
+  void setClassified(ADDRINT addr, unsigned size, ADDRINT) {
+    for (Table& table : tables) {
+      const unsigned line_off = addr & (LineSize - 1);
+      const ADDRINT tag = addr >> LineSizeBits;
+      const unsigned line_idx = tag & (TableSize - 1);
+      Line& line = table[line_idx];
 
       // Do we have a match?
       if (line && line.tag == tag) {
 	std::fill_n(line.entries.begin() + line_off, size, false);
-	return;
+	break;
       }
 
       // Update "address" and "size".
       addr = tag;
-      size = div_up<unsigned>(size, LineSize);
+      size = 1;
     }
   }
 
-  void printStats(std::ostream& os) const {
-    os << "hits " << stat_hits << "\n"
-       << "misses " << stat_misses << "\n";
+  void clear() {
+    for (auto& table : tables)
+      for (auto& line : table)
+	line.valid = false;
+  }
+
+  void printStats(std::ostream& os) {
+    for (unsigned table_idx = 0; table_idx < NumTables; ++table_idx) {
+      os << "table" << table_idx << ".evictions " << stats_evictions[table_idx] << "\n";
+      if (table_idx < NumTables - 1)
+	os << "table" << table_idx << ".upgrades " << stats_upgrades[table_idx] << "\n";
+    }
   }
 
 private:
@@ -259,44 +268,7 @@ private:
   };
   using Table = std::array<Line, TableSize>;
   std::array<Table, NumTables> tables;
-  unsigned long stat_hits;
-  unsigned long stat_misses;
-
-  Line& getLine(ADDRINT eff_addr, unsigned table_idx) {
-    const ADDRINT tag = eff_addr >> ((table_idx + 1) * LineSizeBits);
-    
-  }
-
-  void tryPromoteLine(Line& line, unsigned table_idx) {
-    if (table_idx >= NumTables)
-      return;
-    
-    const bool all_declassified =
-      std::reduce(line.entries.begin(), line.entries.end(), true, std::logical_and<bool>());
-    if (!all_declassified)
-      return;
-
-    // Invalidate lower line.
-    line.valid = false;
-    
-
-    // Get (and maybe allocate) upper line.
-    const unsigned upper_table_idx = table_idx + 1;
-    const ADDRINT upper_tag = line.tag >> LineSizeBits;
-    const ADDRINT upper_line_idx = upper_tag & (TableSize - 1);
-    Line& upper_line = tables[upper_table_idx][upper_line_idx];
-    if (!(upper_line && upper_line.tag == upper_tag)) {
-      upper_line.valid = true;
-      upper_line.tag = upper_tag;
-      std::fill(upper_line.entries.begin(), upper_line.entries.end(), false);
-    }
-
-    // Set corresponding bit in upper line.
-    const ADDRINT upper_line_off = line.tag & (LineSize - 1);
-    upper_line.entries[upper_line_off] = true;
-
-    // Try to promote the upper line.
-    tryPromoteLine(upper_line, upper_table_idx);
-  }
+  std::array<unsigned long, NumTables> stats_evictions;
+  std::array<unsigned long, NumTables-1> stats_upgrades;
 };
 

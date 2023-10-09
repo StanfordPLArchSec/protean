@@ -20,15 +20,19 @@
 #include <cinttypes>
 #include "DeclassificationTable.h"
 
-KNOB<std::string> OutputFile(KNOB_MODE_WRITEONCE, "pintool", "o", "", "specify file name for output");
-FILE *trace;
-unsigned long staticAccessCount = 0;
+static KNOB<std::string> OutputFile(KNOB_MODE_WRITEONCE, "pintool", "o", "", "specify file name for output");
+static KNOB<unsigned long> Interval(KNOB_MODE_WRITEONCE, "pintool", "i", "0", "interval (default: 50M)");
+static std::ofstream out;
 
+unsigned long hits = 0;
+unsigned long misses = 0;
+
+unsigned long interval;
 
 #if 0
 static ShadowDeclassificationTable decltab;
 #else
-static ParallelDeclassificationTable<6, 10, 3> decltab;
+static ParallelDeclassificationTable<6, 12, 3> decltab;
 #endif
 
 static void RecordDeclassifiedLoad(ADDRINT eff_addr, UINT32 eff_size) {
@@ -39,7 +43,11 @@ static void RecordDeclassifiedLoad(ADDRINT eff_addr, UINT32 eff_size) {
     RecordDeclassifiedLoad(eff_addr + eff_size / 2, eff_size / 2);
     return;
   }
-  decltab.checkDeclassified(eff_addr, eff_size);
+  if (decltab.checkDeclassified(eff_addr, eff_size)) {
+    ++hits;
+  } else {
+    ++misses;
+  }
   decltab.setDeclassified(eff_addr, eff_size);
 }
 
@@ -97,8 +105,26 @@ static void Instruction(INS ins, void *v) {
   }
 }
 
+#if 0
+static void Handle_Interval() {
+  static unsigned long counter = 0;
+  if (counter % interval == 0) {
+    decltab.clear();
+  }
+  ++counter;
+}
+
+static void Instruction_Stats(INS ins, VOID *) {
+  INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR) Handle_Interval, IARG_END);
+}
+#endif
+
 static void Fini(int32_t code, void *v) {
-  decltab.printStats(std::cerr);
+  out << "hits " << hits << "\n"
+      << "misses " << misses << "\n"
+      << "miss-rate " << (misses / static_cast<float>(hits + misses) * 100) << "\n";
+  decltab.printStats(out);
+  out.close();
 }
 
 static int32_t usage() {
@@ -107,23 +133,20 @@ static int32_t usage() {
   return -1;
 }
 
-static char buffer[1024 * 1024 * 1024];
-
 int main(int argc, char *argv[]) {
   if (PIN_Init(argc, argv))
     return usage();
   std::string filename = OutputFile.Value();
   if (filename.empty())
     return usage();
-  trace = fopen(filename.c_str(), "w");
-  errno = 0;
-  if (setvbuf(trace, buffer, _IOFBF, sizeof buffer)) {
-    if (errno)
-      perror("setvbuf");
-    else
-      fprintf(stderr, "setvbuf failed\n");
-    return 1;
-  }
+  out.open(filename);
+#if 0
+  interval = Interval.Value();
+  if (interval)
+    INS_AddInstrumentFunction(Instruction_Stats, 0);
+#endif
+  // INS_AddInstrumentFunction(Instruction_ResetStats, 0);
+  // INS_AddInstrumentFunction(Instruction_ClearTable, 0);
   INS_AddInstrumentFunction(Instruction, 0);
   PIN_AddFiniFunction(Fini, 0);
   PIN_StartProgram();
