@@ -33,8 +33,17 @@ long max_inst;
 
 #if 0
 static ShadowDeclassificationTable decltab;
-#else
+#elif 0
 static ParallelDeclassificationTable</*LineSize*/8, /*TableSize*/256*256, /*NumTables*/3, /*Associativity*/2> decltab;
+#else
+static ParallelDeclassificationTable
+<
+  /*NumTables*/3,
+  /*LineSize*/{8, 16, 32},
+  /*TableSize*/{512, 1536, 256},
+  /*Associativity*/{4, 6, 4}
+>
+decltab;
 #endif
 
 static void RecordDeclassifiedLoad(ADDRINT eff_addr, UINT32 eff_size) {
@@ -60,7 +69,7 @@ static void RecordClassifiedStore(ADDRINT st_inst, ADDRINT eff_addr, ADDRINT eff
     RecordClassifiedStore(st_inst, eff_addr + eff_size / 2, eff_size / 2);
     return;
   }
-  decltab.setClassified(eff_addr, eff_size, st_inst);
+  decltab.setClassified2(eff_addr, eff_size, st_inst);
 }
 
 static void RecordDeclassifiedStore(ADDRINT eff_addr, ADDRINT eff_size) {
