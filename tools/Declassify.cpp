@@ -22,17 +22,19 @@
 
 static KNOB<std::string> OutputFile(KNOB_MODE_WRITEONCE, "pintool", "o", "", "specify file name for output");
 static KNOB<unsigned long> Interval(KNOB_MODE_WRITEONCE, "pintool", "i", "0", "interval (default: 50M)");
+static KNOB<long> MaxInst(KNOB_MODE_WRITEONCE, "pintool", "m", "-1", "max inst");
 static std::ofstream out;
 
 unsigned long hits = 0;
 unsigned long misses = 0;
 
 unsigned long interval;
+long max_inst;
 
 #if 0
 static ShadowDeclassificationTable decltab;
 #else
-static ParallelDeclassificationTable<6, 12, 3> decltab;
+static ParallelDeclassificationTable</*LineSize*/8, /*TableSize*/256*256, /*NumTables*/3, /*Associativity*/2> decltab;
 #endif
 
 static void RecordDeclassifiedLoad(ADDRINT eff_addr, UINT32 eff_size) {
@@ -119,6 +121,20 @@ static void Instruction_Stats(INS ins, VOID *) {
 }
 #endif
 
+static void Fini(int32_t, VOID *);
+static void Handle_MaxInst() {
+  static long counter = 0;
+  if (counter == max_inst) {
+    Fini(0, 0);
+    PIN_ExitProcess(0);
+  }
+  ++counter;
+}
+
+static void Instruction_MaxInst(INS ins, VOID *) {
+  INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR) Handle_MaxInst, IARG_END);
+}
+
 static void Fini(int32_t code, void *v) {
   out << "hits " << hits << "\n"
       << "misses " << misses << "\n"
@@ -140,6 +156,9 @@ int main(int argc, char *argv[]) {
   if (filename.empty())
     return usage();
   out.open(filename);
+  max_inst = MaxInst.Value();
+  if (max_inst >= 0)
+    INS_AddInstrumentFunction(Instruction_MaxInst, 0);
 #if 0
   interval = Interval.Value();
   if (interval)

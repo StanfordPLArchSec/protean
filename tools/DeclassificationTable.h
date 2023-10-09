@@ -155,14 +155,15 @@ private:
 
 // For now, hard-code three levels.
 // Consider varying the number in the future.
-template <unsigned LineSizeBits_, unsigned TableSizeBits_, unsigned NumTables_>
+template <unsigned LineSize_, unsigned TableSize_, unsigned NumTables_, unsigned Associativity_>
 class ParallelDeclassificationTable {
 public:
   static inline constexpr unsigned NumTables = NumTables_;
-  static inline constexpr unsigned LineSizeBits = LineSizeBits_;
-  static inline constexpr size_t LineSize = 1 << LineSizeBits;
-  static inline constexpr unsigned TableSizeBits = TableSizeBits_;
-  static inline constexpr size_t TableSize = 1 << TableSizeBits;
+  static inline constexpr unsigned LineSize = LineSize_;
+  static_assert((LineSize & (LineSize - 1)) == 0, "LineSize must a power of two");
+  static inline constexpr unsigned Associativity = Associativity_;
+  static inline constexpr unsigned TableRows = TableSize_ / Associativity;
+  static_assert((TableRows & (TableRows - 1)) == 0, "TableRows must be a power of two");
 
   ParallelDeclassificationTable() {
     std::fill(stats_evictions.begin(), stats_evictions.end(), 0UL);
@@ -172,14 +173,15 @@ public:
   bool checkDeclassified(ADDRINT addr, unsigned size) {
     for (Table& table : tables) {
       const unsigned line_off = addr & (LineSize - 1);
-      const ADDRINT tag = addr >> LineSizeBits;
-      const unsigned line_idx = tag & (TableSize - 1);
-      const Line& line = table[line_idx];
-      if (line && line.tag == tag) {
-	assert(line_off + size <= line.entries.size());
-	const auto it = line.entries.begin() + line_off;
-	const bool declassified = std::reduce(it, it + size, true, std::logical_and<bool>());
-	return declassified;
+      const ADDRINT tag = addr / LineSize;
+      const unsigned row_idx = tag & (TableRows - 1);
+      const Row& row = table[row_idx];
+
+      for (const Line& line : row) {
+	if (line.valid && line.tag == tag) {
+	  const auto it = line.bv.begin() + line_off;
+	  return std::reduce(it, it + size, true, std::logical_and<bool>());
+	}
       }
 
       // next
@@ -193,27 +195,48 @@ public:
     for (unsigned table_idx = 0; table_idx < NumTables; ++table_idx) {
       Table& table = tables[table_idx];
       const unsigned line_off = addr & (LineSize - 1);
-      const ADDRINT tag = addr >> LineSizeBits;
-      const unsigned line_idx = tag & (TableSize - 1);
-      Line& line = table[line_idx];
-      if (!(line && line.tag == tag)) {
-	if (line.valid) {
+      const ADDRINT tag = addr / LineSize;
+      const unsigned row_idx = tag & (TableRows - 1);
+      Row& row = table[row_idx];
+
+      // Try to find a matching line. 
+      auto row_it = std::find_if(row.begin(), row.end(), [tag] (const Line& line) -> bool {
+	return line.valid && line.tag == tag;
+      });
+
+      // If we didn't find a matching line, try to allocate a new one.
+      if (row_it == row.end()) {
+	// First check if one of the lines is unused (invalid).
+	row_it = std::find_if(row.begin(), row.end(), [] (const Line& line) -> bool {
+	  return !line.valid;
+	});
+
+	// If we didn't find an invalid one, we actually need to evict an existing one.
+	// For now, use random eviction policy. In the future, consider using LRU.
+	if (row_it == row.end()) {
+	  row_it = row.begin() + std::rand() % Associativity;
 	  ++stats_evictions[table_idx];
-	} else {
-	  line.valid = true;
 	}
-	line.tag = tag;
-	std::fill(line.entries.begin(), line.entries.end(), false);
+
+	// Initialize the line.
+	row_it->valid = true;
+	row_it->tag = tag;
+	std::fill(row_it->bv.begin(), row_it->bv.end(), false);
       }
+      assert(row_it != row.end());
+      Line& line = *row_it;
 
-      std::fill_n(line.entries.begin() + line_off, size, true);
+      // Declassify entries.
+      std::fill_n(line.bv.begin() + line_off, size, true);
 
+      // If we are at the top-level table, then break.
+      // Otherwise, we can potentially upgrade this line.
       if (table_idx == NumTables - 1)
 	break;
-
+      
       const bool all_declassified =
-	std::reduce(line.entries.begin(), line.entries.end(), true, std::logical_and<bool>());
-
+	std::reduce(line.bv.begin(), line.bv.end(), true, std::logical_and<bool>());
+      
       if (!all_declassified)
 	break;
 
@@ -228,14 +251,16 @@ public:
   void setClassified(ADDRINT addr, unsigned size, ADDRINT) {
     for (Table& table : tables) {
       const unsigned line_off = addr & (LineSize - 1);
-      const ADDRINT tag = addr >> LineSizeBits;
-      const unsigned line_idx = tag & (TableSize - 1);
-      Line& line = table[line_idx];
+      const ADDRINT tag = addr / LineSize;
+      const unsigned row_idx = tag & (TableRows - 1);
+      Row& row = table[row_idx];
 
       // Do we have a match?
-      if (line && line.tag == tag) {
-	std::fill_n(line.entries.begin() + line_off, size, false);
-	break;
+      for (Line& line : row) {
+	if (line.valid && line.tag == tag) {
+	  std::fill_n(line.bv.begin() + line_off, size, false);
+	  return;
+	}
       }
 
       // Update "address" and "size".
@@ -262,11 +287,11 @@ private:
   struct Line {
     bool valid = false;
     ADDRINT tag;
-    std::array<bool, LineSize> entries;
-
+    std::array<bool, LineSize> bv;
     operator bool() const { return valid; }
   };
-  using Table = std::array<Line, TableSize>;
+  using Row = std::array<Line, Associativity>;
+  using Table = std::array<Row, TableRows>;
   std::array<Table, NumTables> tables;
   std::array<unsigned long, NumTables> stats_evictions;
   std::array<unsigned long, NumTables-1> stats_upgrades;
