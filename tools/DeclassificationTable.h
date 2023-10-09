@@ -188,6 +188,23 @@ private:
       tag = newtag;
       std::fill(bv.begin(), bv.end(), bv_init);
     }
+
+    bool allSet() const {
+      return std::reduce(bv.begin(), bv.end(), true, std::logical_and<bool>());
+    }
+
+    bool anySet() const {
+      return std::reduce(bv.begin(), bv.end(), false, std::logical_or<bool>());
+    }
+
+    bool allReset() const {
+      return !anySet();
+    }
+
+    bool allSet(unsigned idx, unsigned count) const {
+      const auto it = bv.begin() + idx;
+      return std::reduce(it, it + count, true, std::logical_and<bool>());
+    }
   };
 
   class Row {
@@ -245,8 +262,7 @@ public:
 
       for (const Line& line : row) {
 	if (line.valid && line.tag == tag) {
-	  const auto it = line.bv.begin() + line_off;
-	  return std::reduce(it, it + size, true, std::logical_and<bool>());
+	  return line.allSet(line_off, size);
 	}
       }
 
@@ -292,10 +308,7 @@ public:
       if (table_idx == NumTables() - 1)
 	break;
       
-      const bool all_declassified =
-	std::reduce(line.bv.begin(), line.bv.end(), true, std::logical_and<bool>());
-      
-      if (!all_declassified)
+      if (!line.allSet())
 	break;
 
       line.valid = false;
@@ -343,15 +356,18 @@ public:
 	auto it_end = it + size;
 	const bool reclassified = *it; // NOTE: This breaks for the first level, but we discard that anyway.
 	std::fill(it, it_end, false);
+	if (line.allReset())
+	  line.valid = false;
 	return reclassified;
       }
     }
 
-    if (setClassified2_Rec(tag, 1, table_idx + 1)) {
+    if (setClassified2_Rec(tag, 1, table_idx + 1) && LineSize(table_idx) > size) {
       // Allocate a new line and set all bits except for ours.
       Line& line = *row.allocateLine(stats_evictions[table_idx]);
       line.assign(tag, true); // initialize to all true
       std::fill_n(line.bv.begin() + line_off, size, false); // clear out declassified bits
+      assert(!line.allReset());
       ++stats_downgrades[table_idx];
     }
     
