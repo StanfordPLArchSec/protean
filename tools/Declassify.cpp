@@ -18,7 +18,7 @@
 #include <algorithm>
 #include <memory>
 #include <cinttypes>
-#include "DeclassificationTable.h"
+#include "PatternDeclassificationTable.h"
 
 static KNOB<std::string> OutputFile(KNOB_MODE_WRITEONCE, "pintool", "o", "", "specify file name for output");
 static KNOB<unsigned long> Interval(KNOB_MODE_WRITEONCE, "pintool", "i", "0", "interval (default: 50M)");
@@ -32,11 +32,11 @@ unsigned long misses = 0;
 unsigned long interval;
 long max_inst;
 
-#if 1
+#if 0
 static ShadowDeclassificationTable decltab;
 #elif 0
 static ParallelDeclassificationTable</*LineSize*/8, /*TableSize*/256*256, /*NumTables*/3, /*Associativity*/2> decltab;
-#else
+#elif 0
 static ParallelDeclassificationTable
 <
   /*NumTables*/3,
@@ -45,6 +45,8 @@ static ParallelDeclassificationTable
   /*Associativity*/{4, 6, 4}
 >
 decltab;
+#else
+static DeclassificationTable<64, 4, 1024> decltab("eviction.log");
 #endif
 
 static void RecordDeclassifiedLoad(ADDRINT eff_addr, UINT32 eff_size) {
@@ -151,37 +153,22 @@ static void Handle_Interval(UINT32 num_insts) {
   if (counter >= next) {
     next += interval;
 
-    // Dump shadow memory
 #if 0
-    char mem_path[256];
-    sprintf(mem_path, "%s/%lu.mem", OutputDir.Value().c_str(), counter / interval);
-#endif
+    // Dump shadow memory
     char taint_path[256];
     sprintf(taint_path, "%s/%lu.taint", OutputDir.Value().c_str(), counter / interval);
-#if 0
-    FILE *f_mem = fopen(mem_path, "w");
-    if (f_mem == NULL) {
-      perror("fopen");
-      PIN_ExitProcess(1);
-    }
-#endif
     FILE *f_taint = fopen(taint_path, "w");
     if (f_taint == NULL) {
       perror("fopen");
       PIN_ExitProcess(1);
     }
     fprintf(stderr, "writing mem...\n");
-#if 0
-    std::vector<uint8_t> mem;
-    decltab.dumpMem(mem);
-    fwrite(mem.data(), 1, mem.size(), f_mem);
-    fclose(f_mem);
-#endif
     std::vector<uint8_t> taint;
     decltab.dumpTaint(taint);
     fwrite(taint.data(), 1, taint.size(), f_taint);
     fprintf(stderr, "done\n");
     fclose(f_taint);
+#endif
   }
   counter += num_insts;
 }
