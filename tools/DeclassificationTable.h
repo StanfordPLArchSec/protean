@@ -209,8 +209,9 @@ private:
 
   class Row {
   public:
+    using Tick = unsigned;
     using Lines = std::vector<Line>;
-    Row(unsigned num_lines, unsigned line_size): lines(num_lines, Line(line_size)) {}
+    Row(unsigned num_lines, unsigned line_size): lines(num_lines, Line(line_size)), used(num_lines, 0) {}
     Lines::const_iterator begin() const { return lines.begin(); }
     Lines::const_iterator end() const { return lines.end(); }
     Lines::iterator begin() { return lines.begin(); }
@@ -219,17 +220,30 @@ private:
     // May evict an existing one.
     // Requires that no line with tag exists.
     Lines::iterator allocateLine(unsigned long& stats_evictions) {
-      for (auto it = lines.begin(); it != lines.end(); ++it) {
+      Tick min_tick = std::numeric_limits<Tick>::max();
+      typename Lines::iterator min_it;
+      for (unsigned idx = 0; idx < lines.size(); ++idx) {
+	auto it = lines.begin() + idx;
 	if (!it->valid)
 	  return it;
+	if (used[idx] <= min_tick) {
+	  min_tick = used[idx];
+	  min_it = it;
+	}
       }
-      const unsigned idx = std::rand() % lines.size();
       ++stats_evictions;
-      return lines.begin() + idx;
+      return min_it;
+    }
+
+    void markUsed(typename Lines::iterator it) {
+      const unsigned idx = it - lines.begin();
+      used[idx] = ++tick;
     }
     
   private:
     Lines lines;
+    std::vector<Tick> used;
+    Tick tick = 0;
   };
 
   class Table {
@@ -252,17 +266,23 @@ public:
     }
   }
 
-  bool checkDeclassified(ADDRINT addr, unsigned size) {
+  bool checkDeclassified(ADDRINT addr, unsigned size, bool mark_used = true) {
     for (unsigned table_idx = 0; table_idx < NumTables(); ++table_idx) {
       Table& table = tables[table_idx];
       const unsigned line_off = addr & (LineSize(table_idx) - 1);
       const ADDRINT tag = addr / LineSize(table_idx);
       const unsigned row_idx = tag & (TableRows(table_idx) - 1);
-      const Row& row = table[row_idx];
+      Row& row = table[row_idx];
 
-      for (const Line& line : row) {
+      for (auto row_it = row.begin(); row_it != row.end(); ++row_it) {
+	const Line& line = *row_it;
 	if (line.valid && line.tag == tag) {
-	  return line.allSet(line_off, size);
+	  if (line.allSet(line_off, size)) {
+	    row.markUsed(row_it);
+	    return true;
+	  } else {
+	    return false;
+	  }
 	}
       }
 
@@ -275,7 +295,7 @@ public:
 
   void setDeclassified(ADDRINT addr, unsigned size) {
     // If this range is already declassified, do nothing.
-    if (checkDeclassified(addr, size))
+    if (checkDeclassified(addr, size, false))
       return;
 
     // This range is not declassified. This implies that we must create an
