@@ -39,6 +39,8 @@ public:
   static inline constexpr unsigned UpperIndexBits = UpperIndexBitHi - UpperIndexBitLo;
   static inline constexpr unsigned UpperIndexSize = 1 << UpperIndexBits;
 
+  using Page = std::array<T, 1 << PageBits>;
+  
   ShadowMemory(const T& init) {
     std::fill(clean_page.begin(), clean_page.end(), init);
   }
@@ -76,9 +78,21 @@ public:
       }
     }
   }
+
+  void for_each_page(std::function<void (ADDRINT, const Page&)> func) const {
+    for (unsigned upper_idx = 0; upper_idx < (1 << UpperIndexBits); ++upper_idx) {
+      if (const auto& lower_ptable = mem.at(upper_idx)) {
+	for (unsigned lower_idx = 0; lower_idx < (1 << LowerIndexBits); ++lower_idx) {
+	  if (const auto& page = (*lower_ptable)[lower_idx]) {
+	    const ADDRINT addr = (upper_idx << UpperIndexBitLo) | (lower_idx << LowerIndexBitLo);
+	    func(addr, *page);
+	  }
+	}
+      }
+    }
+  }
   
 private:
-  using Page = std::array<T, 1 << PageBits>;
   Page clean_page;
   using LowerPageTable = std::array<std::unique_ptr<Page>, 1 << LowerIndexBits>;
   using UpperPageTable = std::array<std::unique_ptr<LowerPageTable>, 1 << UpperIndexBits>;
@@ -138,6 +152,32 @@ public:
     for (unsigned i = 0; i < 10 && i < stores.size(); ++i) {
       os << "classify-store-hist-" << i << " " << stores[i].first << " " << stores[i].second << "\n";
     }
+  }
+
+  void printDesc(std::ostream& os) {
+    os << "Configuration: shadow memory\n";
+  }
+
+  void dumpMem(std::vector<uint8_t>& mem) const {
+    shadow_declassified.for_each([&mem] (ADDRINT addr, bool) {
+      uint8_t byte = 0;
+      PIN_SafeCopy(&byte, (const VOID *) addr, 1);
+      mem.push_back(byte);
+    });
+  }
+
+  void dumpTaint(std::vector<uint8_t>& mem) const {
+    shadow_declassified.for_each_page([&mem] (ADDRINT, const auto& bv) {
+      for (unsigned i = 0; i < bv.size(); i += 8) {
+	uint8_t mask = 0;
+	for (unsigned j = 0; j < 8; ++j) {
+	  mask <<= 1;
+	  if (bv[i + j])
+	    mask |= 1;
+	}
+	mem.push_back(mask);
+      }
+    });
   }
     
 private:
@@ -411,6 +451,15 @@ public:
 	os << "table" << table_idx << "->" << (table_idx + 1) << ".upgrades " << stats_upgrades[table_idx] << "\n";
 	os << "table" << (table_idx + 1) << "->" << table_idx << ".downgrades " << stats_downgrades[table_idx] << "\n";
       }
+    }
+  }
+
+  void printDesc(std::ostream& os) {
+    os << "Configuration:\n"
+       << "\ttable\tline_size\ttable_size\tassociativity\n";
+    for (unsigned table_idx = 0; table_idx < NumTables(); ++table_idx) {
+      os << "\t" << table_idx << "\t" << LineSize(table_idx) << "\t" << TableSize(table_idx)
+	 << "\t" << Associativity(table_idx) << "\n";
     }
   }
 

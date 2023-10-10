@@ -23,6 +23,7 @@
 static KNOB<std::string> OutputFile(KNOB_MODE_WRITEONCE, "pintool", "o", "", "specify file name for output");
 static KNOB<unsigned long> Interval(KNOB_MODE_WRITEONCE, "pintool", "i", "0", "interval (default: 50M)");
 static KNOB<long> MaxInst(KNOB_MODE_WRITEONCE, "pintool", "m", "-1", "max inst");
+static KNOB<std::string> OutputDir(KNOB_MODE_WRITEONCE, "pintool", "d", "", "output directory");
 static std::ofstream out;
 
 unsigned long hits = 0;
@@ -31,7 +32,7 @@ unsigned long misses = 0;
 unsigned long interval;
 long max_inst;
 
-#if 0
+#if 1
 static ShadowDeclassificationTable decltab;
 #elif 0
 static ParallelDeclassificationTable</*LineSize*/8, /*TableSize*/256*256, /*NumTables*/3, /*Associativity*/2> decltab;
@@ -39,7 +40,7 @@ static ParallelDeclassificationTable</*LineSize*/8, /*TableSize*/256*256, /*NumT
 static ParallelDeclassificationTable
 <
   /*NumTables*/3,
-  /*LineSize*/{8, 16, 32},
+  /*LineSize*/{8, 128, 64},
   /*TableSize*/{512, 1536, 256},
   /*Associativity*/{4, 6, 4}
 >
@@ -69,7 +70,7 @@ static void RecordClassifiedStore(ADDRINT st_inst, ADDRINT eff_addr, ADDRINT eff
     RecordClassifiedStore(st_inst, eff_addr + eff_size / 2, eff_size / 2);
     return;
   }
-  decltab.setClassified2(eff_addr, eff_size, st_inst);
+  decltab.setClassified(eff_addr, eff_size, st_inst);
 }
 
 static void RecordDeclassifiedStore(ADDRINT eff_addr, ADDRINT eff_size) {
@@ -144,7 +145,55 @@ static void Instruction_MaxInst(INS ins, VOID *) {
   INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR) Handle_MaxInst, IARG_END);
 }
 
+static void Handle_Interval(UINT32 num_insts) {
+  static unsigned long counter = 0;
+  static unsigned long next = interval;
+  if (counter >= next) {
+    next += interval;
+
+    // Dump shadow memory
+#if 0
+    char mem_path[256];
+    sprintf(mem_path, "%s/%lu.mem", OutputDir.Value().c_str(), counter / interval);
+#endif
+    char taint_path[256];
+    sprintf(taint_path, "%s/%lu.taint", OutputDir.Value().c_str(), counter / interval);
+#if 0
+    FILE *f_mem = fopen(mem_path, "w");
+    if (f_mem == NULL) {
+      perror("fopen");
+      PIN_ExitProcess(1);
+    }
+#endif
+    FILE *f_taint = fopen(taint_path, "w");
+    if (f_taint == NULL) {
+      perror("fopen");
+      PIN_ExitProcess(1);
+    }
+    fprintf(stderr, "writing mem...\n");
+#if 0
+    std::vector<uint8_t> mem;
+    decltab.dumpMem(mem);
+    fwrite(mem.data(), 1, mem.size(), f_mem);
+    fclose(f_mem);
+#endif
+    std::vector<uint8_t> taint;
+    decltab.dumpTaint(taint);
+    fwrite(taint.data(), 1, taint.size(), f_taint);
+    fprintf(stderr, "done\n");
+    fclose(f_taint);
+  }
+  counter += num_insts;
+}
+
+static void Trace_Interval(TRACE trace, VOID *) {
+  for (BBL bbl = TRACE_BblHead(trace); BBL_Valid(bbl); bbl = BBL_Next(bbl)) {
+    BBL_InsertCall(bbl, IPOINT_BEFORE, (AFUNPTR) Handle_Interval, IARG_UINT32, BBL_NumIns(bbl), IARG_END);
+  }
+}
+
 static void Fini(int32_t code, void *v) {
+  decltab.printDesc(out);
   out << "hits " << hits << "\n"
       << "misses " << misses << "\n"
       << "miss-rate " << (misses / static_cast<float>(hits + misses) * 100) << "\n";
@@ -168,11 +217,9 @@ int main(int argc, char *argv[]) {
   max_inst = MaxInst.Value();
   if (max_inst >= 0)
     INS_AddInstrumentFunction(Instruction_MaxInst, 0);
-#if 0
   interval = Interval.Value();
-  if (interval)
-    INS_AddInstrumentFunction(Instruction_Stats, 0);
-#endif
+  if (interval > 0)
+    TRACE_AddInstrumentFunction(Trace_Interval, 0);
   // INS_AddInstrumentFunction(Instruction_ResetStats, 0);
   // INS_AddInstrumentFunction(Instruction_ClearTable, 0);
   INS_AddInstrumentFunction(Instruction, 0);
