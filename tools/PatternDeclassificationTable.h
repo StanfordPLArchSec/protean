@@ -2,8 +2,25 @@
 
 #include <vector>
 #include <unordered_map>
+#include <cstdio>
+#include <iostream>
 
 #include "pin.H"
+
+static inline void write_bv(std::ostream& os, const auto& bv) {
+  assert(bv.size() % 8 == 0);
+  for (unsigned i = 0; i < bv.size(); i += 8) {
+    uint8_t mask = 0;
+    for (unsigned j = 0; j < 8; ++j) {
+      mask <<= 1;
+      if (bv[i + j])
+	mask |= 1;
+    }
+    char buf[16];
+    sprintf(buf, "%02hhx", mask);
+    os << buf;
+  }
+}
 
 template <unsigned LineSize_, unsigned Associativity_, unsigned TableSize_>
 class DeclassificationCache {
@@ -237,6 +254,15 @@ public:
     bool allReset(unsigned first, unsigned size) const {
       return !anySet(first, size);
     }
+
+    void set(unsigned first, unsigned size) {
+      std::fill_n(bv.begin() + first, size, true);
+    }
+
+    bool reset(unsigned first, unsigned size) {
+      std::fill_n(bv.begin() + first, size, false);
+      return allReset();
+    }
   };
 
   using WordIdx = unsigned;
@@ -260,7 +286,6 @@ public:
 	return a.refcnt < b.refcnt;
       });
       assert(it != words.end());
-      it->refcnt;
       if (it->valid())
 	++seq_num;
       it->id = seq_num;
@@ -274,6 +299,15 @@ public:
 	fprintf(stderr, "got index %u\n", word_idx);
       assert(word_idx < words.size());
       return words[word_idx];
+    }
+
+    void printStats(std::ostream& os) {
+      for (WordIdx word_idx = 0; word_idx < words.size(); ++word_idx) {
+	const Word& word = words[word_idx];
+	os << word_idx << " refcnt=" << word.refcnt << " ";
+	write_bv(os, word.bv);
+	os << "\n";
+      }
     }
     
   private:
@@ -310,14 +344,24 @@ public:
       return false;
     }
 
-    Line& evictLine() {
+    Line& evictLine(bool& evicted) {
+      // Any invalid?
+      for (Line& line : lines) {
+	if (!line.valid) {
+	  evicted = false;
+	  return line;
+	}
+      }
+      
       const auto it = std::min_element(lines.begin(), lines.end(), [] (const Line& a, const Line& b) {
 	const auto f = [] (const Line& line) -> unsigned {
+	  assert(line.valid);
 	  return std::count(line.mask.begin(), line.mask.end(), true);
 	};
 	return f(a) < f(b);
       });
       assert(it != lines.end());
+      evicted = true;
       return *it;
     }
 
@@ -354,6 +398,7 @@ private:
       // Invalidate this index.
       line.mask[line_off] = false;
       miss = true;
+      ++stat_seqnum_mismatch;
       return false;
     }
 
@@ -387,12 +432,21 @@ public:
       return false;
 
     // Otherwise, we had a hit but the right bits weren't set in the word.
+
+    // Are we the owner? If so, we can just update in-place.
+    if (word_ptr->refcnt == 1) {
+      const unsigned word_off = addr & (WordSize - 1);
+      word_ptr->set(word_off, size);
+      ++stat_owner_declassifies;
+      return true;
+    }
+    
     // For now, we will just deallocate this word idx.
     *mask_ptr = false;
     assert(word_ptr->refcnt > 0);
     --word_ptr->refcnt;
     line->recomputeValid();
-    
+
     // It's not declassified yet, which means we need to eliminate
     // or downgrade this line.
     // Simply invalidate it for now.
@@ -426,6 +480,7 @@ public:
     if (!word.valid() || word.id != line.seqs[line_off]) {
       // Invalidate this index.
       line.mask[line_off] = false;
+      ++stat_seqnum_mismatch;
       return;
     }
 
@@ -457,7 +512,10 @@ public:
     if (!row.tryGetLine(tag, row_it)) {
       // Evict existing line. This is a bit tricky.
       // Current metric: minumum number of valid word indices.
-      Line& line = row.evictLine();
+      bool evicted;
+      Line& line = row.evictLine(evicted);
+      if (evicted)
+	++stat_evictions;
       for (unsigned i = 0; i < LineSize; ++i) {
 	if (line.mask[i]) {
 	  // Need to decrement reference counter.
@@ -478,14 +536,24 @@ public:
 
   void printStats(std::ostream& os) {
     os << "pattern-declassify-invalidate " << stat_declassify_invalidate << "\n"
-       << "pattern-classify-invalidate " << stat_classify_invalidate << "\n";
+       << "pattern-classify-invalidate " << stat_classify_invalidate << "\n"
+       << "pattern-owner-declassifies " << stat_owner_declassifies << "\n"
+       << "pattern-evictions " << stat_evictions << "\n"
+       << "pattern-seqnum-mismatch " << stat_seqnum_mismatch << "\n"
+      ;
+
+    os << "dictionary:\n";
+    dict.printStats(os);
   }
 
 private:
   Dictionary dict;
   std::array<Row, TableRows> rows;
+  unsigned long stat_evictions = 0; 
   unsigned long stat_declassify_invalidate = 0;
   unsigned long stat_classify_invalidate = 0;
+  unsigned long stat_owner_declassifies = 0;
+  unsigned long stat_seqnum_mismatch = 0;
 };
 
 
@@ -497,7 +565,7 @@ private:
 // template <unsigned LineSize_, unsigned Associativity_, unsigned TableSize_, unsigned DictSize_>
 // class PatternDeclassificationTable {
 
-template <unsigned LineSize, unsigned Associativity, unsigned TableSize, unsigned DictSize>
+template <unsigned LineSize, unsigned Associativity, unsigned TableSize, unsigned DictSize, bool EnablePattern>
 class DeclassificationTable {
 public:
   using Cache = DeclassificationCache<LineSize, Associativity, TableSize>;
@@ -511,12 +579,12 @@ public:
   }
 
   bool checkDeclassified(ADDRINT addr, unsigned size) {
-#if 1
-    if (pattern_table.checkDeclassified(addr, size)) {
-      ++stat_pattern_hit;
-      return true;
+    if constexpr (EnablePattern) {
+      if (pattern_table.checkDeclassified(addr, size)) {
+	++stat_pattern_hit;
+	return true;
+      }
     }
-#endif
     if (cache.checkDeclassified(addr, size)) {
       ++stat_cache_hit;
       return true;
@@ -525,10 +593,10 @@ public:
   }
     
   void setDeclassified(ADDRINT addr, unsigned size) {
-#if 1
-    if (pattern_table.setDeclassified(addr, size))
-      return;
-#endif
+    if constexpr (EnablePattern) {
+      if (pattern_table.setDeclassified(addr, size))
+	return;
+    }
 
     typename Cache::Line evicted;
     cache.setDeclassified(addr, size, evicted);
@@ -537,7 +605,7 @@ public:
       pattern_table.upgradeLine(evicted.bv, addr / LineSize);
       ++stat_upgrades;
 
-#if 0
+#if 1
       assert(evicted.anySet());
       for (unsigned i = 0; i < evicted.bv.size(); i += 8) {
 	uint8_t value = 0;
@@ -554,9 +622,9 @@ public:
   }
 
   void setClassified(ADDRINT addr, unsigned size, ADDRINT) {
-#if 1
-    pattern_table.setClassified(addr, size);
-#endif
+    if constexpr (EnablePattern) {
+      pattern_table.setClassified(addr, size);
+    }
     cache.setClassified(addr, size);
   }
 
