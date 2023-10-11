@@ -434,10 +434,19 @@ public:
     if (word->allSet(word_off, size))
       return true;
 
+    if (word.use_count() == 1) {
+#if 0
+      // We own this word, so we can update it as we choose.
+      word->set(word_off, size);
+      ++stat_declassify_invalidations_owned;
+      return true;
+#else
+      ++stat_declassify_invalidations_owned;
+#endif
+    }
+
     // Otherwise, some bits weren't set.
     // For now, handle this by invalidating the word.
-    if (word.use_count() == 1)
-      ++stat_declassify_invalidations_owned;
     word = nullptr;
     ++stat_declassify_invalidations;
     return false;
@@ -489,8 +498,14 @@ public:
       // Current metric: minumum number of valid word indices.
       bool evicted;
       line = &row.evictLine(evicted);
+      if (line->valid()) {
+	++stat_t1_evictions;
+	stat_t1_eviction_wordcnt += std::count_if(line->words.begin(), line->words.end(), [] (const WordPtr& word) {
+	  return word && word->valid();
+	});
+      }
+
       line->init(tag);
-      ++stat_t1_evictions;
     }
     
     line->words[line_off] = std::move(word);
@@ -501,6 +516,7 @@ public:
   void printStats(std::ostream& os) {
     os << "t0->t1-upgrades " << stat_t0_upgrades << "\n";
     os << "t1-evictions " << stat_t1_evictions << "\n";
+    os << "t1-eviction-wordcnt " << stat_t1_eviction_wordcnt << "\n";
     os << "t1-declassify-invalidations " << stat_declassify_invalidations << "\n";
     os << "t1-classify-invalidations " << stat_classify_invalidations << "\n";
     os << "t1-declassify-invalidations-owned " << stat_declassify_invalidations_owned << "\n";
@@ -514,6 +530,7 @@ private:
   std::array<Row, TableRows> rows;
   unsigned long stat_t0_upgrades = 0; 
   unsigned long stat_t1_evictions = 0;
+  unsigned long stat_t1_eviction_wordcnt = 0;
   unsigned long stat_declassify_invalidations = 0;
   unsigned long stat_classify_invalidations = 0;
   unsigned long stat_declassify_invalidations_owned = 0;
