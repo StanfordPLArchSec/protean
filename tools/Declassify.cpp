@@ -25,6 +25,7 @@ static KNOB<std::string> OutputFile(KNOB_MODE_WRITEONCE, "pintool", "o", "", "sp
 static KNOB<unsigned long> Interval(KNOB_MODE_WRITEONCE, "pintool", "i", "0", "interval (default: 50M)");
 static KNOB<long> MaxInst(KNOB_MODE_WRITEONCE, "pintool", "m", "-1", "max inst");
 static KNOB<std::string> OutputDir(KNOB_MODE_WRITEONCE, "pintool", "d", "", "output directory");
+static KNOB<unsigned> Coarsen(KNOB_MODE_WRITEONCE, "pintool", "c", "0", "coarsen all accesses to this granuarity");
 static std::ofstream out;
 
 unsigned long hits = 0;
@@ -32,8 +33,9 @@ unsigned long misses = 0;
 
 unsigned long interval;
 long max_inst;
+unsigned coarsen;
 
-#if 1
+#if 0
 static ShadowDeclassificationTable decltab;
 #elif 0
 static ParallelDeclassificationTable</*LineSize*/8, /*TableSize*/256*256, /*NumTables*/3, /*Associativity*/2> decltab;
@@ -58,11 +60,23 @@ static void RecordDeclassifiedLoad(ADDRINT eff_addr, UINT32 eff_size) {
     RecordDeclassifiedLoad(eff_addr + eff_size / 2, eff_size / 2);
     return;
   }
+
+  // Check if coarsen.
+  UINT32 old_eff_size = eff_size;
+  if (eff_size < coarsen) {
+    eff_addr &= ~(coarsen - 1);
+    eff_size = coarsen;
+  }
+  
   if (decltab.checkDeclassified(eff_addr, eff_size)) {
     ++hits;
   } else {
     ++misses;
   }
+
+  if (old_eff_size < coarsen)
+    return;
+
   decltab.setDeclassified(eff_addr, eff_size);
 }
 
@@ -73,6 +87,13 @@ static void RecordClassifiedStore(ADDRINT st_inst, ADDRINT eff_addr, ADDRINT eff
     RecordClassifiedStore(st_inst, eff_addr + eff_size / 2, eff_size / 2);
     return;
   }
+
+  // Check if we should coarsen
+  if (eff_size < coarsen) {
+    eff_addr &= ~(coarsen - 1);
+    eff_size = coarsen;
+  }
+  
   decltab.setClassified(eff_addr, eff_size, st_inst);
 }
 
@@ -83,6 +104,12 @@ static void RecordDeclassifiedStore(ADDRINT eff_addr, ADDRINT eff_size) {
     RecordDeclassifiedStore(eff_addr + eff_size / 2, eff_size / 2);
     return;
   }
+
+  // Check if coarsen
+  if (eff_size < coarsen) {
+    return;
+  }
+  
   decltab.setDeclassified(eff_addr, eff_size);
 }
 
@@ -206,6 +233,7 @@ int main(int argc, char *argv[]) {
   if (max_inst >= 0)
     INS_AddInstrumentFunction(Instruction_MaxInst, 0);
   interval = Interval.Value();
+  coarsen = Coarsen.Value();
   if (interval > 0)
     TRACE_AddInstrumentFunction(Trace_Interval, 0);
   // INS_AddInstrumentFunction(Instruction_ResetStats, 0);

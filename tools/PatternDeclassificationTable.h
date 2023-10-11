@@ -307,11 +307,15 @@ public:
       assert(it != words.end() && !it->expired());
       WordPtr new_word = std::make_shared<Word>(bv);
       it->lock()->invalidate(); // Invalidate existing word there.
+      ++stat_invalidations;
+      stat_invalidation_refcnt += it->use_count();
       *it = new_word;
       return new_word;
       }
 
     void printStats(std::ostream& os) {
+      os << "word-invalidations " << stat_invalidations << "\n";
+      os << "word-invalidation-refcnt " << stat_invalidation_refcnt << "\n";
       for (unsigned i = 0; i < words.size(); ++i) {
 	const auto& word = words[i];
 	os << "word" << i << " refcnt=" << word.use_count() << " ";
@@ -326,6 +330,8 @@ public:
 
   private:
     std::array<std::weak_ptr<Word>, DictSize> words;
+    unsigned long stat_invalidations = 0;
+    unsigned long stat_invalidation_refcnt = 0;
   };
 
   struct Line {
@@ -430,7 +436,10 @@ public:
 
     // Otherwise, some bits weren't set.
     // For now, handle this by invalidating the word.
+    if (word.use_count() == 1)
+      ++stat_declassify_invalidations_owned;
     word = nullptr;
+    ++stat_declassify_invalidations;
     return false;
   }
 
@@ -457,7 +466,10 @@ public:
 
     // Otherwise, some bits were set.
     // For now, handle this by invalidating the word.
+    if (word.use_count() == 1)
+      ++stat_classify_invalidations_owned;
     word = nullptr;
+    ++stat_classify_invalidations;
     return true;
   }
 
@@ -478,19 +490,21 @@ public:
       bool evicted;
       line = &row.evictLine(evicted);
       line->init(tag);
+      ++stat_t1_evictions;
     }
     
     line->words[line_off] = std::move(word);
+    
+    ++stat_t0_upgrades;
   }
 
   void printStats(std::ostream& os) {
-    os << "pattern-declassify-invalidate " << stat_declassify_invalidate << "\n"
-       << "pattern-classify-invalidate " << stat_classify_invalidate << "\n"
-       << "pattern-owner-declassifies " << stat_owner_declassifies << "\n"
-       << "pattern-evictions " << stat_evictions << "\n"
-       << "pattern-seqnum-mismatch " << stat_seqnum_mismatch << "\n"
-      ;
-
+    os << "t0->t1-upgrades " << stat_t0_upgrades << "\n";
+    os << "t1-evictions " << stat_t1_evictions << "\n";
+    os << "t1-declassify-invalidations " << stat_declassify_invalidations << "\n";
+    os << "t1-classify-invalidations " << stat_classify_invalidations << "\n";
+    os << "t1-declassify-invalidations-owned " << stat_declassify_invalidations_owned << "\n";
+    os << "t1-classify-invalidations-owned " << stat_classify_invalidations_owned << "\n";
     os << "dictionary:\n";
     dict.printStats(os);
   }
@@ -498,11 +512,12 @@ public:
 private:
   Dictionary dict;
   std::array<Row, TableRows> rows;
-  unsigned long stat_evictions = 0; 
-  unsigned long stat_declassify_invalidate = 0;
-  unsigned long stat_classify_invalidate = 0;
-  unsigned long stat_owner_declassifies = 0;
-  unsigned long stat_seqnum_mismatch = 0;
+  unsigned long stat_t0_upgrades = 0; 
+  unsigned long stat_t1_evictions = 0;
+  unsigned long stat_declassify_invalidations = 0;
+  unsigned long stat_classify_invalidations = 0;
+  unsigned long stat_declassify_invalidations_owned = 0;
+  unsigned long stat_classify_invalidations_owned = 0;
 };
 
 
