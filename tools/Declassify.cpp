@@ -18,6 +18,7 @@
 #include <algorithm>
 #include <memory>
 #include <cinttypes>
+#include "ShadowDeclassificationTable.h"
 #include "PatternDeclassificationTable.h"
 
 static KNOB<std::string> OutputFile(KNOB_MODE_WRITEONCE, "pintool", "o", "", "specify file name for output");
@@ -32,7 +33,7 @@ unsigned long misses = 0;
 unsigned long interval;
 long max_inst;
 
-#if 0
+#if 1
 static ShadowDeclassificationTable decltab;
 #elif 0
 static ParallelDeclassificationTable</*LineSize*/8, /*TableSize*/256*256, /*NumTables*/3, /*Associativity*/2> decltab;
@@ -46,7 +47,7 @@ static ParallelDeclassificationTable
 >
 decltab;
 #else
-static DeclassificationTable<64, 4, 1024> decltab("eviction.log");
+static DeclassificationTable<64, 4, 1024, 32, true> decltab("eviction.log");
 #endif
 
 static void RecordDeclassifiedLoad(ADDRINT eff_addr, UINT32 eff_size) {

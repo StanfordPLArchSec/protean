@@ -220,14 +220,25 @@ public:
 
   using SeqNum = unsigned;
 
-  struct Word {
-    unsigned refcnt;
-    SeqNum id;
+  class Word {
+  private:
+    bool valid_;
+  public:
+    // TODO: Make private.
     std::array<bool, WordSize> bv;
 
-    Word(): refcnt(0) {}
-    
-    bool valid() const { return refcnt > 0; }
+  public:
+    Word(const std::array<bool, WordSize>& bv): valid_(true), bv(bv) {}
+
+    bool valid() const { return valid_; }
+    void invalidate() {
+      assert(valid());
+      valid_ = false;
+    }
+
+    bool matches(const std::array<bool, WordSize>& other_bv) const {
+      return valid() && bv == other_bv;
+    }
 
     bool allSet(unsigned first, unsigned size) const {
       return std::reduce(bv.begin() + first,
@@ -263,69 +274,73 @@ public:
       std::fill_n(bv.begin() + first, size, false);
       return allReset();
     }
+
   };
 
-  using WordIdx = unsigned;
+  using WordPtr = std::shared_ptr<Word>;
 
   class Dictionary {
   public:
-    Dictionary(): seq_num(0) {}
-    
-    WordIdx getOrAllocateWord(const std::array<bool, LineSize>& bv) {
+    Dictionary() {}
+
+    WordPtr getOrAllocateWord(const std::array<bool, LineSize>& bv) {
       // Try to find existing word.
-      for (WordIdx i = 0; i < words.size(); ++i) {
-	Word& word = words[i];
-	if (word.valid() && word.bv == bv) {
-	  ++word.refcnt;
-	  return i;
+      for (auto& weak_word : words) {
+	WordPtr word = weak_word.lock();
+	if (word && word->matches(bv))
+	  return word;
+      }
+
+      // Try to allocate over an invalid word.
+      for (auto& word : words) {
+	if (word.expired() || !word.lock()->valid()) {
+	  WordPtr new_word = std::make_shared<Word>(bv);
+	  word = new_word;
+	  return new_word;
 	}
       }
 
-      // Otherwise, evict the word with the lowest reference count (may be zero).
-      const auto it = std::min_element(words.begin(), words.end(), [] (const Word& a, const Word& b) -> bool {
-	return a.refcnt < b.refcnt;
+      // Otherwise, evict the word with the lowest reference count.
+      const auto it = std::min_element(words.begin(), words.end(), [] (const auto& a, const auto& b) -> bool {
+	return a.use_count() < b.use_count(); 
       });
-      assert(it != words.end());
-      if (it->valid())
-	++seq_num;
-      it->id = seq_num;
-      it->refcnt = 1;
-      it->bv = bv ;
-      return it - words.begin();
-    }
-
-    Word& operator[](WordIdx word_idx) {
-      if (word_idx >= words.size())
-	fprintf(stderr, "got index %u\n", word_idx);
-      assert(word_idx < words.size());
-      return words[word_idx];
-    }
+      assert(it != words.end() && !it->expired());
+      WordPtr new_word = std::make_shared<Word>(bv);
+      it->lock()->invalidate(); // Invalidate existing word there.
+      *it = new_word;
+      return new_word;
+      }
 
     void printStats(std::ostream& os) {
-      for (WordIdx word_idx = 0; word_idx < words.size(); ++word_idx) {
-	const Word& word = words[word_idx];
-	os << word_idx << " refcnt=" << word.refcnt << " ";
-	write_bv(os, word.bv);
+      for (unsigned i = 0; i < words.size(); ++i) {
+	const auto& word = words[i];
+	os << "word" << i << " refcnt=" << word.use_count() << " ";
+	if (word.expired()) {
+	  os << "(invalid)";
+	} else {
+	  write_bv(os, word.lock()->bv);
+	}
 	os << "\n";
       }
     }
-    
+
   private:
-    SeqNum seq_num;
-    std::array<Word, DictSize> words;
+    std::array<std::weak_ptr<Word>, DictSize> words;
   };
 
   struct Line {
-    bool valid;
     ADDRINT tag;
-    std::array<bool, LineSize> mask;
-    std::array<WordIdx, LineSize> idxs;
-    std::array<SeqNum, LineSize> seqs;
+    std::array<WordPtr, LineSize> words;
+    
+    bool valid() const {
+      return std::any_of(words.begin(), words.end(), [] (const WordPtr& word) -> bool {
+	return word != nullptr;
+      });
+    }
 
-    Line(): valid(false) {}
-
-    void recomputeValid() {
-      valid = std::reduce(mask.begin(), mask.end(), false, std::logical_or<bool>());
+    void init(ADDRINT tag) {
+      this->tag = tag;
+      std::fill(words.begin(), words.end(), nullptr);
     }
   };
 
@@ -334,29 +349,28 @@ public:
     using Lines = std::array<Line, TableCols>;
 
     // NOTE: Identical implementation as in cache.
-    bool tryGetLine(ADDRINT tag, Lines::iterator& out) {
+    Line *tryGetLine(ADDRINT tag) {
       for (auto it = lines.begin(); it != lines.end(); ++it) {
-	if (it->valid && it->tag == tag) {
-	  out = it;
-	  return true;
+	if (it->valid() && it->tag == tag) {
+	  return &*it;
 	}
       }
-      return false;
+      return nullptr;
     }
 
     Line& evictLine(bool& evicted) {
       // Any invalid?
       for (Line& line : lines) {
-	if (!line.valid) {
+	if (!line.valid()) {
 	  evicted = false;
 	  return line;
 	}
       }
       
-      const auto it = std::min_element(lines.begin(), lines.end(), [] (const Line& a, const Line& b) {
+      const auto it = std::max_element(lines.begin(), lines.end(), [] (const Line& a, const Line& b) {
 	const auto f = [] (const Line& line) -> unsigned {
-	  assert(line.valid);
-	  return std::count(line.mask.begin(), line.mask.end(), true);
+	  assert(line.valid());
+	  return std::count(line.words.begin(), line.words.end(), nullptr);
 	};
 	return f(a) < f(b);
       });
@@ -369,138 +383,87 @@ public:
     Lines lines;
   };
 
-private:
-  bool checkDeclassifiedExtra(ADDRINT addr, unsigned size, bool& miss, Line **line_ptr, bool **mask_ptr, Word **word_ptr) {
+public:
+  bool checkDeclassified(ADDRINT addr, unsigned size) {
     const unsigned word_off = addr & (WordSize - 1);
     const unsigned line_off = (addr / WordSize) & (LineSize - 1);
     const unsigned tag = addr / (WordSize * LineSize);
     const unsigned row_idx = tag & (TableRows - 1);
     Row& row = rows[row_idx];
 
-    typename Row::Lines::iterator row_it;
-    if (!row.tryGetLine(tag, row_it)) {
-      miss = true;
+    Line *line = row.tryGetLine(tag);
+    if (line == nullptr)
       return false;
-    }
 
-    Line& line = *row_it;
-    assert(line.valid);
+    assert(line->valid());
 
-    // Check if the corresponding word index is valid.
-    if (!line.mask[line_off]) {
-      miss = true;
+    // Check if the corresponding word at the index is valid.
+    WordPtr& word = line->words[line_off];
+    if (!(word && word->valid()))
       return false;
-    }
 
-    // Check if the word's sequence number matches.
-    Word& word = dict[line.idxs[line_off]];
-    if (!word.valid() || word.id != line.seqs[line_off]) {
-      // Invalidate this index.
-      line.mask[line_off] = false;
-      miss = true;
-      ++stat_seqnum_mismatch;
-      return false;
-    }
-
-    miss = false;
-    if (line_ptr)
-      *line_ptr = &line;
-    if (mask_ptr)
-      *mask_ptr = &line.mask[line_off];
-    if (word_ptr)
-      *word_ptr = &word;
-    return word.allSet(word_off, size);
+    return word->allSet(word_off, size);
   }
 
 public:
 
-  bool checkDeclassified(ADDRINT addr, unsigned size) {
-    bool miss;
-    return checkDeclassifiedExtra(addr, size, miss, nullptr, nullptr, nullptr);
-  }
-
-  // TODO: Refactor the shared code with checkDeclassified().
   bool setDeclassified(ADDRINT addr, unsigned size) {
-    bool miss;
-    Line *line;
-    bool *mask_ptr;
-    Word *word_ptr;
-    if (checkDeclassifiedExtra(addr, size, miss, &line, &mask_ptr, &word_ptr))
-      return true;
-
-    if (miss)
-      return false;
-
-    // Otherwise, we had a hit but the right bits weren't set in the word.
-
-    // Are we the owner? If so, we can just update in-place.
-    if (word_ptr->refcnt == 1) {
-      const unsigned word_off = addr & (WordSize - 1);
-      word_ptr->set(word_off, size);
-      ++stat_owner_declassifies;
-      return true;
-    }
-    
-    // For now, we will just deallocate this word idx.
-    *mask_ptr = false;
-    assert(word_ptr->refcnt > 0);
-    --word_ptr->refcnt;
-    line->recomputeValid();
-
-    // It's not declassified yet, which means we need to eliminate
-    // or downgrade this line.
-    // Simply invalidate it for now.
-    stat_declassify_invalidate++;
-    
-    return false;
-  }
-
-  void setClassified(ADDRINT addr, unsigned size) {
     const unsigned word_off = addr & (WordSize - 1);
     const unsigned line_off = (addr / WordSize) & (LineSize - 1);
     const unsigned tag = addr / (WordSize * LineSize);
     const unsigned row_idx = tag & (TableRows - 1);
     Row& row = rows[row_idx];
 
-    typename Row::Lines::iterator row_it;
-    if (!row.tryGetLine(tag, row_it)) {
-      return;
-    }
+    Line *line = row.tryGetLine(tag);
+    if (line == nullptr)
+      return false; // We will let the cache handle this one.
+    
+    assert(line->valid());
 
-    Line& line = *row_it;
-    assert(line.valid);
+    // Check if all bits are set.
+    WordPtr& word = line->words[line_off];
+    if (!(word && word->valid()))
+      return false; // Let cache handle this as well.
 
-    // Check if the corresponding word index is valid.
-    if (!line.mask[line_off]) {
-      return;
-    }
+    if (word->allSet(word_off, size))
+      return true;
 
-    // Check if the word's sequence number matches.
-    Word& word = dict[line.idxs[line_off]];
-    if (!word.valid() || word.id != line.seqs[line_off]) {
-      // Invalidate this index.
-      line.mask[line_off] = false;
-      ++stat_seqnum_mismatch;
-      return;
-    }
+    // Otherwise, some bits weren't set.
+    // For now, handle this by invalidating the word.
+    word = nullptr;
+    return false;
+  }
 
-    if (word.allReset(word_off, size))
-      return;
+  bool setClassified(ADDRINT addr, unsigned size) {
+    const unsigned word_off = addr & (WordSize - 1);
+    const unsigned line_off = (addr / WordSize) & (LineSize - 1);
+    const unsigned tag = addr / (WordSize * LineSize);
+    const unsigned row_idx = tag & (TableRows - 1);
+    Row& row = rows[row_idx];
 
-    // If we got here, we have a word allocated on which we're
-    // clearing bits. The simple solution for now is to
-    // invalidate the word index in the line.
-    line.mask[line_off] = false;
-    assert(word.refcnt > 0);
-    --word.refcnt;
-    line.recomputeValid();
+    Line *line = row.tryGetLine(tag);
+    if (line == nullptr)
+      return false;
 
-    stat_classify_invalidate++;
+    assert(line->valid());
+
+    // Check if all bits are already reset.
+    WordPtr& word = line->words[line_off];
+    if (!(word && word->valid()))
+      return false;
+
+    if (word->allReset(word_off, size))
+      return true;
+
+    // Otherwise, some bits were set.
+    // For now, handle this by invalidating the word.
+    word = nullptr;
+    return true;
   }
 
   void upgradeLine(const std::array<bool, LineSize>& bv, ADDRINT addr) {
-    // Put the word in the dictionary.
-    const WordIdx word_idx = dict.getOrAllocateWord(bv);
+    // Get the word.
+    WordPtr word = dict.getOrAllocateWord(bv);
 
     // Access line.
     const unsigned line_off = addr & (LineSize - 1);
@@ -508,30 +471,16 @@ public:
     const unsigned row_idx = tag & (TableRows - 1);
     Row& row = rows[row_idx];
 
-    typename Row::Lines::iterator row_it;
-    if (!row.tryGetLine(tag, row_it)) {
+    Line *line = row.tryGetLine(tag);
+    if (line == nullptr) {
       // Evict existing line. This is a bit tricky.
       // Current metric: minumum number of valid word indices.
       bool evicted;
-      Line& line = row.evictLine(evicted);
-      if (evicted)
-	++stat_evictions;
-      for (unsigned i = 0; i < LineSize; ++i) {
-	if (line.mask[i]) {
-	  // Need to decrement reference counter.
-	  const WordIdx word_idx = line.idxs[i];
-	  Word& word = dict[word_idx];
-	  if (word.valid() && word.id == line.seqs[i])
-	    --word.refcnt;
-	  // TODO: Should use smart pointers to automate this crap.
-	}
-      }
-      line.mask[line_off] = true;
-      line.idxs[line_off] = word_idx;
-      line.tag = tag;
-      line.seqs[line_off] = dict[word_idx].id;
-      line.valid = true;
+      line = &row.evictLine(evicted);
+      line->init(tag);
     }
+    
+    line->words[line_off] = std::move(word);
   }
 
   void printStats(std::ostream& os) {
@@ -605,7 +554,7 @@ public:
       pattern_table.upgradeLine(evicted.bv, addr / LineSize);
       ++stat_upgrades;
 
-#if 1
+#if 0
       assert(evicted.anySet());
       for (unsigned i = 0; i < evicted.bv.size(); i += 8) {
 	uint8_t value = 0;
