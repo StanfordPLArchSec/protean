@@ -8,6 +8,8 @@
  *  and could serve as the starting point for developing your first PIN tool
  */
 
+#define SHADOW_DECLTAB 0
+
 #include "pin.H"
 #include <iostream>
 #include <fstream>
@@ -18,14 +20,17 @@
 #include <algorithm>
 #include <memory>
 #include <cinttypes>
+#include <cstdint>
 #include "ShadowDeclassificationTable.h"
 #include "PatternDeclassificationTable.h"
+#include "DeclassificationCache.h"
 
 static KNOB<std::string> OutputFile(KNOB_MODE_WRITEONCE, "pintool", "o", "", "specify file name for output");
 static KNOB<unsigned long> Interval(KNOB_MODE_WRITEONCE, "pintool", "i", "0", "interval (default: 50M)");
 static KNOB<long> MaxInst(KNOB_MODE_WRITEONCE, "pintool", "m", "-1", "max inst");
 static KNOB<std::string> OutputDir(KNOB_MODE_WRITEONCE, "pintool", "d", "", "output directory");
 static KNOB<unsigned> Coarsen(KNOB_MODE_WRITEONCE, "pintool", "c", "0", "coarsen all accesses to this granuarity");
+static KNOB<std::string> DumpTaint(KNOB_MODE_WRITEONCE, "pintool", "dump_taint", "", "dump taint to this file");
 static std::ofstream out;
 
 unsigned long hits = 0;
@@ -35,11 +40,13 @@ unsigned long interval;
 long max_inst;
 unsigned coarsen;
 
-#if 0
+#if 1
 static ShadowDeclassificationTable decltab;
-#elif 0
+#endif
+#if 0
 static ParallelDeclassificationTable</*LineSize*/8, /*TableSize*/256*256, /*NumTables*/3, /*Associativity*/2> decltab;
-#elif 0
+#endif
+#if 0
 static ParallelDeclassificationTable
 <
   /*NumTables*/3,
@@ -48,8 +55,25 @@ static ParallelDeclassificationTable
   /*Associativity*/{4, 6, 4}
 >
 decltab;
-#else
+#endif
+#if 0
 static DeclassificationTable<64, 4, 1024, 32, true> decltab("eviction.log");
+#endif
+#if 0
+static RealDeclassificationCaches
+<
+  /*LineSizes*/{64,64,64},
+  /*Associativities*/{4,4,4},
+  /*TableSizes*/{256,512 * 16 * 16,4096 * 16 * 16}
+> decltab;
+#endif
+
+#if 0
+static FiniteRandShadowDeclassificationTable decltab(2*1024*1024); // 4 MB
+#endif
+
+#if SHADOW_DECLTAB
+static ShadowDeclassificationTable shadow_decltab;
 #endif
 
 static void RecordDeclassifiedLoad(ADDRINT eff_addr, UINT32 eff_size) {
@@ -69,6 +93,14 @@ static void RecordDeclassifiedLoad(ADDRINT eff_addr, UINT32 eff_size) {
   }
   
   if (decltab.checkDeclassified(eff_addr, eff_size)) {
+#if SHADOW_DECLTAB
+    if (!shadow_decltab.checkDeclassified(eff_addr, eff_size)) {
+      fprintf(stderr, "address %lx (eff size %u) should not have been declassified, was pattern hit: %u\n",
+	      eff_addr, eff_size, was_pattern_hit);
+      
+      abort();
+    }
+#endif
     ++hits;
   } else {
     ++misses;
@@ -78,6 +110,9 @@ static void RecordDeclassifiedLoad(ADDRINT eff_addr, UINT32 eff_size) {
     return;
 
   decltab.setDeclassified(eff_addr, eff_size);
+#if SHADOW_DECLTAB
+  shadow_decltab.setDeclassified(eff_addr, eff_size);
+#endif
 }
 
 static void RecordClassifiedStore(ADDRINT st_inst, ADDRINT eff_addr, ADDRINT eff_size) {
@@ -95,6 +130,9 @@ static void RecordClassifiedStore(ADDRINT st_inst, ADDRINT eff_addr, ADDRINT eff
   }
   
   decltab.setClassified(eff_addr, eff_size, st_inst);
+#if SHADOW_DECLTAB
+  shadow_decltab.setClassified(eff_addr, eff_size, st_inst);
+#endif
 }
 
 static void RecordDeclassifiedStore(ADDRINT eff_addr, ADDRINT eff_size) {
@@ -111,6 +149,9 @@ static void RecordDeclassifiedStore(ADDRINT eff_addr, ADDRINT eff_size) {
   }
   
   decltab.setDeclassified(eff_addr, eff_size);
+#if SHADOW_DECLTAB
+  shadow_decltab.setDeclassified(eff_addr, eff_size);
+#endif
 }
 
 
@@ -214,6 +255,17 @@ static void Fini(int32_t code, void *v) {
       << "miss-rate " << (misses / static_cast<float>(hits + misses) * 100) << "\n";
   decltab.printStats(out);
   out.close();
+
+  if (!DumpTaint.Value().empty()) {
+    std::ofstream taint_os(DumpTaint.Value());
+    std::vector<uint8_t> taint_buf;
+    decltab.dumpTaint(taint_buf);
+    taint_os.write(reinterpret_cast<const char *>(taint_buf.data()), taint_buf.size());
+    if (!taint_os) {
+      std::cerr << "error: taint_os.write failed\n";
+      PIN_ExitProcess(1);
+    }
+  }
 }
 
 static int32_t usage() {

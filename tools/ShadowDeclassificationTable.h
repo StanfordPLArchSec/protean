@@ -177,7 +177,7 @@ public:
       }
     });
   }
-    
+
 private:
   ShadowMemory<bool, 0, 12> shadow_declassified;
   ShadowMemory<ADDRINT, 0, 12> shadow_declassified_store;
@@ -246,6 +246,10 @@ public:
   }
 
   void printStats(std::ostream& os) {}
+
+  void dumpMemory(FILE *f) {
+
+  }
   
 private:
   unsigned maxSize;
@@ -315,4 +319,5 @@ private:
   ShadowMemory<ADDRINT *, 0, 12> shadow;
   std::vector<ADDRINT *> free;
   std::vector<ADDRINT> addrs;
+  unsigned nextFree = 0;
 };
