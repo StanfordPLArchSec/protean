@@ -185,11 +185,21 @@ template <std::array<unsigned, 4> LineSize, std::array<unsigned, 4> Associativit
 class RealDeclassificationCaches {
 public:
   bool checkDeclassified(ADDRINT addr, unsigned size) {
-    return
-      cache1.checkDeclassified(addr / 1, div_up(size, 1U)) ||
-      cache2.checkDeclassified(addr / 2, div_up(size, 2U)) ||
-      cache4.checkDeclassified(addr / 4, div_up(size, 4U)) ||
-      cache8.checkDeclassified(addr / 8, div_up(size, 8U));
+    switch (size) {
+    case 1:
+      return cache1.checkDeclassified(addr / 1, div_up(size, 1U));
+    case 2:
+      return cache2.checkDeclassified(addr / 2, div_up(size, 2U));
+    case 4:
+      return cache4.checkDeclassified(addr / 4, div_up(size, 4U));
+    case 8:
+    case 16:
+    case 32:
+    case 64:
+      return cache8.checkDeclassified(addr / 8, div_up(size, 8U));
+    default:
+      return false;
+    }
   }
 
   void setDeclassified(ADDRINT addr, unsigned size) {
@@ -199,29 +209,16 @@ public:
       cache1.setDeclassified(addr / 1, 1);
       break;
     case 2:
-      cache1.setDeclassifiedNoAllocate(addr / 1, 2);
       cache2.setDeclassified(addr / 2, 1);
       break;
     case 4:
-      cache1.setDeclassifiedNoAllocate(addr / 1, 4);
-      cache2.setDeclassifiedNoAllocate(addr / 2, 2);
       cache4.setDeclassified(addr / 4, 1);
       break;
     case 8:
-      cache1.setDeclassifiedNoAllocate(addr / 1, 8);
-      cache2.setDeclassifiedNoAllocate(addr / 2, 4);
-      cache4.setDeclassifiedNoAllocate(addr / 4, 2);      
-      cache8.setDeclassified(addr / 8, 1);
-      break;
     case 16:
-      cache1.setDeclassifiedNoAllocate(addr / 1, 16);
-      cache2.setDeclassifiedNoAllocate(addr / 2, 8);
-      cache4.setDeclassifiedNoAllocate(addr / 4, 4);
-      cache8.setDeclassified(addr / 8, 2);
-      break;
     case 32: 
     case 64:
-      assert(false);
+      cache8.setDeclassified(addr / 8, size / 8);
       break;
     default:
       break;
