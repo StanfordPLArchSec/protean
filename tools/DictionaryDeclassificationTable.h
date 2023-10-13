@@ -7,6 +7,8 @@
 
 #include "pin.H"
 
+static inline bool was_pattern_hit;
+
 static inline void write_bv(std::ostream& os, const auto& bv) {
   assert(bv.size() % 8 == 0);
   for (unsigned i = 0; i < bv.size(); i += 8) {
@@ -393,7 +395,7 @@ public:
   bool checkDeclassified(ADDRINT addr, unsigned size) {
     const unsigned word_off = addr & (WordSize - 1);
     const unsigned line_off = (addr / WordSize) & (LineSize - 1);
-    const unsigned tag = addr / (WordSize * LineSize);
+    const ADDRINT tag = addr / (WordSize * LineSize);
     const unsigned row_idx = tag & (TableRows - 1);
     Row& row = rows[row_idx];
 
@@ -416,7 +418,7 @@ public:
   bool setDeclassified(ADDRINT addr, unsigned size) {
     const unsigned word_off = addr & (WordSize - 1);
     const unsigned line_off = (addr / WordSize) & (LineSize - 1);
-    const unsigned tag = addr / (WordSize * LineSize);
+    const ADDRINT tag = addr / (WordSize * LineSize);
     const unsigned row_idx = tag & (TableRows - 1);
     Row& row = rows[row_idx];
 
@@ -455,7 +457,7 @@ public:
   bool setClassified(ADDRINT addr, unsigned size) {
     const unsigned word_off = addr & (WordSize - 1);
     const unsigned line_off = (addr / WordSize) & (LineSize - 1);
-    const unsigned tag = addr / (WordSize * LineSize);
+    const ADDRINT tag = addr / (WordSize * LineSize);
     const unsigned row_idx = tag & (TableRows - 1);
     Row& row = rows[row_idx];
 
@@ -488,9 +490,11 @@ public:
 
     // Access line.
     const unsigned line_off = addr & (LineSize - 1);
-    const unsigned tag = addr / LineSize;
+    const ADDRINT tag = addr / LineSize;
     const unsigned row_idx = tag & (TableRows - 1);
     Row& row = rows[row_idx];
+
+    // fprintf(stderr, "upgradeLine %lx-%lx\n", tag * LineSize * WordSize, (tag + 1) * LineSize * WordSize);
 
     Line *line = row.tryGetLine(tag);
     if (line == nullptr) {
@@ -507,7 +511,9 @@ public:
 
       line->init(tag);
     }
-    
+
+    // fprintf(stderr, "set-word %u %lx-%lx\n", line_off, tag * LineSize * WordSize + line_off * WordSize,
+    // tag * LineSize * WordSize + (line_off + 1) * WordSize);
     line->words[line_off] = std::move(word);
     
     ++stat_t0_upgrades;
@@ -560,9 +566,12 @@ public:
   }
 
   bool checkDeclassified(ADDRINT addr, unsigned size) {
+    // fprintf(stderr, "checkDeclassified %lx %u\n", addr, size);
+    was_pattern_hit = false;
     if constexpr (EnablePattern) {
       if (pattern_table.checkDeclassified(addr, size)) {
 	++stat_pattern_hit;
+	was_pattern_hit = true;
 	return true;
       }
     }
@@ -574,6 +583,7 @@ public:
   }
     
   void setDeclassified(ADDRINT addr, unsigned size) {
+    // fprintf(stderr, "setDeclassified %lx %u\n", addr, size);
     if constexpr (EnablePattern) {
       if (pattern_table.setDeclassified(addr, size))
 	return;
@@ -583,7 +593,8 @@ public:
     cache.setDeclassified(addr, size, evicted);
     if (evicted.valid) {
       // Move to pattern table
-      pattern_table.upgradeLine(evicted.bv, addr / LineSize);
+      // fprintf(stderr, "upgrading %lx %u\n", evicted.tag * LineSize, LineSize);
+      pattern_table.upgradeLine(evicted.bv, evicted.tag);
       ++stat_upgrades;
 
 #if 0
@@ -603,6 +614,7 @@ public:
   }
 
   void setClassified(ADDRINT addr, unsigned size, ADDRINT) {
+    // fprintf(stderr, "setClassified %lx %u\n", addr, size);
     if constexpr (EnablePattern) {
       pattern_table.setClassified(addr, size);
     }
