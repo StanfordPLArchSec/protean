@@ -22,7 +22,7 @@
 #include <cinttypes>
 #include <cstdint>
 #include "ShadowDeclassificationTable.h"
-#include "PatternDeclassificationTable.h"
+#include "DictionaryDeclassificationTable.h"
 #include "DeclassificationCache.h"
 
 static KNOB<std::string> OutputFile(KNOB_MODE_WRITEONCE, "pintool", "o", "", "specify file name for output");
@@ -40,7 +40,7 @@ unsigned long interval;
 long max_inst;
 unsigned coarsen;
 
-#if 1
+#if 0
 static ShadowDeclassificationTable decltab;
 #endif
 #if 0
@@ -57,14 +57,14 @@ static ParallelDeclassificationTable
 decltab;
 #endif
 #if 0
-static DeclassificationTable<64, 4, 1024, 32, true> decltab("eviction.log");
+static DictionaryDeclassificationTable<64, 4, 1024, 32, true> decltab("eviction.log");
 #endif
-#if 0
+#if 1
 static RealDeclassificationCaches
 <
-  /*LineSizes*/{64,64,64},
-  /*Associativities*/{4,4,4},
-  /*TableSizes*/{256,512 * 16 * 16,4096 * 16 * 16}
+  /*LineSizes*/{64,64,64,64},
+  /*Associativities*/{4,4,4,4},
+  /*TableSizes*/{4096 * 16 * 16, 4096 * 16 * 16, 4096 * 16 * 16, 4096 * 16 * 16}
 > decltab;
 #endif
 
