@@ -25,7 +25,7 @@ static inline void write_bv(std::ostream& os, const auto& bv) {
 }
 
 template <unsigned LineSize_, unsigned Associativity_, unsigned TableSize_>
-class DeclassificationCache {
+class DictionaryDeclassificationCache {
 public:
   static inline constexpr unsigned LineSize = LineSize_;
   static inline constexpr unsigned Associativity = Associativity_;
@@ -277,6 +277,10 @@ public:
       return allReset();
     }
 
+    unsigned popCount() const {
+      return std::count(bv.begin(), bv.end(), true);
+    }
+
   };
 
   using WordPtr = std::shared_ptr<Word>;
@@ -304,7 +308,10 @@ public:
 
       // Otherwise, evict the word with the lowest reference count.
       const auto it = std::min_element(words.begin(), words.end(), [] (const auto& a, const auto& b) -> bool {
-	return a.use_count() < b.use_count(); 
+	const auto score = [] (const auto& word) {
+	  return word.use_count() + word.lock()->popCount();
+	};
+	return score(a) < score(b);
       });
       assert(it != words.end() && !it->expired());
       WordPtr new_word = std::make_shared<Word>(bv);
@@ -553,12 +560,12 @@ private:
 // class PatternDeclassificationTable {
 
 template <unsigned LineSize, unsigned Associativity, unsigned TableSize, unsigned DictSize, bool EnablePattern>
-class DeclassificationTable {
+class DictionaryDeclassificationTable {
 public:
-  using Cache = DeclassificationCache<LineSize, Associativity, TableSize>;
+  using Cache = DictionaryDeclassificationCache<LineSize, Associativity, TableSize>;
   using PatternTable = PatternDeclassificationTable<LineSize, Associativity, TableSize, DictSize>;
   
-  DeclassificationTable(const char *eviction_path) {
+  DictionaryDeclassificationTable(const char *eviction_path) {
     if ((eviction_file = fopen(eviction_path, "w")) == NULL) {
       perror("fopen");
       exit(1);
@@ -631,6 +638,8 @@ public:
        << "upgrades " << stat_upgrades << "\n";
     pattern_table.printStats(os);
   }
+
+  void dumpTaint(std::vector<uint8_t>&) {}
 
 private:
   Cache cache;
