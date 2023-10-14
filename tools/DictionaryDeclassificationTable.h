@@ -24,6 +24,7 @@ static inline void write_bv(std::ostream& os, const auto& bv) {
   }
 }
 
+#if 1
 template <unsigned LineSize_, unsigned Associativity_, unsigned TableSize_>
 class DictionaryDeclassificationCache {
 public:
@@ -85,12 +86,12 @@ public:
     using Lines = std::array<Line, TableCols>;
 
     Row(): tick(0) {
-      std::fill(updated.begin(), updated.end(), tick);
+      std::fill(used.begin(), used.end(), tick);
     }
 
-    void markUpdated(Lines::iterator it) {
-      const unsigned idx = it - lines.begin();
-      updated[idx] = ++tick;
+    void markUsed(Line& line) {
+      const unsigned idx = &line - lines.data();
+      used[idx] = ++tick;
     }
 
     // Stores the evicted line, if any, in @evicted. If no line
@@ -107,7 +108,7 @@ public:
 	it->valid = true;
 	it->tag = tag;
 	std::fill(it->bv.begin(), it->bv.end(), false);
-	updated[it - lines.begin()] = tick;
+	used[it - lines.begin()] = ++tick;
       };
 
       // Check for free line.
@@ -124,8 +125,8 @@ public:
       for (auto it = lines.begin(); it != lines.end(); ++it) {
 	assert(it->valid);
 	const unsigned idx = it - lines.begin();
-	if (updated[idx] <= lru_tick) {
-	  lru_tick = updated[idx];
+	if (used[idx] <= lru_tick) {
+	  lru_tick = used[idx];
 	  lru_it = it;
 	}
       }
@@ -150,7 +151,7 @@ public:
   private:
     Lines lines;
     Tick tick;
-    std::array<Tick, TableCols> updated;
+    std::array<Tick, TableCols> used;
   };
 
   bool checkDeclassified(ADDRINT addr, unsigned size) {
@@ -163,27 +164,36 @@ public:
     if (!row.tryGetLine(tag, row_it))
       return false;
 
-    const Line& line = *row_it;
+    Line& line = *row_it;
     assert(line.valid);
-    return line.allSet(line_off, size);
+    const bool is_declassified = line.allSet(line_off, size);
+    if (is_declassified)
+      row.markUsed(line);
+    return is_declassified;
   }
 
   // NOTE: This function should only be called if we are certain that an upper table doesn't
   // indicate this range is declassified, or else we'll allocate needless entries in this
   // cache.
-  void setDeclassified(ADDRINT addr, unsigned size, Line& evicted) {
+  void setDeclassified(ADDRINT addr, unsigned size, bool& evicted, ADDRINT& evicted_tag, std::array<bool, LineSize>& evicted_bv) {
     const unsigned line_off = addr & (LineSize - 1);
     const ADDRINT tag = addr / LineSize;
     const unsigned row_idx = tag & (TableRows - 1);
     Row& row = rows[row_idx];
-    auto row_it = row.getOrAllocateLine(tag, evicted);
+    Line evicted_line;
+    auto row_it = row.getOrAllocateLine(tag, evicted_line);
     Line& line = *row_it;
-    const bool updated = line.set(line_off, size);
-    if (updated)
-      row.markUpdated(row_it);
+    line.set(line_off, size);
+    if (evicted_line.valid) {
+      evicted = true;
+      evicted_tag = evicted_line.tag;
+      evicted_bv = evicted_line.bv;
+    } else {
+      evicted = false;
+    }
   }
 
-  void setClassified(ADDRINT addr, unsigned size) {
+  void setClassified(ADDRINT addr, unsigned size, ADDRINT store_inst) {
     const unsigned line_off = addr & (LineSize - 1);
     const ADDRINT tag = addr / LineSize;
     const unsigned row_idx = tag & (TableRows - 1);
@@ -192,8 +202,7 @@ public:
     if (!row.tryGetLine(tag, row_it))
       return;
     Line& line = *row_it;
-    if (line.reset(line_off, size))
-      row.markUpdated(row_it);
+    line.reset(line_off, size);
 
     // If the line is now empty, just deallocate it.
     if (line.allReset())
@@ -203,7 +212,7 @@ public:
 private:
   std::array<Row, TableRows> rows;
 };
-
+#endif
 
 
 
@@ -309,7 +318,7 @@ public:
       // Otherwise, evict the word with the lowest reference count.
       const auto it = std::min_element(words.begin(), words.end(), [] (const auto& a, const auto& b) -> bool {
 	const auto score = [] (const auto& word) {
-	  return word.use_count() + word.lock()->popCount();
+	  return word.use_count();
 	};
 	return score(a) < score(b);
       });
@@ -563,9 +572,11 @@ template <unsigned LineSize, unsigned Associativity, unsigned TableSize, unsigne
 class DictionaryDeclassificationTable {
 public:
   using Cache = DictionaryDeclassificationCache<LineSize, Associativity, TableSize>;
+  // using Cache = DeclassificationCache<LineSize, Associativity, TableSize>;
   using PatternTable = PatternDeclassificationTable<LineSize, Associativity, TableSize, DictSize>;
   
-  DictionaryDeclassificationTable(const char *eviction_path) {
+  DictionaryDeclassificationTable() {
+    const char *eviction_path = "evictions.bin";
     if ((eviction_file = fopen(eviction_path, "w")) == NULL) {
       perror("fopen");
       exit(1);
@@ -596,36 +607,40 @@ public:
 	return;
     }
 
-    typename Cache::Line evicted;
-    cache.setDeclassified(addr, size, evicted);
-    if (evicted.valid) {
-      // Move to pattern table
-      // fprintf(stderr, "upgrading %lx %u\n", evicted.tag * LineSize, LineSize);
-      pattern_table.upgradeLine(evicted.bv, evicted.tag);
-      ++stat_upgrades;
+    bool evicted;
+    ADDRINT evicted_tag;
+    std::array<bool, LineSize> evicted_bv;
+    cache.setDeclassified(addr, size, evicted, evicted_tag, evicted_bv);
+    if constexpr (EnablePattern) {
+      if (evicted) {
+	// Move to pattern table
+	// fprintf(stderr, "upgrading %lx %u\n", evicted.tag * LineSize, LineSize);
+	pattern_table.upgradeLine(evicted_bv, evicted_tag);
+	++stat_upgrades;
 
 #if 0
-      assert(evicted.anySet());
-      for (unsigned i = 0; i < evicted.bv.size(); i += 8) {
-	uint8_t value = 0;
-	for (unsigned j = 0; j < 8; ++j) {
-	  value <<= 1;
-	  if (evicted.bv[i + j])
-	    value |= 1;
+	assert(evicted.anySet());
+	for (unsigned i = 0; i < evicted.bv.size(); i += 8) {
+	  uint8_t value = 0;
+	  for (unsigned j = 0; j < 8; ++j) {
+	    value <<= 1;
+	    if (evicted.bv[i + j])
+	      value |= 1;
+	  }
+	  fprintf(eviction_file, "%02hhx", value);
 	}
-	fprintf(eviction_file, "%02hhx", value);
-      }
-      fprintf(eviction_file, "\n");
+	fprintf(eviction_file, "\n");
 #endif
+      }
     }
   }
 
-  void setClassified(ADDRINT addr, unsigned size, ADDRINT) {
+  void setClassified(ADDRINT addr, unsigned size, ADDRINT store_inst) {
     // fprintf(stderr, "setClassified %lx %u\n", addr, size);
     if constexpr (EnablePattern) {
       pattern_table.setClassified(addr, size);
     }
-    cache.setClassified(addr, size);
+    cache.setClassified(addr, size, store_inst);
   }
 
   void printDesc(std::ostream& os) {

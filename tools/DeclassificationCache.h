@@ -175,6 +175,22 @@ public:
 
     if (evicted) {
       evicted_addr = evicted_tag * LineSize;
+      ++stat_evictions;
+      static unsigned long iter = 0;
+      ++iter;
+      constexpr unsigned freq = 1000;
+      if (iter % freq == 0 && eviction_file) {
+	std::array<uint8_t, LineSize/8> enc;
+	for (unsigned i = 0; i < LineSize; i += 8) {
+	  uint8_t& value = enc[i / 8] = 0;
+	  for (unsigned j = 0; j < 8; ++j) {
+	    value <<= 1;
+	    if (evicted_bv[i + j])
+	      value |= 1;
+	  }
+	}
+	fwrite(enc.data(), 1, enc.size(), eviction_file);
+      }
     }
   }
 
@@ -212,7 +228,7 @@ public:
     os << name << ".evictions " << stat_evictions << "\n";
   }
 
-  DeclassificationCache(const std::string& name, const EvictionPolicy& eviction_policy): name(name) {
+  DeclassificationCache(const std::string& name, const EvictionPolicy& eviction_policy, FILE *& eviction_file): name(name), eviction_file(eviction_file) {
     std::fill(rows.begin(), rows.end(), Row(eviction_policy));
   }
 
@@ -220,5 +236,5 @@ private:
   std::string name;
   std::array<Row, TableRows> rows;
   unsigned long stat_evictions = 0;
-  FILE *eviction_file;
+  FILE * & eviction_file;
 };

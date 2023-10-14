@@ -60,6 +60,90 @@ struct EvictionPolicies {
   };
 
 
+  class NRUEvictionPolicy final : public EvictionPolicy {
+  public:
+    NRUEvictionPolicy() = default;
+    NRUEvictionPolicy(unsigned start_value): startValue(start_value) {
+      std::fill(nru.begin(), nru.end(), 0);
+    }
+
+  private:
+    void markUsed(unsigned idx) {
+      for (unsigned i = 0; i < N; ++i) {
+	if (i == idx) { 
+	  nru[i] = startValue;
+	} else {
+	  nru[i] = std::max(nru[i], 1U) - 1;
+	}
+      }
+    }
+
+  public:
+    void allocated(unsigned idx, const BV& bv) override {
+      markUsed(idx);
+    }
+
+    void checkDeclassifiedHit(unsigned idx, const BV& bv) override {
+      markUsed(idx);
+    }
+
+    int score(unsigned idx, const BV&) override {
+      return nru[idx];
+    }
+    
+  private:
+    unsigned startValue;
+    std::array<unsigned, N> nru;
+  };
+
+
+  class LRVC final : public EvictionPolicy {
+  private:
+    using Tick = unsigned;
+
+    static unsigned popcnt(const BV& bv) {
+      return std::count(bv.begin(), bv.end(), true);
+    }
+
+    void markUpdated(unsigned idx) {
+      ++tick;
+      updated[idx] = tick;
+    }
+
+  public:
+    LRVC() {
+      std::fill(updated.begin(), updated.end(), tick);
+    }
+    
+    void setDeclassifiedPre(unsigned idx, const BV& bv) override {
+      popcntTmp = popcnt(bv);
+    }
+
+    void setDeclassifiedPost(unsigned idx, const BV& bv) override {
+      if (popcntTmp != popcnt(bv))
+	markUpdated(idx);
+    }
+
+    void setClassifiedPre(unsigned idx, const BV& bv) override {
+      popcntTmp = popcnt(bv);
+    }
+
+    void setClassifiedPost(unsigned idx, const BV& bv) override {
+      if (popcntTmp != popcnt(bv))
+	markUpdated(idx);
+    }
+
+    int score(unsigned idx, const BV&) override {
+      return updated[idx];
+    }
+    
+  private:
+    Tick tick = 0;
+    std::array<Tick, N> updated;
+    unsigned popcntTmp;
+  };
+
+
   template <typename ScoreFunc, class... Policies>
   class CompositeEvictionPolicy {
   public:

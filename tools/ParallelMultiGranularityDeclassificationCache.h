@@ -1,5 +1,7 @@
 #pragma once
 
+#define LOG_EVICTIONS 0
+
 template <unsigned LineSize_, unsigned Associativity_, unsigned TableSize_, unsigned Scale_>
 class RealDeclassificationCache {
 public:
@@ -62,7 +64,9 @@ public:
 
     // Stores the evicted line, if any, in @evicted. If no line
     // was evicted, then evicted.valid == false.
-    Line& getOrAllocateLine(ADDRINT tag, unsigned long& stat_evictions) {
+    Line& getOrAllocateLine(ADDRINT tag, bool& evicted, std::array<bool, LineSize>& evicted_bv) {
+      evicted = false;
+      
       // First, check for matching line.
       for (Line& line : lines)
 	if (line.valid && line.tag == tag)
@@ -91,8 +95,10 @@ public:
       });
       assert(evicted_it != lines.end());
 
+      evicted = true;
+      std::copy(evicted_it->bv.begin(), evicted_it->bv.end(), evicted_bv.begin());
+
       init_line(*evicted_it);
-      ++stat_evictions;
       return *evicted_it;
     }
 
@@ -138,9 +144,31 @@ public:
     const ADDRINT tag = addr / LineSize;
     const unsigned row_idx = tag & (TableRows - 1);
     Row& row = rows[row_idx];
-    Line& line = row.getOrAllocateLine(tag, stat_evictions);
+    
+    bool evicted;
+    std::array<bool, LineSize> evicted_bv;
+    Line& line = row.getOrAllocateLine(tag, evicted, evicted_bv);
     line.set(line_off, size);
     row.markUsed(&line);
+
+    if (evicted) {
+      constexpr int eviction_sample_rate = 1024;
+      ++stat_evictions;
+      if (stat_evictions % eviction_sample_rate == 0) {
+	std::array<uint8_t, LineSize / 8> buf;
+	for (unsigned i = 0; i < LineSize; i += 8) {
+	  uint8_t& value = buf[i / 8] = 0;
+	  for (unsigned j = 0; j < 8; ++j) {
+	    value <<= 1;
+	    if (evicted_bv[i + j])
+	      value |= 1;
+	  }
+	}
+#if LOG_EVICTIONS
+	fwrite(buf.data(), 1, buf.size(), eviction_file);
+#endif
+      }
+    }
   }
 
   void setDeclassifiedNoAllocate(ADDRINT addr, unsigned size) {
@@ -175,9 +203,18 @@ public:
     os << "evictions-cache-" << Scale_ << " " << stat_evictions << "\n";
   }
 
+  RealDeclassificationCache() {
+#if LOG_EVICTIONS
+    char path[256];
+    sprintf(path, "evictions%u.bin", Scale_);
+    eviction_file = fopen(path, "w");
+#endif
+  }
+
 private:
   std::array<Row, TableRows> rows;
   unsigned long stat_evictions = 0;
+  FILE *eviction_file;
 };
 
 
