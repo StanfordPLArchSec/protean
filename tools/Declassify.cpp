@@ -22,8 +22,10 @@
 #include <cinttypes>
 #include <cstdint>
 #include "ShadowDeclassificationTable.h"
-#include "DictionaryDeclassificationTable.h"
 #include "DeclassificationCache.h"
+#include "SharedMultiGranularityDeclassificationTable.h"
+#include "DictionaryDeclassificationTable.h"
+#include "EvictionPolicy.h"
 
 static KNOB<std::string> OutputFile(KNOB_MODE_WRITEONCE, "pintool", "o", "", "specify file name for output");
 static KNOB<unsigned long> Interval(KNOB_MODE_WRITEONCE, "pintool", "i", "0", "interval (default: 50M)");
@@ -59,13 +61,22 @@ decltab;
 #if 0
 static DictionaryDeclassificationTable<64, 4, 1024, 32, true> decltab("eviction.log");
 #endif
-#if 1
+#if 0
 static RealDeclassificationCaches
 <
   /*LineSizes*/{64,64,64,64},
   /*Associativities*/{4,4,4,4},
-  /*TableSizes*/{4096 * 16 * 16, 4096 * 16 * 16, 4096 * 16 * 16, 4096 * 16 * 16}
+  /*TableSizes*/{1024, 1024, 1024, 1024}
 > decltab;
+#endif
+#if 1
+using ev = EvictionPolicies<4, std::array<bool, 64>>;
+static ev::LRUEvictionPolicy lru_ep;
+static ev::PopCntEvictionPolicy popcnt_ep;
+static ev::CompositeEvictionPolicy<std::plus<int>, ev::LRUEvictionPolicy, ev::PopCntEvictionPolicy> ep(std::plus<int>(), lru_ep, popcnt_ep);
+static DeclassificationCache<64, 4, 1024, decltype(ep)> cache_decltab("cache", ep);
+// static DictionaryDeclassificationTable<64, 4, 1024, 32, false> dict_decltab;
+static SharedMultiGranularityDeclassificationTable decltab("decltab", cache_decltab);
 #endif
 
 #if 0
@@ -95,8 +106,8 @@ static void RecordDeclassifiedLoad(ADDRINT eff_addr, UINT32 eff_size) {
   if (decltab.checkDeclassified(eff_addr, eff_size)) {
 #if SHADOW_DECLTAB
     if (!shadow_decltab.checkDeclassified(eff_addr, eff_size)) {
-      fprintf(stderr, "address %lx (eff size %u) should not have been declassified, was pattern hit: %u\n",
-	      eff_addr, eff_size, was_pattern_hit);
+      fprintf(stderr, "address %lx (eff size %u) should not have been declassified\n",
+	      eff_addr, eff_size);
       
       abort();
     }
@@ -210,6 +221,9 @@ static void Handle_MaxInst() {
     PIN_ExitProcess(0);
   }
   ++counter;
+  if (counter % 100000 == 0) {
+    // fprintf(stderr, "%ld\n", counter);
+  }
 }
 
 static void Instruction_MaxInst(INS ins, VOID *) {

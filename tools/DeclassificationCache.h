@@ -4,7 +4,7 @@
 #include <array>
 #include <string>
 
-template <unsigned LineSize_, unsigned Associativity_, unsigned TableSize_>
+template <unsigned LineSize_, unsigned Associativity_, unsigned TableSize_, class EvictionPolicy_>
 class DeclassificationCache {
 public:
   static inline constexpr unsigned LineSize = LineSize_;
@@ -14,6 +14,7 @@ public:
   static inline constexpr unsigned TableRows = TableSize / TableCols;
   static_assert((LineSize & (LineSize - 1)) == 0, "");
   static_assert((TableRows & (TableRows - 1)) == 0, "");
+  using EvictionPolicy = EvictionPolicy_;
 
   struct Line {
     bool valid;
@@ -64,6 +65,9 @@ public:
     using Tick = unsigned;
     using Lines = std::array<Line, TableCols>;
 
+    Row() = default;
+    Row(const EvictionPolicy& eviction_policy): eviction_policy(eviction_policy) {}
+
     // Stores the evicted line, if any, in @evicted. If no line
     // was evicted, then evicted.valid == false.
     Line& getOrAllocateLine(ADDRINT tag, bool& evicted, ADDRINT& evicted_tag, std::array<bool, LineSize>& evicted_bv) {
@@ -78,6 +82,7 @@ public:
 	line.valid = true;
 	line.tag = tag;
 	std::fill(line.bv.begin(), line.bv.end(), false);
+	eviction_policy.allocated(getIndex(line), line.bv);
       };
 
       // Check for free line.
@@ -89,14 +94,8 @@ public:
       } 
       
       // Check for line with lowest population count.
-      const auto metric_used = [&] (const Line& line) -> int {
-	return used[&line - lines.data()];
-      };
-      const auto metric_popcnt = [] (const Line& line) -> int {
-	return std::count(line.bv.begin(), line.bv.end(), true);
-      };
-      const auto metric = [&] (const Line& line) -> float {
-	return metric_used(line) + metric_popcnt(line);
+      const auto metric = [&] (const Line& line) -> int {
+	return eviction_policy.score(&line - lines.data(), line.bv);
       };
       auto evicted_it = std::min_element(lines.begin(), lines.end(), [&] (const Line& a, const Line& b) -> bool {
 	return metric(a) < metric(b);
@@ -120,15 +119,18 @@ public:
       return nullptr;
     }
 
-    void markUsed(Line *line) {
-      const unsigned row_idx = line - lines.data();
-      used[row_idx] = ++tick;
+    unsigned getIndex(const Line *line) const {
+      return line - lines.data();
+    }
+
+    unsigned getIndex(const Line& line) const {
+      return getIndex(&line);
     }
 
   private:
     Lines lines;
-    Tick tick = 0;
-    std::array<Tick, TableCols> used;
+  public:
+    EvictionPolicy eviction_policy;
   };
 
 
@@ -142,10 +144,15 @@ public:
     if (line == nullptr)
       return false;
 
-    row.markUsed(line);
-
     assert(line->valid);
-    return line->allSet(line_off, size);
+    const bool is_declassified = line->allSet(line_off, size);
+    if (is_declassified) {
+      row.eviction_policy.checkDeclassifiedHit(row.getIndex(line), line->bv);
+    } else {
+      row.eviction_policy.checkDeclassifiedMiss(row.getIndex(line), line->bv);
+    }
+    
+    return is_declassified;
   }
 
   void setDeclassified(ADDRINT addr, unsigned size, bool& evicted, ADDRINT& evicted_addr, std::array<bool, LineSize>& evicted_bv) {
@@ -159,8 +166,12 @@ public:
 
     ADDRINT evicted_tag;
     Line& line = row.getOrAllocateLine(tag, evicted, evicted_tag, evicted_bv);
+
+    row.eviction_policy.setDeclassifiedPre(row.getIndex(line), line.bv);
+
     line.set(line_off, size);
-    row.markUsed(&line);
+
+    row.eviction_policy.setDeclassifiedPost(row.getIndex(line), line.bv);    
 
     if (evicted) {
       evicted_addr = evicted_tag * LineSize;
@@ -182,7 +193,13 @@ public:
     Line *line = row.tryGetLine(tag);
     if (!line)
       return;
+    
+    row.eviction_policy.setClassifiedPre(row.getIndex(line), line->bv);
+
     line->reset(line_off, size);
+
+    row.eviction_policy.setClassifiedPost(row.getIndex(line), line->bv);
+
     if (line->allReset())
       line->valid = false;
   }
@@ -195,7 +212,9 @@ public:
     os << name << ".evictions " << stat_evictions << "\n";
   }
 
-  DeclassificationCache(const std::string& name): name(name) {}
+  DeclassificationCache(const std::string& name, const EvictionPolicy& eviction_policy): name(name) {
+    std::fill(rows.begin(), rows.end(), Row(eviction_policy));
+  }
 
 private:
   std::string name;
