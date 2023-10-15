@@ -27,6 +27,8 @@
 #include "SharedMultiGranularityDeclassificationTable.h"
 #include "DictionaryDeclassificationTable.h"
 #include "EvictionPolicy.h"
+#include "PatternDeclassificationTable.h"
+#include "MultiLevelDeclassificationTable.h"
 
 static KNOB<std::string> OutputFile(KNOB_MODE_WRITEONCE, "pintool", "o", "pin.log", "specify file name for output");
 static KNOB<unsigned long> Interval(KNOB_MODE_WRITEONCE, "pintool", "i", "0", "interval (default: 50M)");
@@ -38,7 +40,7 @@ static KNOB<unsigned> Coarsen(KNOB_MODE_WRITEONCE, "pintool", "c", "0", "coarsen
 static KNOB<std::string> DumpTaint(KNOB_MODE_WRITEONCE, "pintool", "dump_taint", "", "dump taint to this file");
 static KNOB<int> DumpEvictions(KNOB_MODE_WRITEONCE, "pintool", "dump_evictions", "0", "dump evictions to file");
 
-static std::string getFilename(const std::string& s) {
+std::string getFilename(const std::string& s) {
   std::string dir = OutputDir.Value();
   if (dir.empty())
     dir = ".";
@@ -83,20 +85,36 @@ static RealDeclassificationCaches
   /*TableSizes*/{1024, 1024, 1024, 1024}
 > decltab;
 #endif
-#if 1
+
 using ev = EvictionPolicies<4, std::array<bool, 64>>;
 static ev::LRUEvictionPolicy lru_ep;
 static ev::PopCntEvictionPolicy popcnt_ep;
-static ev::CompositeEvictionPolicy<std::plus<int>, ev::LRUEvictionPolicy, ev::PopCntEvictionPolicy> lru_popcnt_ep(std::plus<int>(), lru_ep, popcnt_ep);
+static ev::CompositeEvictionPolicy<ev::LRU_PopCnt_Functor, ev::LRUEvictionPolicy, ev::PopCntEvictionPolicy> lru_popcnt_ep(ev::LRU_PopCnt_Functor(1, 16), lru_ep, popcnt_ep);
 static ev::NRUEvictionPolicy nru_ep(4);
 static ev::LRVC lrvc_ep;
 static ev::CompositeEvictionPolicy<std::plus<int>, ev::LRVC, ev::PopCntEvictionPolicy> lrvc_popcnt_ep(std::plus<int>(), lrvc_ep, popcnt_ep);
 static auto ep = lru_popcnt_ep;
+
+#if 1
 static DeclassificationCache<64, 4, 1024, decltype(ep)> cache_decltab("cache", ep,
-								      eviction_file
+								      eviction_file, 1000
 								      );
-// static DictionaryDeclassificationTable<64, 4, 1024, 32, false> dict_decltab;
-static SharedMultiGranularityDeclassificationTable decltab("decltab", cache_decltab);
+static DictionaryDeclassificationTable<64, 4, 1024, 32, true, decltype(cache_decltab)> dict_decltab(cache_decltab);
+static IdealPatternDeclassificationTable<64> pattern_shadow_decltab;
+static PatternDeclassificationCache<64, 64, 4, 1024> pattern_cache_decltab;
+static MultiLevelDeclassificationTable twolevel_decltab(cache_decltab, pattern_cache_decltab);
+static SharedMultiGranularityDeclassificationTable decltab("decltab", twolevel_decltab);
+#endif
+
+#if 0
+static DeclassificationCache<64, 4, 1024, decltype(ep)> cache_decltab("cache", ep,
+								      eviction_file, 1000
+								      );
+static DictionaryDeclassificationTable<64, 4, 1024, 32, true, decltype(cache_decltab)> decltab(cache_decltab);
+#endif
+
+#if 0
+static DeclassificationCache<64, 4, 1024, decltype(ep)> decltab("cache", ep, eviction_file, 1000);
 #endif
 
 #if 0
@@ -288,6 +306,8 @@ static void Fini(int32_t code, void *v) {
       << "misses " << misses << "\n"
       << "miss-rate " << (misses / static_cast<float>(hits + misses) * 100) << "\n";
   decltab.printStats(out);
+  out << "\n\n\n\n";
+  decltab.dump(out);
   out.close();
 
   if (!DumpTaint.Value().empty()) {
