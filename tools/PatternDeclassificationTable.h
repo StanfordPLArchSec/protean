@@ -196,7 +196,7 @@ public:
   static_assert(TableSize % TableCols == 0, "");
   static_assert((TableRows & (TableRows - 1)) == 0, "");
   static inline constexpr unsigned MaxPatLen = MaxPatLen_;
-  static_assert(MaxPatLen <= LineSize, "");
+  static_assert(MaxPatLen <= ChunkSize, "");
 
   using PatBV = std::array<bool, ChunkSize * 2>;
   using DataBV = std::array<bool, LineSize>;
@@ -334,7 +334,7 @@ public:
 	      tag_ * LineSize * ChunkSize,
 	      patlen_,
 	      bv_to_string1(pat_.begin(), pat_.begin() + patlen_).c_str(),
-	      bv_to_string8(bv_.begin(), bv_.end()).c_str()
+	      bv_to_string1(bv_.begin(), bv_.end()).c_str()
 	      );
       } else {
 	sprintf(buf, "(invalid)");
@@ -430,16 +430,26 @@ public:
     return row.setDeclassified(addr, size);
   }
 
+  bool setDeclassified(Addr addr, unsigned size, bool& downgrade, Addr& downgrade_addr, std::array<bool, ChunkSize>& downgrade_bv) {
+    downgrade = false;
+    return setDeclassified(addr, size);
+  }
+
   bool setClassified(Addr addr, unsigned size, Addr store_inst) {
     const unsigned idx = (addr / ChunkSize / LineSize) & (TableRows - 1);
     Row& row = rows[idx];
     return row.setClassified(addr, size);
   }
 
+  bool setClassified(Addr addr, unsigned size, Addr store_inst, bool& downgrade, Addr& downgrade_addr, std::array<bool, ChunkSize>& downgrade_bv) {
+    downgrade = false;
+    return setClassified(addr, size, store_inst);
+  }
+  
 private:
 
   bool hasPattern(const std::array<bool, ChunkSize>& bv, std::vector<bool>& pattern) {
-    const unsigned max_pattern_length = std::min<unsigned>(16, bv.size());
+    const unsigned max_pattern_length = std::min<unsigned>(MaxPatLen, bv.size());
     for (unsigned i = 1; i <= max_pattern_length; ++i) {
       bool matched = true;
       for (unsigned j = i; j < bv.size(); j += i) {
