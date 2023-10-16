@@ -215,4 +215,18 @@ struct EvictionPolicies {
   };
 
 
+
+  // Functors
+  struct LRU_PopCnt_Functor {
+    int lru_scale;
+    int popcnt_scale;
+
+    LRU_PopCnt_Functor() = default;
+    LRU_PopCnt_Functor(int lru_scale, int popcnt_scale): lru_scale(lru_scale), popcnt_scale(popcnt_scale) {}
+    
+    int operator()(int lru, int popcnt) const {
+      return lru * lru_scale + popcnt * popcnt_scale;
+    }
+  };
+
 };

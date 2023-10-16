@@ -10,7 +10,7 @@ list(APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/cmake)
 include(PinTool2)
 add_pin_tool(FrameForwarding FrameForwarding.cpp)
 
-add_pin_tool(Declassify Declassify.cpp DeclassificationTable.h)
+add_pin_tool(Declassify Declassify.cpp)
 
 add_executable(process-declassify process-declassify.cc)
 

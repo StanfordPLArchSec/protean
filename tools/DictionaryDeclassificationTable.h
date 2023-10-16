@@ -7,215 +7,6 @@
 
 #include "pin.H"
 
-static inline bool was_pattern_hit;
-
-static inline void write_bv(std::ostream& os, const auto& bv) {
-  assert(bv.size() % 8 == 0);
-  for (unsigned i = 0; i < bv.size(); i += 8) {
-    uint8_t mask = 0;
-    for (unsigned j = 0; j < 8; ++j) {
-      mask <<= 1;
-      if (bv[i + j])
-	mask |= 1;
-    }
-    char buf[16];
-    sprintf(buf, "%02hhx", mask);
-    os << buf;
-  }
-}
-
-#if 1
-template <unsigned LineSize_, unsigned Associativity_, unsigned TableSize_>
-class DictionaryDeclassificationCache {
-public:
-  static inline constexpr unsigned LineSize = LineSize_;
-  static inline constexpr unsigned Associativity = Associativity_;
-  static inline constexpr unsigned TableSize = TableSize_;
-  static inline constexpr unsigned TableCols = Associativity;
-  static inline constexpr unsigned TableRows = TableSize / TableCols;
-  static_assert((LineSize & (LineSize - 1)) == 0, "");
-  static_assert((TableRows & (TableRows - 1)) == 0, "");
-
-  struct Line {
-    bool valid;
-    ADDRINT tag;
-    std::array<bool, LineSize> bv;
-
-    Line(): valid(false) {}
-
-    bool allSet(unsigned first, unsigned size) const {
-      const auto it = bv.begin() + first;
-      return std::reduce(it, it + size, true, std::logical_and<bool>());
-    }
-
-    bool anySet() const {
-      return std::reduce(bv.begin(), bv.end(), false, std::logical_or<bool>());
-    }
-
-    bool allReset() const {
-      return !anySet();
-    }
-
-    // Returns whether it was updated
-    bool set(unsigned first, unsigned size) {
-      bool updated = false;
-      for (unsigned i = 0; i < size; ++i) {
-	if (!bv[first + i]) {
-	  updated = true;
-	  bv[first + i] = true;
-	}
-      }
-      return updated;
-    }
-
-    bool reset(unsigned first, unsigned size) {
-      bool updated = true;
-      for (unsigned i = 0; i < size; ++i) {
-	if (bv[first + i]) {
-	  updated = true;
-	  bv[first + i] = false;
-	}
-      }
-      return updated;
-    }
-  };
-
-  class Row {
-  public:
-    using Tick = unsigned;
-    using Lines = std::array<Line, TableCols>;
-
-    Row(): tick(0) {
-      std::fill(used.begin(), used.end(), tick);
-    }
-
-    void markUsed(Line& line) {
-      const unsigned idx = &line - lines.data();
-      used[idx] = ++tick;
-    }
-
-    // Stores the evicted line, if any, in @evicted. If no line
-    // was evicted, then evicted.valid == false.
-    Lines::iterator getOrAllocateLine(ADDRINT tag, Line& evicted) {
-      evicted.valid = false;
-      
-      // First, check for matching line.
-      for (auto it = lines.begin(); it != lines.end(); ++it)
-	if (it->valid && it->tag == tag)
-	  return it;
-
-      const auto init_line = [&] (Lines::iterator it) {
-	it->valid = true;
-	it->tag = tag;
-	std::fill(it->bv.begin(), it->bv.end(), false);
-	used[it - lines.begin()] = ++tick;
-      };
-
-      // Check for free line.
-      for (auto it = lines.begin(); it != lines.end(); ++it) {
-	if (!it->valid) {
-	  init_line(it);
-	  return it;
-	}
-      }
-
-      // Check for least-recently-updated line.
-      Tick lru_tick = std::numeric_limits<Tick>::max();
-      typename Lines::iterator lru_it = lines.end();
-      for (auto it = lines.begin(); it != lines.end(); ++it) {
-	assert(it->valid);
-	const unsigned idx = it - lines.begin();
-	if (used[idx] <= lru_tick) {
-	  lru_tick = used[idx];
-	  lru_it = it;
-	}
-      }
-      assert(lru_it != lines.end());
-
-      evicted = *lru_it;
-      init_line(lru_it);
-      return lru_it;
-    }
-
-    bool tryGetLine(ADDRINT tag, typename Lines::iterator& out) {
-      for (typename Lines::iterator it = lines.begin(); it != lines.end(); ++it) {
-	if (it->valid && it->tag == tag) {
-	  out = it;
-	  return true;
-	}
-      }
-      return false;
-    }
-    
-
-  private:
-    Lines lines;
-    Tick tick;
-    std::array<Tick, TableCols> used;
-  };
-
-  bool checkDeclassified(ADDRINT addr, unsigned size) {
-    const unsigned line_off = addr & (LineSize - 1);
-    const ADDRINT tag = addr / LineSize;
-    const unsigned row_idx = tag & (TableRows - 1);
-    Row& row = rows[row_idx];
-
-    typename Row::Lines::iterator row_it;
-    if (!row.tryGetLine(tag, row_it))
-      return false;
-
-    Line& line = *row_it;
-    assert(line.valid);
-    const bool is_declassified = line.allSet(line_off, size);
-    if (is_declassified)
-      row.markUsed(line);
-    return is_declassified;
-  }
-
-  // NOTE: This function should only be called if we are certain that an upper table doesn't
-  // indicate this range is declassified, or else we'll allocate needless entries in this
-  // cache.
-  void setDeclassified(ADDRINT addr, unsigned size, bool& evicted, ADDRINT& evicted_tag, std::array<bool, LineSize>& evicted_bv) {
-    const unsigned line_off = addr & (LineSize - 1);
-    const ADDRINT tag = addr / LineSize;
-    const unsigned row_idx = tag & (TableRows - 1);
-    Row& row = rows[row_idx];
-    Line evicted_line;
-    auto row_it = row.getOrAllocateLine(tag, evicted_line);
-    Line& line = *row_it;
-    line.set(line_off, size);
-    if (evicted_line.valid) {
-      evicted = true;
-      evicted_tag = evicted_line.tag;
-      evicted_bv = evicted_line.bv;
-    } else {
-      evicted = false;
-    }
-  }
-
-  void setClassified(ADDRINT addr, unsigned size, ADDRINT store_inst) {
-    const unsigned line_off = addr & (LineSize - 1);
-    const ADDRINT tag = addr / LineSize;
-    const unsigned row_idx = tag & (TableRows - 1);
-    Row& row = rows[row_idx];
-    typename Row::Lines::iterator row_it;
-    if (!row.tryGetLine(tag, row_it))
-      return;
-    Line& line = *row_it;
-    line.reset(line_off, size);
-
-    // If the line is now empty, just deallocate it.
-    if (line.allReset())
-      line.valid = false;
-  }
-
-private:
-  std::array<Row, TableRows> rows;
-};
-#endif
-
-
-
 template <unsigned LineSize_, unsigned Associativity_, unsigned TableSize_, unsigned DictSize_>
 class PatternDeclassificationTable {
 public:
@@ -317,8 +108,14 @@ public:
 
       // Otherwise, evict the word with the lowest reference count.
       const auto it = std::min_element(words.begin(), words.end(), [] (const auto& a, const auto& b) -> bool {
-	const auto score = [] (const auto& word) {
-	  return word.use_count();
+	const auto score = [] (const auto& word) -> int {
+	  const auto uses = word.use_count();
+	  if (word.expired()) {
+	    return 0;
+	  } else {
+	    const auto word_ = word.lock();
+	    return uses * std::count(word_->bv.begin(), word_->bv.end(), true);
+	  }
 	};
 	return score(a) < score(b);
       });
@@ -340,7 +137,18 @@ public:
 	if (word.expired()) {
 	  os << "(invalid)";
 	} else {
-	  write_bv(os, word.lock()->bv);
+	  const auto& bv = word.lock()->bv;
+	  for (unsigned j = 0; j < bv.size(); j += 8) {
+	    uint8_t value = 0;
+	    for (unsigned k = 0; k < 8; ++k) {
+	      value <<= 1;
+	      if (bv[j + k])
+		value |= 1;
+	    }
+	    char buf[16];
+	    sprintf(buf, "%02hhx", value);
+	    os << buf;
+	  }
 	}
 	os << "\n";
       }
@@ -358,7 +166,7 @@ public:
     
     bool valid() const {
       return std::any_of(words.begin(), words.end(), [] (const WordPtr& word) -> bool {
-	return word != nullptr;
+	return word && word->valid();
       });
     }
 
@@ -366,11 +174,39 @@ public:
       this->tag = tag;
       std::fill(words.begin(), words.end(), nullptr);
     }
+
+    void dump(std::ostream& os) const {
+      if (valid()) {
+	char buf[256];
+	sprintf(buf, "%016lx ", tag);
+	os << buf;
+	for (bool first = true; const auto& word : words) {
+	  if (first) {
+	    first = false;
+	  } else {
+	    os << ",";
+	  }
+	  if (word && word->valid()) {
+	    // Get index into table
+	    os << bv_to_string(word->bv.begin(), word->bv.end());
+	  } else {
+	    os << "xxxxxxxxxxxxxxxx";
+	  }
+	}
+      } else {
+	os << "xxxxxxxxxxxxxxxx xxxxxxxxxxxxxxxx\n";
+      }
+    }
   };
 
   class Row {
   public:
     using Lines = std::array<Line, TableCols>;
+
+    Row(): tick(0) {
+      std::fill(used.begin(), used.end(), tick);
+    }
+      
 
     // NOTE: Identical implementation as in cache.
     Line *tryGetLine(ADDRINT tag) {
@@ -382,6 +218,11 @@ public:
       return nullptr;
     }
 
+    void markUsed(Line& line) {
+      ++tick;
+      used[&line - lines.data()] = tick;
+    }
+
     Line& evictLine(bool& evicted) {
       // Any invalid?
       for (Line& line : lines) {
@@ -390,21 +231,37 @@ public:
 	  return line;
 	}
       }
-      
-      const auto it = std::max_element(lines.begin(), lines.end(), [] (const Line& a, const Line& b) {
-	const auto f = [] (const Line& line) -> unsigned {
-	  assert(line.valid());
-	  return std::count(line.words.begin(), line.words.end(), nullptr);
-	};
-	return f(a) < f(b);
+
+      const auto lru_metric = [&] (const Line& line) -> int {
+	return used[&line - lines.data()];
+      };
+
+      const auto metric = [&] (const Line& line) -> int {
+	return std::rand();
+	// return lru_metric(line) + popcnt_metric(line);
+      };
+
+      const auto it = std::min_element(lines.begin(), lines.end(), [&] (const Line& a, const Line& b) {
+	return metric(a) < metric(b);
       });
       assert(it != lines.end());
       evicted = true;
       return *it;
     }
 
+    void dump(std::ostream& os) const {
+      for (const auto& line : lines) {
+	line.dump(os);
+	os << "\n";
+      }
+    }
+
+    using Tick = unsigned;
+
   private:
     Lines lines;
+    Tick tick = 0;
+    std::array<Tick, TableCols> used;
   };
 
 public:
@@ -425,8 +282,13 @@ public:
     WordPtr& word = line->words[line_off];
     if (!(word && word->valid()))
       return false;
+    
+    const bool is_declassified = word->allSet(word_off, size);
+    
+    if (is_declassified)
+      row.markUsed(*line);
 
-    return word->allSet(word_off, size);
+    return is_declassified;
   }
 
 public:
@@ -441,7 +303,7 @@ public:
     Line *line = row.tryGetLine(tag);
     if (line == nullptr)
       return false; // We will let the cache handle this one.
-    
+
     assert(line->valid());
 
     // Check if all bits are set.
@@ -523,6 +385,8 @@ public:
 	stat_t1_eviction_wordcnt += std::count_if(line->words.begin(), line->words.end(), [] (const WordPtr& word) {
 	  return word && word->valid();
 	});
+	
+	// fprintf(stderr, "evicted %s for %s\n", bv_to_string(line->bv, 
       }
 
       line->init(tag);
@@ -531,6 +395,7 @@ public:
     // fprintf(stderr, "set-word %u %lx-%lx\n", line_off, tag * LineSize * WordSize + line_off * WordSize,
     // tag * LineSize * WordSize + (line_off + 1) * WordSize);
     line->words[line_off] = std::move(word);
+    assert(line->valid());
     
     ++stat_t0_upgrades;
   }
@@ -545,6 +410,12 @@ public:
     os << "t1-classify-invalidations-owned " << stat_classify_invalidations_owned << "\n";
     os << "dictionary:\n";
     dict.printStats(os);
+  }
+
+  void dump(std::ostream& os) {
+    for (const auto& row : rows) {
+      row.dump(os);
+    }
   }
 
 private:
@@ -565,31 +436,19 @@ private:
 
 
 
-// template <unsigned LineSize_, unsigned Associativity_, unsigned TableSize_, unsigned DictSize_>
-// class PatternDeclassificationTable {
-
-template <unsigned LineSize, unsigned Associativity, unsigned TableSize, unsigned DictSize, bool EnablePattern>
+template <unsigned LineSize, unsigned Associativity, unsigned TableSize, unsigned DictSize, bool EnablePattern, class Cache>
 class DictionaryDeclassificationTable {
 public:
-  using Cache = DictionaryDeclassificationCache<LineSize, Associativity, TableSize>;
+  // using Cache = DictionaryDeclassificationCache<LineSize, Associativity, TableSize>;
   // using Cache = DeclassificationCache<LineSize, Associativity, TableSize>;
   using PatternTable = PatternDeclassificationTable<LineSize, Associativity, TableSize, DictSize>;
   
-  DictionaryDeclassificationTable() {
-    const char *eviction_path = "evictions.bin";
-    if ((eviction_file = fopen(eviction_path, "w")) == NULL) {
-      perror("fopen");
-      exit(1);
-    }
-  }
+  DictionaryDeclassificationTable(Cache& cache): cache(cache) {}
 
   bool checkDeclassified(ADDRINT addr, unsigned size) {
-    // fprintf(stderr, "checkDeclassified %lx %u\n", addr, size);
-    was_pattern_hit = false;
     if constexpr (EnablePattern) {
       if (pattern_table.checkDeclassified(addr, size)) {
 	++stat_pattern_hit;
-	was_pattern_hit = true;
 	return true;
       }
     }
@@ -611,26 +470,18 @@ public:
     ADDRINT evicted_tag;
     std::array<bool, LineSize> evicted_bv;
     cache.setDeclassified(addr, size, evicted, evicted_tag, evicted_bv);
+    evicted_tag /= LineSize;
     if constexpr (EnablePattern) {
       if (evicted) {
-	// Move to pattern table
-	// fprintf(stderr, "upgrading %lx %u\n", evicted.tag * LineSize, LineSize);
-	pattern_table.upgradeLine(evicted_bv, evicted_tag);
-	++stat_upgrades;
-
-#if 0
-	assert(evicted.anySet());
-	for (unsigned i = 0; i < evicted.bv.size(); i += 8) {
-	  uint8_t value = 0;
-	  for (unsigned j = 0; j < 8; ++j) {
-	    value <<= 1;
-	    if (evicted.bv[i + j])
-	      value |= 1;
-	  }
-	  fprintf(eviction_file, "%02hhx", value);
+	const auto popcnt = std::count(evicted_bv.begin(), evicted_bv.end(), true);
+	if (popcnt >= 4) {
+	  // Move to pattern table
+	  // fprintf(stderr, "upgrading %lx %u\n", evicted.tag * LineSize, LineSize);
+	  pattern_table.upgradeLine(evicted_bv, evicted_tag);
+	  ++stat_upgrades;
+	} else {
+	  ++stat_discards;
 	}
-	fprintf(eviction_file, "\n");
-#endif
       }
     }
   }
@@ -650,17 +501,25 @@ public:
   void printStats(std::ostream& os) {
     os << "pattern-hit " << stat_pattern_hit << "\n"
        << "cache-hit " << stat_cache_hit << "\n"
-       << "upgrades " << stat_upgrades << "\n";
+       << "upgrades " << stat_upgrades << "\n"
+       << "discards " << stat_discards << "\n";
     pattern_table.printStats(os);
   }
 
   void dumpTaint(std::vector<uint8_t>&) {}
 
+  void dump(std::ostream& os) {
+    os << "==== CACHE ====\n";
+    cache.dump(os);
+    os << "\n=== DICT ====\n";
+    pattern_table.dump(os);
+  }
+
 private:
-  Cache cache;
+  Cache& cache;
   PatternTable pattern_table;
-  FILE *eviction_file;
   unsigned long stat_pattern_hit = 0;
   unsigned long stat_cache_hit = 0;
   unsigned long stat_upgrades = 0;
+  unsigned long stat_discards = 0;
 };

@@ -67,6 +67,10 @@ public:
   }
 
   void dumpTaint(std::vector<uint8_t>&) {}
+
+  void dump(std::ostream& os) {
+    decltab.dump(os);
+  }
   
 private:
   std::string name;
