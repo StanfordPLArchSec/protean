@@ -28,7 +28,8 @@ public:
     std::array<bool, LowerDT::LineSize> downgrade_bv;
     if (upper.setDeclassified(addr, size, downgrade, downgrade_addr, downgrade_bv))
       return;
-
+    assert(!downgrade || (downgrade_addr & (LowerDT::LineSize - 1)) == 0);
+    
     bool evicted;
     Addr evicted_addr;
     std::array<bool, LowerDT::LineSize> evicted_bv;    
@@ -36,12 +37,14 @@ public:
     if (downgrade) {
       lower.downgradeLine(downgrade_addr, downgrade_bv, evicted, evicted_addr, evicted_bv);
       if (evicted) {
+	assert((evicted_addr & (LowerDT::LineSize - 1)) == 0);
 	upper.claimLine(evicted_addr, evicted_bv);
       }
     }
     
     lower.setDeclassified(addr, size, evicted, evicted_addr, evicted_bv);
     if (evicted) {
+      assert((evicted_addr & (LowerDT::LineSize - 1)) == 0);
       upper.claimLine(evicted_addr, evicted_bv);
     }
   }

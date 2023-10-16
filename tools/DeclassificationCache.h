@@ -246,7 +246,10 @@ public:
     const Addr tag = addr / LineSize;
     const unsigned row_idx = tag & (TableRows - 1);
     Row& row = rows[row_idx];
-    Line& line = row.getOrAllocateLine(tag, evicted, evicted_addr, evicted_bv);
+    Addr evicted_tag;
+    Line& line = row.getOrAllocateLine(tag, evicted, evicted_tag, evicted_bv);
+    if (evicted)
+      evicted_addr = evicted_tag * LineSize;
     line.bv = bv;
   }
   

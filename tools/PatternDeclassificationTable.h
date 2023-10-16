@@ -612,7 +612,7 @@ private:
 
 
 
-template <unsigned ChunkSize_, unsigned MaxPatLen_, unsigned TableSize_>
+template <unsigned ChunkSize_, unsigned MaxPatLen_, unsigned TableSize_, unsigned Associativity_>
 class RealPatternDeclassificationTable {
 public:
   static inline constexpr unsigned ChunkSize = ChunkSize_;
@@ -620,7 +620,11 @@ public:
   static inline constexpr unsigned MaxPatLen = MaxPatLen_;
   static_assert(MaxPatLen <= ChunkSize, "");
   static inline constexpr unsigned TableSize = TableSize_;
-  static_assert((TableSize & (TableSize - 1)) == 0, "");
+  static inline constexpr unsigned Associativity = Associativity_;
+  static inline constexpr unsigned TableCols = Associativity;
+  static_assert(TableSize % Associativity == 0, "");
+  static inline constexpr unsigned TableRows = TableSize / TableCols;
+  static_assert((TableRows & (TableRows - 1)) == 0, "");
 
   struct Line {
     bool valid;
@@ -653,11 +657,15 @@ public:
     }
 
     void downgrade(bool& downgrade, Addr& downgrade_addr, std::array<bool, ChunkSize>& downgrade_bv) {
+      if (baseaddr() == 0x0000010fffdfe640UL) {
+	fprintf(stderr, "downgrade %016lx\n", baseaddr());
+      }
       downgrade = true;
       downgrade_addr = baseaddr();
       for (unsigned i = 0; i < downgrade_bv.size(); ++i) {
 	downgrade_bv[i] = pattern[i % pattern.size()];
       }
+      valid = false;
     }
 
     bool setRange(Addr addr, unsigned size, bool value, bool& downgrade, Addr &downgrade_addr, std::array<bool, ChunkSize>& downgrade_bv) {
@@ -670,23 +678,38 @@ public:
     }
   };
 
-  bool checkDeclassified(Addr addr, unsigned size) {
+
+  struct Row {
+    std::array<Line, TableCols> lines;
+
+    bool checkDeclassified(Addr addr, unsigned size) {
+      for (Line& line : lines)
+	if (line.contains(addr))
+	  return line.checkDeclassified(addr, size);
+      return false;
+    }
+
+    bool setRange(Addr addr, unsigned size, bool value, bool& downgrade, Addr& downgrade_addr, std::array<bool, ChunkSize>& downgrade_bv) {
+      for (Line& line : lines)
+	if (line.contains(addr))
+	  return line.setRange(addr, size, value, downgrade, downgrade_addr, downgrade_bv);
+      return false;
+    }
+  };
+
+  Row& getRow(Addr addr) {
     const Addr tag = addr / ChunkSize;
-    const unsigned table_idx = tag & (TableSize - 1);
-    Line& line = table[table_idx];
-    return line.contains(addr) && line.checkDeclassified(addr, size);
+    const unsigned table_idx = tag & (TableRows - 1);
+    return table[table_idx];
+  }
+
+  bool checkDeclassified(Addr addr, unsigned size) {
+    return getRow(addr).checkDeclassified(addr, size);
   }
 
   bool setRange(Addr addr, unsigned size, bool value, bool& downgrade, Addr& downgrade_addr, std::array<bool, ChunkSize>& downgrade_bv) {
     downgrade = false;
-    const Addr tag = addr / ChunkSize;
-    const unsigned table_idx = tag & (TableSize - 1);
-    Line& line = table[table_idx];
-    if (line.contains(addr)) {
-      return line.setRange(addr, size, value, downgrade, downgrade_addr, downgrade_bv);
-    } else {
-      return false;
-    }
+    return getRow(addr).setRange(addr, size, value, downgrade, downgrade_addr, downgrade_bv);
   }
 
   bool setDeclassified(Addr addr, unsigned size, bool& downgrade, Addr& downgrade_addr, std::array<bool, ChunkSize>& downgrade_bv) {
@@ -696,11 +719,6 @@ public:
   bool setClassified(Addr addr, unsigned size, Addr store_inst, bool& downgrade, Addr& downgrade_addr, std::array<bool, ChunkSize>& downgrade_bv) {
     return setRange(addr, size, false, downgrade, downgrade_addr, downgrade_bv);
   }
-
-
-
-
-
 
 
 private:
@@ -728,16 +746,23 @@ private:
 public:
 
   bool claimLine(Addr addr, const std::array<bool, ChunkSize>& bv) {
+    assert((addr & (ChunkSize - 1)) == 0);
     std::vector<bool> pattern;
     if (hasPattern(bv, std::back_inserter(pattern))) {
       // Add to table
-      const Addr tag = addr / ChunkSize;
-      const unsigned table_idx = tag & (TableSize - 1);
-      Line& line = table[table_idx];
-      if (line.valid) {
-	assert(tag != line.tag);
+      Row& row = getRow(addr);
+      auto row_it = std::find_if(row.lines.begin(), row.lines.end(), [] (const Line& line) { return !line.valid; });
+      if (row_it == row.lines.end()) {
+	// Evict existing one.
+	row_it = row.lines.begin() + std::rand() % row.lines.size();
 	++stat_evictions;
       }
+      assert(row_it != row.lines.end());
+      assert(!row_it->contains(addr));
+      
+
+      Line& line = *row_it;
+      const Addr tag = addr / ChunkSize;
       line = Line(tag, pattern.begin(), pattern.end());
       ++stat_claimed;
       return true;
@@ -763,7 +788,7 @@ public:
   
 private:
   std::string name;
-  std::array<Line, TableSize> table;
+  std::array<Row, TableRows> table;
   unsigned long stat_evictions = 0;
   unsigned long stat_claimed = 0;
 };
