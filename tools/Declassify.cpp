@@ -103,7 +103,8 @@ static DictionaryDeclassificationTable<64, 4, 1024, 32, true, decltype(cache_dec
 static IdealPatternDeclassificationTable<64, 32> pattern_shadow_decltab;
 static PatternDeclassificationCache<64, 64, 4, 1024, 32> pattern_cache_decltab("pattern_cache");
 static MultiLevelPatternDeclassificationCache<64, {64, 64}, {4, 4}, {1024, 1024}, 32> multilevel_pattern_cache_decltab;
-static MultiLevelDeclassificationTable twolevel_decltab(cache_decltab, multilevel_pattern_cache_decltab);
+static RealPatternDeclassificationTable<64, 32, 1024 * 1024 * 16> real_pattern_decltab("realpatterntab");
+static MultiLevelDeclassificationTable twolevel_decltab(cache_decltab, real_pattern_decltab);
 static SharedMultiGranularityDeclassificationTable decltab("decltab", twolevel_decltab);
 #endif
 

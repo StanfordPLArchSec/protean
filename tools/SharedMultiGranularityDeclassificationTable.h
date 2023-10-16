@@ -6,7 +6,10 @@
 template <class DeclTab>
 class SharedMultiGranularityDeclassificationTable {
 public:
+
   SharedMultiGranularityDeclassificationTable(const std::string& name, DeclTab& decltab): name(name), decltab(decltab) {}
+
+  static inline constexpr unsigned UpperBitLo = 48 - 4;
 
   static void encodeForDeclassification(ADDRINT& addr, unsigned& size) {
     assert((size & (size - 1)) == 0);
@@ -14,10 +17,10 @@ public:
     assert(size <= 64);
     const unsigned granularity = std::min(size, 8U);
 
-    addr &= (static_cast<ADDRINT>(1) << 48) - 1; // Mask out sign extension; we will use these upper bits for other stuff.
+    addr &= (static_cast<ADDRINT>(1) << UpperBitLo) - 1; // Mask out sign extension; we will use these upper bits for other stuff.
     addr /= granularity; // Shift out the least-significant bits.
     size /= granularity;
-    addr |= static_cast<ADDRINT>(granularity) << 48; // Place the granularity in the upper bits.
+    addr |= static_cast<ADDRINT>(granularity) << UpperBitLo; // Place the granularity in the upper bits.
   }
 
   template <unsigned granularity>
@@ -26,10 +29,10 @@ public:
     static_assert(1 <= granularity && granularity <= 8, "");
     assert((addr & (size - 1)) == 0);
 
-    addr &= (static_cast<ADDRINT>(1) << 48) - 1;
+    addr &= (static_cast<ADDRINT>(1) << UpperBitLo) - 1;
     addr /= granularity;
     size = std::max(size / granularity, 1U);
-    addr |= static_cast<ADDRINT>(granularity) << 48;
+    addr |= static_cast<ADDRINT>(granularity) << UpperBitLo;
   }
 
   bool checkDeclassified(ADDRINT addr, unsigned size) {

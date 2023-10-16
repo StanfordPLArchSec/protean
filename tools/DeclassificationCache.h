@@ -239,6 +239,18 @@ public:
       line->valid = false;
   }
 
+
+
+  void downgradeLine(Addr addr, std::array<bool, LineSize>& bv, bool& evicted, Addr& evicted_addr, std::array<bool, LineSize>& evicted_bv) {
+    assert((addr & (LineSize - 1)) == 0);
+    const Addr tag = addr / LineSize;
+    const unsigned row_idx = tag & (TableRows - 1);
+    Row& row = rows[row_idx];
+    Line& line = row.getOrAllocateLine(tag, evicted, evicted_addr, evicted_bv);
+    line.bv = bv;
+  }
+  
+
   void printDesc(std::ostream& os) {
     os << name << ": declassification cache with parameters linesize=" << LineSize << " associativity=" << Associativity << " numlines=" << TableSize << "\n";
   }

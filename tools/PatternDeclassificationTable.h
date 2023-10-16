@@ -58,7 +58,7 @@ public:
 #if 1
     invalidateLine(addr);
     return false;
-#elif 1
+#elif 0
     Type *baseptr = &shadow[addr & ~static_cast<Addr>(LineSize - 1)];
     if (std::count(baseptr, baseptr + LineSize, INVALID) == 0) {
       std::fill_n(ptr, size, DECLASSIFIED);
@@ -95,7 +95,7 @@ public:
 
 #if 1
     invalidateLine(addr);
-#elif 1
+#elif 0
     Type *baseptr = &shadow[addr & ~static_cast<Addr>(LineSize - 1)];
     if (std::count(baseptr, baseptr + LineSize, INVALID) == 0) {
       std::fill_n(ptr, size, CLASSIFIED);
@@ -607,4 +607,163 @@ private:
   unsigned long stat_level3_upgrades = 0;
   unsigned long stat_l3_hits = 0;
   unsigned long stat_l2_hits = 0;
+};
+
+
+
+
+template <unsigned ChunkSize_, unsigned MaxPatLen_, unsigned TableSize_>
+class RealPatternDeclassificationTable {
+public:
+  static inline constexpr unsigned ChunkSize = ChunkSize_;
+  static_assert((ChunkSize & (ChunkSize - 1)) == 0, "");
+  static inline constexpr unsigned MaxPatLen = MaxPatLen_;
+  static_assert(MaxPatLen <= ChunkSize, "");
+  static inline constexpr unsigned TableSize = TableSize_;
+  static_assert((TableSize & (TableSize - 1)) == 0, "");
+
+  struct Line {
+    bool valid;
+    Addr tag;
+    std::vector<bool> pattern;
+
+    Line(): valid(false) {}
+    template <typename InputIt>
+    Line(Addr tag, InputIt pattern_first, InputIt pattern_last): valid(true), tag(tag), pattern(pattern_first, pattern_last) {}
+
+    Addr baseaddr() const { return tag * ChunkSize; }
+
+    bool contains(Addr addr) const {
+      return valid && addr / ChunkSize == tag;
+    }
+
+    bool checkRange(Addr addr, unsigned size, bool value) const {
+      assert(contains(addr));
+      for (unsigned i = 0; i < size; ++i) {
+	const unsigned pattern_idx = (addr + i - baseaddr()) % pattern.size();
+	if (pattern[pattern_idx] != value)
+	  return false;
+      }
+      return true;
+    }
+
+    bool checkDeclassified(Addr addr, unsigned size) {
+      assert(contains(addr));
+      return checkRange(addr, size, true);
+    }
+
+    void downgrade(bool& downgrade, Addr& downgrade_addr, std::array<bool, ChunkSize>& downgrade_bv) {
+      downgrade = true;
+      downgrade_addr = baseaddr();
+      for (unsigned i = 0; i < downgrade_bv.size(); ++i) {
+	downgrade_bv[i] = pattern[i % pattern.size()];
+      }
+    }
+
+    bool setRange(Addr addr, unsigned size, bool value, bool& downgrade, Addr &downgrade_addr, std::array<bool, ChunkSize>& downgrade_bv) {
+      if (checkRange(addr, size, value)) {
+	return true;
+      } else {
+	this->downgrade(downgrade, downgrade_addr, downgrade_bv);
+	return false;
+      }
+    }
+  };
+
+  bool checkDeclassified(Addr addr, unsigned size) {
+    const Addr tag = addr / ChunkSize;
+    const unsigned table_idx = tag & (TableSize - 1);
+    Line& line = table[table_idx];
+    return line.contains(addr) && line.checkDeclassified(addr, size);
+  }
+
+  bool setRange(Addr addr, unsigned size, bool value, bool& downgrade, Addr& downgrade_addr, std::array<bool, ChunkSize>& downgrade_bv) {
+    downgrade = false;
+    const Addr tag = addr / ChunkSize;
+    const unsigned table_idx = tag & (TableSize - 1);
+    Line& line = table[table_idx];
+    if (line.contains(addr)) {
+      return line.setRange(addr, size, value, downgrade, downgrade_addr, downgrade_bv);
+    } else {
+      return false;
+    }
+  }
+
+  bool setDeclassified(Addr addr, unsigned size, bool& downgrade, Addr& downgrade_addr, std::array<bool, ChunkSize>& downgrade_bv) {
+    return setRange(addr, size, true, downgrade, downgrade_addr, downgrade_bv);
+  }
+
+  bool setClassified(Addr addr, unsigned size, Addr store_inst, bool& downgrade, Addr& downgrade_addr, std::array<bool, ChunkSize>& downgrade_bv) {
+    return setRange(addr, size, false, downgrade, downgrade_addr, downgrade_bv);
+  }
+
+
+
+
+
+
+
+private:
+  template <typename OutputIt>
+  bool hasPattern(const std::array<bool, ChunkSize>& bv, OutputIt pattern_out) {
+    const unsigned max_pattern_length = std::min<unsigned>(MaxPatLen, bv.size());
+    for (unsigned i = 1; i <= max_pattern_length; ++i) {
+      bool matched = true;
+      for (unsigned j = i; j < bv.size(); j += i) {
+	const unsigned len = std::min<unsigned>(i, bv.size() - j);
+	if (!std::equal(bv.begin(), bv.begin() + len,
+			bv.begin() + j, bv.begin() + j + len)) {
+	  matched = false;
+	  break;
+	}
+      }
+      if (matched) {
+	std::copy(bv.begin(), bv.begin() + i, pattern_out);
+	return true;
+      }
+    }
+    return false;    
+  }
+
+public:
+
+  bool claimLine(Addr addr, const std::array<bool, ChunkSize>& bv) {
+    std::vector<bool> pattern;
+    if (hasPattern(bv, std::back_inserter(pattern))) {
+      // Add to table
+      const Addr tag = addr / ChunkSize;
+      const unsigned table_idx = tag & (TableSize - 1);
+      Line& line = table[table_idx];
+      if (line.valid) {
+	assert(tag != line.tag);
+	++stat_evictions;
+      }
+      line = Line(tag, pattern.begin(), pattern.end());
+      ++stat_claimed;
+      return true;
+    } else {
+      return false;
+    }
+  }
+
+  
+  
+  void printDesc(std::ostream& os) {
+    os << name << ": real-declassification-table with ChunkSize=" << ChunkSize << " MaxPatLen=" << MaxPatLen << " TableSize=" << TableSize << "\n";
+  }
+
+  void printStats(std::ostream& os) {
+    os << name << ".evictions " << stat_evictions << "\n";
+    os << name << ".claimed " << stat_claimed << "\n";
+  }
+
+  void dump(std::ostream& os) {}
+
+  RealPatternDeclassificationTable(const std::string& name): name(name) {}
+  
+private:
+  std::string name;
+  std::array<Line, TableSize> table;
+  unsigned long stat_evictions = 0;
+  unsigned long stat_claimed = 0;
 };
