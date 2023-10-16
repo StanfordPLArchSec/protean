@@ -657,14 +657,13 @@ public:
     }
 
     void downgrade(bool& downgrade, Addr& downgrade_addr, std::array<bool, ChunkSize>& downgrade_bv) {
-      if (baseaddr() == 0x0000010fffdfe640UL) {
-	fprintf(stderr, "downgrade %016lx\n", baseaddr());
-      }
+#if 0
       downgrade = true;
       downgrade_addr = baseaddr();
       for (unsigned i = 0; i < downgrade_bv.size(); ++i) {
 	downgrade_bv[i] = pattern[i % pattern.size()];
       }
+#endif
       valid = false;
     }
 

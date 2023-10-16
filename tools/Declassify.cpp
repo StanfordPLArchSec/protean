@@ -8,7 +8,7 @@
  *  and could serve as the starting point for developing your first PIN tool
  */
 
-#define SHADOW_DECLTAB 1
+#define SHADOW_DECLTAB 0
 
 #include "pin.H"
 #include <iostream>
