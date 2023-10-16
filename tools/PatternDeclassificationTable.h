@@ -49,7 +49,13 @@ public:
     Type *ptr = &shadow[addr];
     if (checkAllDeclassified(ptr, ptr + size))
       return true;
+#warning "re-enable"
+#if 0
     invalidateLine(addr);
+#else
+    std::fill_n(ptr, size, DECLASSIFIED);
+    return true;
+#endif
     return false;
   }
 
@@ -57,7 +63,12 @@ public:
     Type *ptr = &shadow[addr];
     if (!checkAnyDeclassified(ptr, ptr + size))
       return;
+#warning "re-enable"
+#if 0
     invalidateLine(addr);
+#else
+    std::fill_n(ptr, size, CLASSIFIED);
+#endif
   }
 
 private:

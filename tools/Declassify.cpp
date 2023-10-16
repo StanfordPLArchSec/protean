@@ -89,7 +89,7 @@ static RealDeclassificationCaches
 using ev = EvictionPolicies<4, std::array<bool, 64>>;
 static ev::LRUEvictionPolicy lru_ep;
 static ev::PopCntEvictionPolicy popcnt_ep;
-static ev::CompositeEvictionPolicy<ev::LRU_PopCnt_Functor, ev::LRUEvictionPolicy, ev::PopCntEvictionPolicy> lru_popcnt_ep(ev::LRU_PopCnt_Functor(1, 16), lru_ep, popcnt_ep);
+static ev::CompositeEvictionPolicy<ev::LRU_PopCnt_Functor, ev::LRUEvictionPolicy, ev::PopCntEvictionPolicy> lru_popcnt_ep(ev::LRU_PopCnt_Functor(1, 8), lru_ep, popcnt_ep);
 static ev::NRUEvictionPolicy nru_ep(4);
 static ev::LRVC lrvc_ep;
 static ev::CompositeEvictionPolicy<std::plus<int>, ev::LRVC, ev::PopCntEvictionPolicy> lrvc_popcnt_ep(std::plus<int>(), lrvc_ep, popcnt_ep);
@@ -102,7 +102,8 @@ static DeclassificationCache<64, 4, 1024, decltype(ep)> cache_decltab("cache", e
 static DictionaryDeclassificationTable<64, 4, 1024, 32, true, decltype(cache_decltab)> dict_decltab(cache_decltab);
 static IdealPatternDeclassificationTable<64> pattern_shadow_decltab;
 static PatternDeclassificationCache<64, 64, 4, 1024> pattern_cache_decltab;
-static MultiLevelDeclassificationTable twolevel_decltab(cache_decltab, pattern_cache_decltab);
+static MultiLevelPatternDeclassificationCache<64, {64, 64}, {4, 4}, {1024, 1024}> multilevel_pattern_cache_decltab;
+static MultiLevelDeclassificationTable twolevel_decltab(cache_decltab, pattern_shadow_decltab);
 static SharedMultiGranularityDeclassificationTable decltab("decltab", twolevel_decltab);
 #endif
 

@@ -4,6 +4,8 @@
 #include <array>
 #include <string>
 
+#include "Util.h"
+
 template <unsigned LineSize_, unsigned Associativity_, unsigned TableSize_, class EvictionPolicy_>
 class DeclassificationCache {
 public:
@@ -57,6 +59,16 @@ public:
 	}
       }
       return updated;
+    }
+
+    void dump(std::ostream& os) const {
+      if (valid) {
+	char tag_s[256];
+	sprintf(tag_s, "%016lx", tag);
+	os << tag_s << " " << bv_to_string8(bv.begin(), bv.end());
+      } else {
+	os << "xxxxxxxxxxxxxxxx xxxxxxxxxxxxxxxx";
+      }
     }
   };
 
@@ -125,6 +137,13 @@ public:
 
     unsigned getIndex(const Line& line) const {
       return getIndex(&line);
+    }
+
+    void dump(std::ostream& os) const {
+      for (const auto& line : lines) {
+	line.dump(os);
+	os << "\n";
+      }
     }
 
   private:
@@ -228,7 +247,14 @@ public:
     os << name << ".evictions " << stat_evictions << "\n";
   }
 
-  DeclassificationCache(const std::string& name, const EvictionPolicy& eviction_policy, FILE *& eviction_file): name(name), eviction_file(eviction_file) {
+  void dump(std::ostream& os) {
+    for (const auto& row : rows)
+      row.dump(os);
+  }
+
+  void dumpTaint(auto&) {}
+
+  DeclassificationCache(const std::string& name, const EvictionPolicy& eviction_policy, FILE *& eviction_file, unsigned eviction_dump_freq): name(name), eviction_file(eviction_file), eviction_dump_freq(1000) {
     std::fill(rows.begin(), rows.end(), Row(eviction_policy));
   }
 
@@ -237,4 +263,5 @@ private:
   std::array<Row, TableRows> rows;
   unsigned long stat_evictions = 0;
   FILE * & eviction_file;
+  unsigned eviction_dump_freq;
 };
