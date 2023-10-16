@@ -100,10 +100,10 @@ static DeclassificationCache<64, 4, 1024, decltype(ep)> cache_decltab("cache", e
 								      eviction_file, 1000
 								      );
 static DictionaryDeclassificationTable<64, 4, 1024, 32, true, decltype(cache_decltab)> dict_decltab(cache_decltab);
-static IdealPatternDeclassificationTable<64> pattern_shadow_decltab;
-static PatternDeclassificationCache<64, 64, 4, 1024> pattern_cache_decltab;
-static MultiLevelPatternDeclassificationCache<64, {64, 64}, {4, 4}, {1024, 1024}> multilevel_pattern_cache_decltab;
-static MultiLevelDeclassificationTable twolevel_decltab(cache_decltab, pattern_shadow_decltab);
+static IdealPatternDeclassificationTable<64, 32> pattern_shadow_decltab;
+static PatternDeclassificationCache<64, 64, 4, 1024, 32> pattern_cache_decltab("pattern_cache");
+static MultiLevelPatternDeclassificationCache<64, {64, 64}, {4, 4}, {1024, 1024}, 32> multilevel_pattern_cache_decltab;
+static MultiLevelDeclassificationTable twolevel_decltab(cache_decltab, multilevel_pattern_cache_decltab);
 static SharedMultiGranularityDeclassificationTable decltab("decltab", twolevel_decltab);
 #endif
 
@@ -141,8 +141,9 @@ static void RecordDeclassifiedLoad(ADDRINT eff_addr, UINT32 eff_size) {
     eff_addr &= ~(coarsen - 1);
     eff_size = coarsen;
   }
-  
-  if (decltab.checkDeclassified(eff_addr, eff_size)) {
+
+  const bool is_declassified = decltab.checkDeclassified(eff_addr, eff_size);
+  if (is_declassified) {
 #if SHADOW_DECLTAB
     if (!shadow_decltab.checkDeclassified(eff_addr, eff_size)) {
       fprintf(stderr, "address %lx (eff size %u) should not have been declassified\n",
@@ -152,6 +153,7 @@ static void RecordDeclassifiedLoad(ADDRINT eff_addr, UINT32 eff_size) {
     }
 #endif
     ++hits;
+    return;
   } else {
     ++misses;
   }

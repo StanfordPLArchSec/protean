@@ -6,11 +6,13 @@
 #include "Util.h"
 #include "ShadowMemory.h"
 
-template <unsigned LineSize_>
+template <unsigned LineSize_, unsigned MaxPatternLength_>
 class IdealPatternDeclassificationTable {
 public:
   static inline constexpr unsigned LineSize = LineSize_;
   static_assert((LineSize & (LineSize - 1)) == 0, "");
+  static inline constexpr unsigned MaxPatternLength = MaxPatternLength_;
+  static_assert(MaxPatternLength <= LineSize, "");
   
   IdealPatternDeclassificationTable(): shadow(INVALID) {}
 
@@ -45,35 +47,80 @@ public:
     return checkAllDeclassified(ptr, ptr + size);
   }
 
-  bool setDeclassified(Addr addr, unsigned size) {
+  bool setDeclassified(Addr addr, unsigned size,
+		       bool& downgrade, Addr& downgrade_addr, std::array<bool, LineSize>& downgrade_bv
+		       ) {
+    downgrade = false;
+    
     Type *ptr = &shadow[addr];
     if (checkAllDeclassified(ptr, ptr + size))
       return true;
-#warning "re-enable"
-#if 0
+#if 1
     invalidateLine(addr);
-#else
-    std::fill_n(ptr, size, DECLASSIFIED);
-    return true;
-#endif
     return false;
+#elif 1
+    Type *baseptr = &shadow[addr & ~static_cast<Addr>(LineSize - 1)];
+    if (std::count(baseptr, baseptr + LineSize, INVALID) == 0) {
+      std::fill_n(ptr, size, DECLASSIFIED);
+      return true;
+    }
+    return false;
+#else
+    
+    downgrade_addr = addr & ~static_cast<Addr>(LineSize - 1);
+    Type *baseptr = &shadow[downgrade_addr];
+    const auto invalid_count = std::count(baseptr, baseptr + LineSize, INVALID);
+    assert(invalid_count == 0 || invalid_count == LineSize);
+    if (invalid_count == LineSize)
+      return false;
+    downgrade = true;
+    std::transform(baseptr, baseptr + LineSize, downgrade_bv.begin(),
+		   [] (Type type) -> bool {
+		     assert(type != INVALID);
+		     return type == DECLASSIFIED;
+		   });
+    invalidateLine(addr);
+    return false;
+#endif
   }
 
-  void setClassified(Addr addr, unsigned size, Addr store_inst) {
+  void setClassified(Addr addr, unsigned size, Addr store_inst,
+		     bool& downgrade, Addr& downgrade_addr, std::array<bool, LineSize>& downgrade_bv
+		     ) {
+    downgrade = false;
+    
     Type *ptr = &shadow[addr];
     if (!checkAnyDeclassified(ptr, ptr + size))
       return;
-#warning "re-enable"
-#if 0
+
+#if 1
     invalidateLine(addr);
+#elif 1
+    Type *baseptr = &shadow[addr & ~static_cast<Addr>(LineSize - 1)];
+    if (std::count(baseptr, baseptr + LineSize, INVALID) == 0) {
+      std::fill_n(ptr, size, CLASSIFIED);
+    }
 #else
-    std::fill_n(ptr, size, CLASSIFIED);
+    downgrade_addr = addr & ~static_cast<Addr>(LineSize - 1);
+    Type *baseptr = &shadow[downgrade_addr];
+    const auto invalid_count = std::count(baseptr, baseptr + LineSize, INVALID);
+    assert(invalid_count == 0 || invalid_count == LineSize);
+    if (invalid_count == LineSize)
+      return;
+    
+    downgrade = true;
+    std::transform(baseptr, baseptr + LineSize, downgrade_bv.begin(),
+		   [] (Type type) -> bool {
+		     assert(type != INVALID);
+		     return type == DECLASSIFIED;
+		   });
+    invalidateLine(addr);
 #endif
   }
 
 private:
   bool hasPattern(const std::array<bool, LineSize>& bv, std::vector<bool>& pattern) {
-    const unsigned max_pattern_length = std::min<unsigned>(16, bv.size());
+    const unsigned max_pattern_length = std::min<unsigned>(MaxPatternLength, bv.size());
     for (unsigned i = 1; i <= max_pattern_length; ++i) {
       bool matched = true;
       for (unsigned j = i; j < bv.size(); j += i) {
@@ -136,7 +183,7 @@ private:
 
 
 
-template <unsigned ChunkSize_, unsigned LineSize_, unsigned Associativity_, unsigned TableSize_>
+template <unsigned ChunkSize_, unsigned LineSize_, unsigned Associativity_, unsigned TableSize_, unsigned MaxPatLen_>
 class PatternDeclassificationCache {
 public:
   static inline constexpr unsigned ChunkSize = ChunkSize_;
@@ -148,7 +195,8 @@ public:
   static inline constexpr unsigned TableRows = TableSize / TableCols;
   static_assert(TableSize % TableCols == 0, "");
   static_assert((TableRows & (TableRows - 1)) == 0, "");
-  static inline constexpr unsigned MaxPatLen = 16;
+  static inline constexpr unsigned MaxPatLen = MaxPatLen_;
+  static_assert(MaxPatLen <= LineSize, "");
 
   using PatBV = std::array<bool, ChunkSize * 2>;
   using DataBV = std::array<bool, LineSize>;
@@ -338,7 +386,7 @@ public:
     }
 
     template <typename InputIt>
-    Line& allocateLine(Addr lower_tag, InputIt pat_first, InputIt pat_last) {
+    Line& allocateLine(Addr lower_tag, InputIt pat_first, InputIt pat_last, unsigned long& stat_evictions) {
       assert(tryGetLine(lower_tag) == nullptr);
       
       // Try to find invalid/empty line.
@@ -354,6 +402,7 @@ public:
       const unsigned row_idx = std::rand() % lines.size();
       Line& line = lines[row_idx];
       line = Line(lower_tag, pat_first, pat_last);
+      ++stat_evictions;
       return line;
     }
 
@@ -440,7 +489,7 @@ public:
     // Otherwise, check if we find a pattern. If so, allocate a new line for it.
     std::vector<bool> pattern;
     if (hasPattern(bv, pattern)) {
-      row.allocateLine(addr / ChunkSize, pattern.begin(), pattern.end());
+      row.allocateLine(addr / ChunkSize, pattern.begin(), pattern.end(), stat_evictions);
       return true;
     }
 
@@ -464,7 +513,7 @@ public:
     }
 
     // Otherwise, allocate new line.
-    row.allocateLine(baseaddr / ChunkSize, pattern.begin(), pattern.end());
+    row.allocateLine(baseaddr / ChunkSize, pattern.begin(), pattern.end(), stat_evictions);
   }
 
   void printDesc(std::ostream& os) {
@@ -473,6 +522,7 @@ public:
   }
 
   void printStats(std::ostream& os) {
+    os << name << "-evictions " << stat_evictions << "\n";
     os << "pattern-match-success " << stat_match_success << "\n"
        << "pattern-match-fail " << stat_match_fail << "\n";
   }
@@ -482,15 +532,20 @@ public:
       row.dump(os);
   }
 
+  PatternDeclassificationCache(const std::string& name): name(name) {}
+
 private:
+  std::string name;
   std::array<Row, TableRows> rows;
-  unsigned long stat_match_success = 0, stat_match_fail = 0;
+  unsigned long stat_match_success = 0, stat_match_fail = 0, stat_evictions = 0;
 };
 
 
-template <unsigned ChunkSize, std::array<unsigned, 2> LineSizes, std::array<unsigned, 2> Associativities, std::array<unsigned, 2> TableSizes>
+template <unsigned ChunkSize, std::array<unsigned, 2> LineSizes, std::array<unsigned, 2> Associativities, std::array<unsigned, 2> TableSizes, unsigned MaxPatLen>
 class MultiLevelPatternDeclassificationCache {
 public:
+  MultiLevelPatternDeclassificationCache(): lower("lower-pattern-cache"), upper("upper-pattern-cache") {}
+  
   bool checkDeclassified(Addr addr, unsigned size) {
     if (lower.checkDeclassified(addr, size)) {
       ++stat_l2_hits;
@@ -503,11 +558,13 @@ public:
     }
   }
 
-  bool setDeclassified(Addr addr, unsigned size) {
+  bool setDeclassified(Addr addr, unsigned size, bool& downgrade, Addr& downgrade_addr, auto& downgrade_bv) {
+    downgrade = false;
     return upper.setDeclassified(addr, size) || lower.setDeclassified(addr, size);
   }
 
-  bool setClassified(Addr addr, unsigned size, Addr store_inst) {
+  bool setClassified(Addr addr, unsigned size, Addr store_inst, bool& downgrade, Addr& downgrade_addr, auto& downgrade_bv) {
+    downgrade = false;
     return upper.setClassified(addr, size, store_inst) || lower.setClassified(addr, size, store_inst);
   }
 
@@ -545,8 +602,8 @@ public:
   }
   
 private:
-  PatternDeclassificationCache<ChunkSize, LineSizes[0], Associativities[0], TableSizes[0]> lower;
-  PatternDeclassificationCache<ChunkSize * LineSizes[0], LineSizes[1], Associativities[1], TableSizes[1]> upper;
+  PatternDeclassificationCache<ChunkSize, LineSizes[0], Associativities[0], TableSizes[0], MaxPatLen> lower;
+  PatternDeclassificationCache<ChunkSize * LineSizes[0], LineSizes[1], Associativities[1], TableSizes[1], MaxPatLen> upper;
   unsigned long stat_level3_upgrades = 0;
   unsigned long stat_l3_hits = 0;
   unsigned long stat_l2_hits = 0;

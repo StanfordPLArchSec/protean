@@ -23,22 +23,45 @@ public:
   }
 
   void setDeclassified(Addr addr, unsigned size) {
-    if (upper.setDeclassified(addr, size))
+    bool downgrade;
+    Addr downgrade_addr;
+    std::array<bool, LowerDT::LineSize> downgrade_bv;
+    if (upper.setDeclassified(addr, size, downgrade, downgrade_addr, downgrade_bv))
       return;
-    
+
     bool evicted;
     Addr evicted_addr;
-    std::array<bool, LowerDT::LineSize> evicted_bv;
-    lower.setDeclassified(addr, size, evicted, evicted_addr, evicted_bv);
+    std::array<bool, LowerDT::LineSize> evicted_bv;    
+
+    if (downgrade) {
+      lower.downgradeLine(downgrade_addr, downgrade_bv, evicted, evicted_addr, evicted_bv);
+      if (evicted) {
+	upper.claimLine(evicted_addr, evicted_bv);
+      }
+    }
     
+    lower.setDeclassified(addr, size, evicted, evicted_addr, evicted_bv);
     if (evicted) {
       upper.claimLine(evicted_addr, evicted_bv);
     }
   }
 
   void setClassified(Addr addr, unsigned size, Addr store_inst) {
+    bool downgrade;
+    Addr downgrade_addr;
+    std::array<bool, LowerDT::LineSize> downgrade_bv;
+    upper.setClassified(addr, size, store_inst, downgrade, downgrade_addr, downgrade_bv);
+    if (downgrade) {
+      bool evicted;
+      Addr evicted_addr;
+      std::array<bool, LowerDT::LineSize> evicted_bv;
+      lower.downgradeLine(downgrade_addr, downgrade_bv, evicted, evicted_addr, evicted_bv);
+      if (evicted) {
+	upper.claimLine(evicted_addr, evicted_bv);
+      }
+    }
     lower.setClassified(addr, size, store_inst);
-    upper.setClassified(addr, size, store_inst);
+    assert(!upper.checkDeclassified(addr, size) && !lower.checkDeclassified(addr, size));
   }
 
   void printDesc(std::ostream& os) {
