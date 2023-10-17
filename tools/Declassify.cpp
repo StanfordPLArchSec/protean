@@ -8,7 +8,11 @@
  *  and could serve as the starting point for developing your first PIN tool
  */
 
-#define SHADOW_DECLTAB 0
+#define SHADOW_DECLTAB 1
+
+#if SHADOW_DECLTAB
+# warning shadow decltab enabled
+#endif
 
 #include "pin.H"
 #include <iostream>

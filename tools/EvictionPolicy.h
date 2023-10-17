@@ -222,7 +222,9 @@ struct EvictionPolicies {
   private:
     unsigned max_pat_len;
   public:
+    PatternEvictionPolicy() = default;
     PatternEvictionPolicy(unsigned max_pat_len): max_pat_len(max_pat_len) {}
+    
     int score(unsigned idx, const BV& bv) override {
       std::vector<bool> pattern;
       if (hasPattern(bv.begin(), bv.end(), std::back_inserter(pattern), max_pat_len)) {
@@ -251,6 +253,7 @@ struct EvictionPolicies {
       return std::min(score1, score2);
     }
   public:
+    MinEvictionPolicy() = default;
     MinEvictionPolicy(const Policy1& p1, const Policy2& p2): CompositeEvictionPolicy<int (*) (int, int), Policy1, Policy2>(&handle, p1, p2) {}
   };
 
