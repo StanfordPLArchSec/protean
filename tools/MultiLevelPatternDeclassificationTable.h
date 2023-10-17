@@ -50,8 +50,10 @@ private:
     }
 
     bool set(Addr addr, unsigned size, bool value) {
-      if (check(addr, size, value))
+      if (check(addr, size, value)) {
 	return true;
+      }
+
       const size_t idx = (addr / chunk_size) & (lineSize() - 1);
       bv[idx] = false;
       if (allReset())
@@ -63,9 +65,26 @@ private:
     // Align the pattern discovered at the given address
     // to our base address.
     void alignPattern(Addr addr, std::vector<bool>& pat) const {
+#ifndef NDEBUG
+      const std::vector<bool> orig_pat = pat;
+#endif
       const size_t rshift = (addr - baseaddr()) % pat.size();
       const size_t lshift = rshift == 0 ? 0 : pat.size() - rshift;
-      std::rotate(pat.begin(), pat.begin() + lshift, pat.end());      
+      std::rotate(pat.begin(), pat.begin() + lshift, pat.end());
+
+      // Check to make sure we got this right.
+#ifndef NDEBUG
+      std::vector<bool> buf(addr - baseaddr() + pat.size());
+      for (size_t i = 0; i < buf.size(); ++i)
+	buf[i] = pat[i % pat.size()];
+      const bool eq = std::equal(&buf[addr - baseaddr()], &buf[addr - baseaddr() + pat.size()],
+				 orig_pat.begin(), orig_pat.end());
+      if (!eq) {
+	fprintf(stderr, "alignPattern broken!\n");
+	abort();
+      }
+	
+#endif
     }
 
   public:
@@ -82,6 +101,7 @@ private:
       // We matched the pattern!
       const size_t line_idx = (addr / chunk_size) & (lineSize() - 1);
       bv[line_idx] = true;
+
       return true;
     }
 
@@ -98,15 +118,17 @@ private:
   };
 
   struct Row {
+    const size_t chunk_size;
+    const size_t line_size;
     std::vector<Line> lines;
 
-    Row(size_t num_cols, size_t chunk_size, size_t line_size): lines(num_cols, Line(chunk_size, line_size)) {}
+    Row(size_t num_cols, size_t chunk_size, size_t line_size):
+      chunk_size(chunk_size), line_size(line_size), lines(num_cols, Line(chunk_size, line_size)) {}
 
-    Line *getLine(Addr tag) {
-      for (auto& line : lines) {
-	if (line.valid && line.tag == tag)
+    Line *getLine(Addr addr) {
+      for (auto& line : lines)
+	if (line.contains(addr)) 
 	  return &line;
-      }
       return nullptr;
     }
 
@@ -140,17 +162,16 @@ private:
       return false;
     }
 
-    std::optional<Line> claim(Addr addr, const std::vector<bool>& pat) {
+    bool claim(Addr addr, const std::vector<bool>& pat, std::optional<Line>& evicted) {
       Line *line = getLine(addr);
       if (line) {
-	line->claim(addr, pat);
-	return std::nullopt;
+	return line->claim(addr, pat);
       }
       
       line = &evictLine();
-      const Line evicted_line = *line;
+      evicted = *line;
       line->init(addr, pat);
-      return evicted_line;
+      return true;
     }
   };
   
@@ -176,8 +197,8 @@ private:
       return getRow(addr).set(addr, size, value);
     }
 
-    std::optional<Line> claim(Addr addr, const std::vector<bool>& pat) {
-      return getRow(addr).claim(addr, pat);
+    bool claim(Addr addr, const std::vector<bool>& pat, std::optional<Line>& evicted) {
+      return getRow(addr).claim(addr, pat, evicted);
     }
   };
 
@@ -203,6 +224,7 @@ public:
   }
 
   bool checkDeclassified(Addr addr, unsigned size) {
+    // fprintf(stderr, "checkDeclassified %016lx %u\n", addr, size);
     for (Table& table : tables)
       if (table.check(addr, size, true))
 	return true;
@@ -210,9 +232,12 @@ public:
   }
 
   bool setDeclassified(Addr addr, unsigned size) {
-    for (Table& table : tables)
-      if (table.set(addr, size, true))
+    // fprintf(stderr, "setDeclassified %016lx %u\n", addr, size);
+    for (Table& table : tables) {
+      if (table.set(addr, size, true)) {
 	return true;
+      }
+    }
     return false;
   }
 
@@ -222,9 +247,13 @@ public:
   }
 
   bool setClassified(Addr addr, unsigned size) {
-    for (Table& table : tables)
-      if (table.set(addr, size, false))
+    // fprintf(stderr, "setClassified %016lx %u\n", addr, size);
+    for (Table& table : tables) {
+      if (table.set(addr, size, false)) {
+	assert(!checkDeclassified(addr, size));
 	return true;
+      }
+    }
     return false;
   }
 
@@ -244,9 +273,14 @@ public:
     // This has a repeating pattern.
     // Therefore, we can claim it.
     // TODO: Don't evict the last table entry!
-    for (Table& table : tables) {
+    for (auto table_it = tables.begin(); table_it != tables.end(); ++table_it) {
+      Table& table = *table_it;
       assert(!pat.empty());
-      std::optional<Line> evicted_line = table.claim(addr, pat);
+      std::optional<Line> evicted_line;
+      const bool claimed = table.claim(addr, pat, evicted_line);
+      assert(table_it == tables.begin() || claimed);
+      if (!claimed)
+	return false;
 
       // Break if evicted line cannot be promoted.
       if (!(evicted_line && evicted_line->valid && evicted_line->allSet()))
@@ -275,4 +309,5 @@ public:
 private:
   std::string name;
   std::vector<Table> tables;
+  unsigned stat_promoted = 0;
 };

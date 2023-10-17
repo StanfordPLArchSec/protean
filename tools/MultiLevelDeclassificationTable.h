@@ -68,6 +68,15 @@ public:
       }
     }
     lower.setClassified(addr, size, store_inst);
+#if !defined(NDEBUG) || 1
+    #warning disable once done
+    if (upper.checkDeclassified(addr, size)) {
+      fprintf(stderr, "upper returned declassified after a call to setClassified to addr=%016lx size=%u\n", addr, size);
+      abort();
+    }
+#endif
+
+					      
     assert(!upper.checkDeclassified(addr, size) && !lower.checkDeclassified(addr, size));
   }
 
