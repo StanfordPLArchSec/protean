@@ -13,6 +13,8 @@ class MultiLevelPatternDeclassificationTable {
   static_assert((InChunkSize & (InChunkSize - 1)) == 0, "");
   static_assert(InChunkSize >= MaxPatternLength, "");
 private:
+  using Tick = unsigned;
+  
   struct Line {
     bool valid;
     size_t chunk_size;
@@ -20,7 +22,11 @@ private:
     std::vector<bool> pat;
     std::vector<bool> bv;
 
-    Line(size_t chunk_size, size_t line_size): valid(false), chunk_size(chunk_size), bv(line_size) {}
+    // Eviction-relevant information.
+    Tick *tick = nullptr;
+    Tick used = 0;
+
+    Line(size_t chunk_size, size_t line_size, Tick& tick): valid(false), chunk_size(chunk_size), bv(line_size), tick(&tick) {}
 
     Addr baseaddr() const { return tag * lineSize() * chunk_size; }
     size_t lineSize() const { return bv.size(); }
@@ -50,6 +56,7 @@ private:
 	if (pat[patidx] != value)
 	  return false;
       }
+      markUsed(); // TODO: Might want to selectively mark used.
       return true;
     }
 
@@ -67,6 +74,10 @@ private:
 
     size_t popCnt() const {
       return std::count(bv.begin(), bv.end(), true);
+    }
+
+    void markUsed() {
+      used = ++*tick;
     }
 
   private:
@@ -109,7 +120,9 @@ private:
       // We matched the pattern!
       const size_t line_idx = (addr / chunk_size) & (lineSize() - 1);
       bv[line_idx] = true;
-
+      
+      markUsed();
+      
       return true;
     }
 
@@ -122,6 +135,7 @@ private:
       std::fill(bv.begin(), bv.end(), false);
       const size_t idx = (addr / chunk_size) & (lineSize() - 1);
       bv[idx] = true;
+      markUsed();
     }
 
     void dump(std::ostream& os) const {
@@ -138,8 +152,11 @@ private:
     unsigned long stat_eviction_spans = 0;
     unsigned long stat_upgrades = 0;
 
+    // Eviction information
+    Tick tick = 0; // NOTE: This is shared between lines.
+
     Row(size_t num_cols, size_t chunk_size, size_t line_size):
-      chunk_size(chunk_size), line_size(line_size), lines(num_cols, Line(chunk_size, line_size)) {}
+      chunk_size(chunk_size), line_size(line_size), lines(num_cols, Line(chunk_size, line_size, tick)) {}
 
     Line *getLine(Addr addr) {
       for (auto& line : lines)
@@ -147,6 +164,23 @@ private:
 	  return &line;
       return nullptr;
     }
+
+  private:
+    static size_t statComputeOneMaxSpan(const Line& line) {
+      for (auto span = line.lineSize(); span > 0; span /= 2)
+        for (size_t i = 0; i < line.lineSize(); i += span)
+          if (line.allSet(i, span))
+            return span;
+      __builtin_unreachable();
+    }
+
+    size_t statComputeMaxSpan() const {
+      return std::transform_reduce(lines.begin(), lines.end(), static_cast<size_t>(0),
+                                   [] (size_t a, size_t b) { return std::max(a, b); },
+                                   &Row::statComputeOneMaxSpan);
+    }
+      
+  public:
 
     Line& evictLine() {
       // First, look for invalid lines.
@@ -164,22 +198,27 @@ private:
 
       // Otherwise, pick a random one.
       // TODO: Use a more intelligent algorithm, like LRU+popcnt.
-      Line& evicted_line = lines[std::rand() % lines.size()];
+
+      const auto popcnt_metric = [] (const Line& line) -> int {
+	return line.popCnt() * popcnt(line.pat) / line.pat.size();
+      };
+      const auto lru_metric = [] (const Line& line) -> int {
+	return line.used;
+      };
+      const auto metric = [&] (const Line& line) -> int {
+	return lru_metric(line) + 4 * popcnt_metric(line);
+      };
+      const auto evicted_it = std::min_element(lines.begin(), lines.end(), [&] (const Line& a, const Line& b) -> bool {
+	return metric(a) < metric(b);
+      });
+      assert(evicted_it != lines.end());
+      Line& evicted_line = *evicted_it;
 
       // Stats
       {
 	++stat_evictions;
-	stat_eviction_bits += evicted_line.popCnt();
-	
-	for (unsigned span = evicted_line.lineSize(); span > 0; span /= 2) {
-	  for (unsigned i = 0; i < evicted_line.lineSize(); i += span) {
-	    if (evicted_line.allSet(i, span)) {
-	      ++stat_eviction_spans += log2(span);
-	      goto done;
-	    }
-	  }
-	}
-      done:;
+	stat_eviction_bits += evicted_line.popCnt() * popcnt(evicted_line.pat) / evicted_line.pat.size();
+        stat_eviction_spans += log2(statComputeMaxSpan());
       }
 	
       return evicted_line;
@@ -201,9 +240,8 @@ private:
 
     bool claim(Addr addr, const std::vector<bool>& pat, std::optional<Line>& evicted) {
       Line *line = getLine(addr);
-      if (line) {
+      if (line)
 	return line->claim(addr, pat);
-      }
       
       line = &evictLine();
       evicted = *line;

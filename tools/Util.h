@@ -69,3 +69,14 @@ bool hasPattern(InputIt bv_first, InputIt bv_last, OutputIt pattern_out, unsigne
   }
   return false;
 }
+
+
+template <typename InputIt>
+size_t popcnt(InputIt bv_first, InputIt bv_last) {
+  return std::count(bv_first, bv_last, true);
+}
+
+template <class Range>
+size_t popcnt(const Range& range) {
+  return popcnt(range.begin(), range.end());
+}
