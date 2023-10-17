@@ -120,23 +120,7 @@ public:
 
 private:
   bool hasPattern(const std::array<bool, LineSize>& bv, std::vector<bool>& pattern) {
-    const unsigned max_pattern_length = std::min<unsigned>(MaxPatternLength, bv.size());
-    for (unsigned i = 1; i <= max_pattern_length; ++i) {
-      bool matched = true;
-      for (unsigned j = i; j < bv.size(); j += i) {
-	const unsigned len = std::min<unsigned>(i, bv.size() - j);
-	if (!std::equal(bv.begin(), bv.begin() + len,
-			bv.begin() + j, bv.begin() + j + len)) {
-	  matched = false;
-	  break;
-	}
-      }
-      if (matched) {
-	std::copy(bv.begin(), bv.begin() + i, std::back_inserter(pattern));
-	return true;
-      }
-    }
-    return false;
+    return ::hasPattern(bv.begin(), bv.end(), std::back_inserter(pattern), MaxPatternLength);
   }
 
 public:
@@ -449,23 +433,7 @@ public:
 private:
 
   bool hasPattern(const std::array<bool, ChunkSize>& bv, std::vector<bool>& pattern) {
-    const unsigned max_pattern_length = std::min<unsigned>(MaxPatLen, bv.size());
-    for (unsigned i = 1; i <= max_pattern_length; ++i) {
-      bool matched = true;
-      for (unsigned j = i; j < bv.size(); j += i) {
-	const unsigned len = std::min<unsigned>(i, bv.size() - j);
-	if (!std::equal(bv.begin(), bv.begin() + len,
-			bv.begin() + j, bv.begin() + j + len)) {
-	  matched = false;
-	  break;
-	}
-      }
-      if (matched) {
-	std::copy(bv.begin(), bv.begin() + i, std::back_inserter(pattern));
-	return true;
-      }
-    }
-    return false;
+    return ::hasPattern(bv.begin(), bv.end(), std::back_inserter(pattern), MaxPatLen);
   }  
   
 public:
@@ -733,23 +701,7 @@ public:
 private:
   template <typename OutputIt>
   bool hasPattern(const std::array<bool, ChunkSize>& bv, OutputIt pattern_out) {
-    const unsigned max_pattern_length = std::min<unsigned>(MaxPatLen, bv.size());
-    for (unsigned i = 1; i <= max_pattern_length; ++i) {
-      bool matched = true;
-      for (unsigned j = i; j < bv.size(); j += i) {
-	const unsigned len = std::min<unsigned>(i, bv.size() - j);
-	if (!std::equal(bv.begin(), bv.begin() + len,
-			bv.begin() + j, bv.begin() + j + len)) {
-	  matched = false;
-	  break;
-	}
-      }
-      if (matched) {
-	std::copy(bv.begin(), bv.begin() + i, pattern_out);
-	return true;
-      }
-    }
-    return false;    
+    return hasPattern(bv.begin(), bv.end(), pattern_out, MaxPatLen);
   }
 
 public:

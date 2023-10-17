@@ -29,6 +29,7 @@
 #include "EvictionPolicy.h"
 #include "PatternDeclassificationTable.h"
 #include "MultiLevelDeclassificationTable.h"
+#include "MultiLevelPatternDeclassificationTable.h"
 
 static KNOB<std::string> OutputFile(KNOB_MODE_WRITEONCE, "pintool", "o", "pin.log", "specify file name for output");
 static KNOB<unsigned long> Interval(KNOB_MODE_WRITEONCE, "pintool", "i", "0", "interval (default: 50M)");
@@ -93,6 +94,8 @@ static ev::CompositeEvictionPolicy<ev::LRU_PopCnt_Functor, ev::LRUEvictionPolicy
 static ev::NRUEvictionPolicy nru_ep(4);
 static ev::LRVC lrvc_ep;
 static ev::CompositeEvictionPolicy<std::plus<int>, ev::LRVC, ev::PopCntEvictionPolicy> lrvc_popcnt_ep(std::plus<int>(), lrvc_ep, popcnt_ep);
+static ev::MinEvictionPolicy pat_lru_popcnt_ep(lru_popcnt_ep, ev::PatternEvictionPolicy(32));
+static ev::MinEvictionPolicy allset_lru_popcnt_ep(lru_popcnt_ep, ev::AllSetEvictionPolicy());
 static auto ep = lru_popcnt_ep;
 
 #if 1
@@ -104,7 +107,14 @@ static IdealPatternDeclassificationTable<64, 32> pattern_shadow_decltab;
 static PatternDeclassificationCache<64, 1, 4, 1024 * 1024, 32> pattern_cache_decltab("pattern_cache");
 static MultiLevelPatternDeclassificationCache<64, {64, 64}, {4, 4}, {1024 * 1024, 1024}, 32> multilevel_pattern_cache_decltab;
 static RealPatternDeclassificationTable<64, 32, 1024 * 1024, 16> real_pattern_decltab("realpatterntab");
-static MultiLevelDeclassificationTable twolevel_decltab(cache_decltab, multilevel_pattern_cache_decltab);
+static MultiLevelPatternDeclassificationTable<64, 32> multi_level_pattern_decltab {
+  "multi-level-pattern",
+  {
+    {.line_size = 64, .associativity = 4, .entries = 1024 * 1024},
+    {.line_size = 64, .associativity = 4, .entries = 1024 * 1024},
+  }
+};
+static MultiLevelDeclassificationTable twolevel_decltab(cache_decltab, multi_level_pattern_decltab); // multilevel_pattern_cache_decltab);
 static SharedMultiGranularityDeclassificationTable decltab("decltab", twolevel_decltab);
 #endif
 

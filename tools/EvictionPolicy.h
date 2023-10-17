@@ -2,6 +2,9 @@
 
 #include <array>
 #include <algorithm>
+#include <limits>
+
+#include "Util.h"
 
 template <unsigned N, typename BV>
 struct EvictionPolicies {
@@ -145,7 +148,7 @@ struct EvictionPolicies {
 
 
   template <typename ScoreFunc, class... Policies>
-  class CompositeEvictionPolicy {
+  class CompositeEvictionPolicy : public EvictionPolicy {
   public:
     CompositeEvictionPolicy(ScoreFunc score_func, const Policies&... policies): scoreFunc(score_func), policies(std::make_tuple(policies...)) {}
     CompositeEvictionPolicy() = default;
@@ -215,6 +218,41 @@ struct EvictionPolicies {
   };
 
 
+  class PatternEvictionPolicy final : public EvictionPolicy {
+  private:
+    unsigned max_pat_len;
+  public:
+    PatternEvictionPolicy(unsigned max_pat_len): max_pat_len(max_pat_len) {}
+    int score(unsigned idx, const BV& bv) override {
+      std::vector<bool> pattern;
+      if (hasPattern(bv.begin(), bv.end(), std::back_inserter(pattern), max_pat_len)) {
+	return std::numeric_limits<int>::min();
+      } else {
+	return std::numeric_limits<int>::max();
+      }
+    }
+  };
+
+  class AllSetEvictionPolicy final : public EvictionPolicy {
+  public:
+    int score(unsigned idx, const BV& bv) override {
+      if (std::reduce(bv.begin(), bv.end(), true, std::logical_and<bool>())) {
+	return std::numeric_limits<int>::min();
+      } else {
+	return std::numeric_limits<int>::max();
+      }
+    }
+  };
+
+  template <class Policy1, class Policy2>
+  class MinEvictionPolicy final : public CompositeEvictionPolicy<int (*) (int, int), Policy1, Policy2> {
+  private:
+    static int handle(int score1, int score2) {
+      return std::min(score1, score2);
+    }
+  public:
+    MinEvictionPolicy(const Policy1& p1, const Policy2& p2): CompositeEvictionPolicy<int (*) (int, int), Policy1, Policy2>(&handle, p1, p2) {}
+  };
 
   // Functors
   struct LRU_PopCnt_Functor {
@@ -228,5 +266,8 @@ struct EvictionPolicies {
       return lru * lru_scale + popcnt * popcnt_scale;
     }
   };
+
+
+  
 
 };

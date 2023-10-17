@@ -45,7 +45,9 @@ public:
     lower.setDeclassified(addr, size, evicted, evicted_addr, evicted_bv);
     if (evicted) {
       assert((evicted_addr & (LowerDT::LineSize - 1)) == 0);
-      upper.claimLine(evicted_addr, evicted_bv);
+      const bool claimed = upper.claimLine(evicted_addr, evicted_bv);
+      if (claimed)
+	++stat_upper_claims;
     }
   }
 
@@ -60,7 +62,9 @@ public:
       std::array<bool, LowerDT::LineSize> evicted_bv;
       lower.downgradeLine(downgrade_addr, downgrade_bv, evicted, evicted_addr, evicted_bv);
       if (evicted) {
-	upper.claimLine(evicted_addr, evicted_bv);
+	const bool claimed = upper.claimLine(evicted_addr, evicted_bv);
+	if (claimed)
+	  ++stat_upper_claims;
       }
     }
     lower.setClassified(addr, size, store_inst);
@@ -79,7 +83,9 @@ public:
     os << "lower-hits " << stat_lower_hits << "\n"
        << "lower-misses " << stat_lower_misses << "\n"
        << "upper-hits " << stat_upper_hits << "\n"
-       << "upper-misses " << stat_upper_misses << "\n";
+       << "upper-misses " << stat_upper_misses << "\n"
+       << "upper-claims " << stat_upper_claims << "\n"
+      ;
     lower.printStats(os);
     upper.printStats(os);
   }
@@ -95,4 +101,5 @@ private:
   LowerDT& lower;
   UpperDT& upper;
   unsigned long stat_lower_hits = 0, stat_lower_misses = 0, stat_upper_hits = 0, stat_upper_misses = 0;
+  unsigned long stat_upper_claims = 0;
 };

@@ -36,3 +36,26 @@ std::string bv_to_string1(InputIt first, InputIt last) {
 
 
 std::string getFilename(const std::string& s);
+
+
+template <typename InputIt, typename OutputIt>
+bool hasPattern(InputIt bv_first, InputIt bv_last, OutputIt pattern_out, unsigned MaxPatternLength) {
+  const unsigned bv_size = bv_last - bv_first;
+  const unsigned max_pattern_length = std::min<unsigned>(MaxPatternLength, bv_size);
+  for (unsigned i = 1; i <= max_pattern_length; ++i) {
+    bool matched = true;
+    for (unsigned j = i; j < bv_size; j += i) {
+      const unsigned len = std::min<unsigned>(i, bv_size - j);
+      if (!std::equal(bv_first, bv_first + len,
+		      bv_first + j, bv_first + j + len)) {
+	matched = false;
+	break;
+      }
+    }
+    if (matched) {
+      std::copy(bv_first, bv_first + i, pattern_out);
+      return true;
+    }
+  }
+  return false;
+}
