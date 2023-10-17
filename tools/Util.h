@@ -25,6 +25,11 @@ std::string bv_to_string8(InputIt first, InputIt last) {
   return out;
 }
 
+template <class Range>
+std::string bv_to_string8(const Range& range) {
+  return bv_to_string8(range.begin(), range.end());
+}
+
 template <typename InputIt>
 std::string bv_to_string1(InputIt first, InputIt last) {
   std::string out;
@@ -32,6 +37,11 @@ std::string bv_to_string1(InputIt first, InputIt last) {
     out += *it ? "1" : "0";
   }
   return out;
+}
+
+template <class Range>
+std::string bv_to_string1(const Range& range) {
+  return bv_to_string1(range.begin(), range.end());
 }
 
 

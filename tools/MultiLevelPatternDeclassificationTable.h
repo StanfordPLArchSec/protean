@@ -31,6 +31,10 @@ private:
       assert(valid);
       return std::reduce(bv.begin(), bv.end(), true, std::logical_and<bool>());
     }
+    bool allSet(size_t idx, size_t size) const {
+      return std::reduce(bv.begin() + idx, bv.begin() + idx + size, true, std::logical_and<bool>());
+    }
+    
     bool allReset() const {
       assert(valid);
       return !std::reduce(bv.begin(), bv.end(), false, std::logical_or<bool>());
@@ -59,6 +63,10 @@ private:
       if (allReset())
 	valid = false;
       return false;
+    }
+
+    size_t popCnt() const {
+      return std::count(bv.begin(), bv.end(), true);
     }
 
   private:
@@ -115,12 +123,20 @@ private:
       const size_t idx = (addr / chunk_size) & (lineSize() - 1);
       bv[idx] = true;
     }
+
+    void dump(std::ostream& os) const {
+      os << std::setfill('0') << std::setw(16) << tag << " " << bv_to_string1(pat) << " " << bv_to_string1(bv);
+    }
   };
 
   struct Row {
     const size_t chunk_size;
     const size_t line_size;
     std::vector<Line> lines;
+    unsigned long stat_evictions = 0;
+    unsigned long stat_eviction_bits = 0;
+    unsigned long stat_eviction_spans = 0;
+    unsigned long stat_upgrades = 0;
 
     Row(size_t num_cols, size_t chunk_size, size_t line_size):
       chunk_size(chunk_size), line_size(line_size), lines(num_cols, Line(chunk_size, line_size)) {}
@@ -139,13 +155,34 @@ private:
 	  return line;
 
       // Next, look for lines that have all their bits set.
-      for (Line& line : lines)
-	if (line.allSet())
+      for (Line& line : lines) {
+	if (line.allSet()) {
+	  ++stat_upgrades;
 	  return line;
+	}
+      }
 
       // Otherwise, pick a random one.
       // TODO: Use a more intelligent algorithm, like LRU+popcnt.
-      return lines[std::rand() % lines.size()];
+      Line& evicted_line = lines[std::rand() % lines.size()];
+
+      // Stats
+      {
+	++stat_evictions;
+	stat_eviction_bits += evicted_line.popCnt();
+	
+	for (unsigned span = evicted_line.lineSize(); span > 0; span /= 2) {
+	  for (unsigned i = 0; i < evicted_line.lineSize(); i += span) {
+	    if (evicted_line.allSet(i, span)) {
+	      ++stat_eviction_spans += log2(span);
+	      goto done;
+	    }
+	  }
+	}
+      done:;
+      }
+	
+      return evicted_line;
     }
 
     bool check(Addr addr, unsigned size, bool value) {
@@ -173,6 +210,13 @@ private:
       line->init(addr, pat);
       return true;
     }
+
+    void dump(std::ostream& os) const {
+      for (const Line& line : lines) {
+	line.dump(os);
+	os << "\n";
+      }
+    }
   };
   
   struct Table {
@@ -199,6 +243,24 @@ private:
 
     bool claim(Addr addr, const std::vector<bool>& pat, std::optional<Line>& evicted) {
       return getRow(addr).claim(addr, pat, evicted);
+    }
+
+  private:
+    unsigned long sumRowStat(unsigned long Row::*mem_ptr) const {
+      return std::transform_reduce(rows.begin(), rows.end(), 0UL, std::plus<unsigned long>(), std::mem_fn(mem_ptr));
+    }
+  public:
+    void printStats(std::ostream& os, const std::string& name) const {
+      os << name << "-evictions " << sumRowStat(&Row::stat_evictions) << "\n";
+      os << name << "-eviction-bits " << sumRowStat(&Row::stat_eviction_bits) << "\n";
+      os << name << "-eviction-spans " << sumRowStat(&Row::stat_eviction_spans) << "\n";
+      os << name << "-upgrades " << sumRowStat(&Row::stat_upgrades) << "\n";
+    }
+    
+    void dump(std::ostream& os) const {
+      for (const Row& row : rows) {
+	row.dump(os);
+      }
     }
   };
 
@@ -300,10 +362,21 @@ public:
     os << name << ": multi-level pattern declassification table\n";
   }
 
-  void printStats(std::ostream& os) {
+  void printStats(std::ostream& os) const {
+    for (unsigned table_idx = 0; table_idx < tables.size(); ++table_idx) {
+      const Table& table = tables[table_idx];
+      const std::string table_name = name + "-t" + std::to_string(table_idx);
+      table.printStats(os, table_name);
+    }
   }
 
   void dump(std::ostream& os) {
+    for (unsigned table_idx = 0; table_idx < tables.size(); ++table_idx) {
+      std::stringstream ss;
+      ss << "t" << table_idx << ".txt";
+      std::ofstream ofs(getFilename(ss.str()));
+      tables[table_idx].dump(ofs);
+    }
   }
   
 private:

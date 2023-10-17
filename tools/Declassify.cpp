@@ -8,7 +8,7 @@
  *  and could serve as the starting point for developing your first PIN tool
  */
 
-#define SHADOW_DECLTAB 1
+#define SHADOW_DECLTAB 0
 
 #if SHADOW_DECLTAB
 # warning shadow decltab enabled
@@ -114,8 +114,8 @@ static RealPatternDeclassificationTable<64, 32, 1024 * 1024, 16> real_pattern_de
 static MultiLevelPatternDeclassificationTable<64, 32> multi_level_pattern_decltab {
   "multi-level-pattern",
   {
-    {.line_size = 64, .associativity = 4, .entries = 1024 * 1024},
-    {.line_size = 64, .associativity = 4, .entries = 1024 * 1024},
+    {.line_size = 64, .associativity = 4, .entries = 1024},
+    {.line_size = 64, .associativity = 4, .entries = 1024},
   }
 };
 static MultiLevelDeclassificationTable twolevel_decltab(cache_decltab, multi_level_pattern_decltab); // multilevel_pattern_cache_decltab);
