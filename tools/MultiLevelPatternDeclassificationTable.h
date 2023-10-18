@@ -199,14 +199,15 @@ private:
       // Otherwise, pick a random one.
       // TODO: Use a more intelligent algorithm, like LRU+popcnt.
 
-      const auto popcnt_metric = [] (const Line& line) -> int {
-	return line.popCnt() * popcnt(line.pat) / line.pat.size();
+      // Returns value in range [0, 1].
+      const auto popcnt_metric = [] (const Line& line) -> float {
+	return static_cast<float>(line.popCnt()) / line.lineSize() * static_cast<float>(popcnt(line.pat)) / line.pat.size();
       };
-      const auto lru_metric = [] (const Line& line) -> int {
+      const auto lru_metric = [] (const Line& line) -> float {
 	return line.used;
       };
-      const auto metric = [&] (const Line& line) -> int {
-	return lru_metric(line) + 4 * popcnt_metric(line);
+      const auto metric = [&] (const Line& line) -> float {
+	return lru_metric(line) + 2048 * popcnt_metric(line);
       };
       const auto evicted_it = std::min_element(lines.begin(), lines.end(), [&] (const Line& a, const Line& b) -> bool {
 	return metric(a) < metric(b);

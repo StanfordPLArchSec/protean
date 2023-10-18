@@ -34,6 +34,7 @@
 #include "PatternDeclassificationTable.h"
 #include "MultiLevelDeclassificationTable.h"
 #include "MultiLevelPatternDeclassificationTable.h"
+#include "SetDeclassifiedTrackerTable.h"
 
 static KNOB<std::string> OutputFile(KNOB_MODE_WRITEONCE, "pintool", "o", "pin.log", "specify file name for output");
 static KNOB<unsigned long> Interval(KNOB_MODE_WRITEONCE, "pintool", "i", "0", "interval (default: 50M)");
@@ -65,6 +66,9 @@ unsigned coarsen;
 
 #if 0
 static ShadowDeclassificationTable decltab;
+#endif
+#if 0
+static SetDeclassifiedTrackerTable decltab;
 #endif
 #if 0
 static ParallelDeclassificationTable</*LineSize*/8, /*TableSize*/256*256, /*NumTables*/3, /*Associativity*/2> decltab;
@@ -115,7 +119,7 @@ static MultiLevelPatternDeclassificationTable<64, 32> multi_level_pattern_declta
   "multi-level-pattern",
   {
     {.line_size = 64, .associativity = 8, .entries = 1024},
-    {.line_size = 64, .associativity = 8, .entries = 256},
+    {.line_size = 64, .associativity = 8, .entries = 1024},
   }
 };
 static MultiLevelDeclassificationTable twolevel_decltab(cache_decltab, multi_level_pattern_decltab); // multilevel_pattern_cache_decltab);
