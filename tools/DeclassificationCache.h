@@ -174,7 +174,8 @@ public:
     return is_declassified;
   }
 
-  void setDeclassified(ADDRINT addr, unsigned size, bool& evicted, ADDRINT& evicted_addr, std::array<bool, LineSize>& evicted_bv) {
+  void setDeclassified(ADDRINT addr, unsigned size, bool allocate, bool& evicted,
+		       ADDRINT& evicted_addr, std::array<bool, LineSize>& evicted_bv) {
     evicted = false;
     evicted_addr = 0;
     
@@ -182,6 +183,13 @@ public:
     const ADDRINT tag = addr / LineSize;
     const unsigned row_idx = tag & (TableRows - 1);
     Row& row = rows[row_idx];
+
+    if (!allocate) {
+      if (Line *line = row.tryGetLine(tag)) {
+	line->set(line_off, size);
+      }
+      return;
+    }
 
     ADDRINT evicted_tag;
     Line& line = row.getOrAllocateLine(tag, evicted, evicted_tag, evicted_bv);
@@ -195,6 +203,7 @@ public:
     if (evicted) {
       evicted_addr = evicted_tag * LineSize;
       ++stat_evictions;
+      stat_evicted_bits += popcnt(evicted_bv);
       static unsigned long iter = 0;
       ++iter;
       constexpr unsigned freq = 1000;
@@ -213,11 +222,11 @@ public:
     }
   }
 
-  void setDeclassified(ADDRINT addr, unsigned size) {
+  void setDeclassified(ADDRINT addr, unsigned size, bool allocate) {
     bool evicted;
     ADDRINT evicted_addr;
     std::array<bool, LineSize> evicted_bv;
-    setDeclassified(addr, size, evicted, evicted_addr, evicted_bv);
+    setDeclassified(addr, size, allocate, evicted, evicted_addr, evicted_bv);
   }
 
   void setClassified(ADDRINT addr, unsigned size, ADDRINT store_inst) {
@@ -260,6 +269,7 @@ public:
 
   void printStats(std::ostream& os) {
     os << name << ".evictions " << stat_evictions << "\n";
+    os << name << ".evicted_bits " << stat_evicted_bits << "\n";
   }
 
   void dump(std::ostream& os) {
@@ -277,6 +287,7 @@ private:
   std::string name;
   std::array<Row, TableRows> rows;
   unsigned long stat_evictions = 0;
+  unsigned long stat_evicted_bits = 0;
   FILE * & eviction_file;
   unsigned eviction_dump_freq;
 };

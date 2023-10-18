@@ -32,7 +32,8 @@ public:
     return declassified;
   }
     
-  void setDeclassified(ADDRINT eff_addr, unsigned eff_size) {
+  void setDeclassified(ADDRINT eff_addr, unsigned eff_size, bool allocate) {
+    assert(allocate);
     bool *ptr = &shadow_declassified[eff_addr];
     std::fill(ptr, ptr + eff_size, true);
   }
@@ -85,6 +86,8 @@ public:
       }
     });
   }
+
+  void dump(std::ostream&) {}
 
 private:
   ShadowMemory<bool, 0, 12> shadow_declassified;

@@ -107,9 +107,27 @@ static ev::MinEvictionPolicy allset_lru_popcnt_ep(lru_popcnt_ep, ev::AllSetEvict
 static auto ep = lru_popcnt_ep;
 
 #if 1
-static DeclassificationCache<64, 4, 1024, decltype(ep)> cache_decltab("cache", ep,
+static DeclassificationCache<64, 4, 1024, decltype(ep)> cache_decltab("cache",
+								      ep,
 								      eviction_file, 1000
 								      );
+
+namespace ev2 {
+  using ev = EvictionPolicies<5, std::array<bool, 128>>;
+  static ev::LRUEvictionPolicy lru_ep;
+  static ev::PopCntEvictionPolicy popcnt_ep;
+  static ev::CompositeEvictionPolicy<ev::LRU_PopCnt_Functor, ev::LRUEvictionPolicy, ev::PopCntEvictionPolicy> lru_popcnt_ep(ev::LRU_PopCnt_Functor(1, 2), lru_ep, popcnt_ep);
+  static ev::NRUEvictionPolicy nru_ep(4);
+  static ev::LRVC lrvc_ep;
+  static ev::CompositeEvictionPolicy<std::plus<int>, ev::LRVC, ev::PopCntEvictionPolicy> lrvc_popcnt_ep(std::plus<int>(), lrvc_ep, popcnt_ep);
+  static ev::MinEvictionPolicy pat_lru_popcnt_ep(lru_popcnt_ep, ev::PatternEvictionPolicy(32));
+  static ev::MinEvictionPolicy allset_lru_popcnt_ep(lru_popcnt_ep, ev::AllSetEvictionPolicy());
+  static auto ep = lru_popcnt_ep;
+}
+static DeclassificationCache<128, 5, 640, decltype(ev2::ep)> cache128_decltab("cache",
+									 ev2::ep,
+									 eviction_file, 1000
+									 );
 static DictionaryDeclassificationTable<64, 4, 1024, 32, true, decltype(cache_decltab)> dict_decltab(cache_decltab);
 static IdealPatternDeclassificationTable<64, 32> pattern_shadow_decltab;
 static PatternDeclassificationCache<64, 1, 4, 1024 * 1024, 32> pattern_cache_decltab("pattern_cache");
@@ -123,7 +141,7 @@ static MultiLevelPatternDeclassificationTable<64, 32> multi_level_pattern_declta
   }
 };
 static MultiLevelDeclassificationTable twolevel_decltab(cache_decltab, multi_level_pattern_decltab); // multilevel_pattern_cache_decltab);
-static SharedMultiGranularityDeclassificationTable decltab("decltab", twolevel_decltab);
+static SharedMultiGranularityDeclassificationTable decltab("decltab", cache128_decltab); // twolevel_decltab);
 #endif
 
 #if 0
@@ -180,7 +198,7 @@ static void RecordDeclassifiedLoad(ADDRINT eff_addr, UINT32 eff_size) {
   if (old_eff_size < coarsen)
     return;
 
-  decltab.setDeclassified(eff_addr, eff_size);
+  decltab.setDeclassified(eff_addr, eff_size, /*allocate*/true);
 #if SHADOW_DECLTAB
   shadow_decltab.setDeclassified(eff_addr, eff_size);
 #endif
@@ -219,7 +237,7 @@ static void RecordDeclassifiedStore(ADDRINT eff_addr, ADDRINT eff_size) {
     return;
   }
   
-  decltab.setDeclassified(eff_addr, eff_size);
+  decltab.setDeclassified(eff_addr, eff_size, /*allocate*/true);
 #if SHADOW_DECLTAB
   shadow_decltab.setDeclassified(eff_addr, eff_size);
 #endif
