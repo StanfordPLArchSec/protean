@@ -6,7 +6,7 @@
 	"simpoint": "../simpoint/bin/simpoint",
 	"num_simpoints": 10,
 	"memsize": "8GB",
-	"warmup": 10000
+	"warmup": 50000000
     },
     
     "sw": {
@@ -18,12 +18,14 @@
 	    "cmake_build_type": "Release",
 	    "test_suite_run_type": "train",
 	    "cflags": [],
-	    "ldflags": ["-static", "-fuse-ld=lld"]
+	    "ldflags": ["-static", "-fuse-ld=lld"],
+	    "deps": []
 	},
 	"_lto": {
 	    "inherit": "_default",
 	    "+cflags": ["-flto"],
-	    "+ldflags": ["-flto"]
+	    "+ldflags": ["-flto"],
+	    "+deps": ["../llvm/build/bin/ld.lld"]
 	},
 
 	"base": {
@@ -39,18 +41,21 @@
 		"-mllvm", "-llsct",
 		"-mllvm", "-llsct-declassify",
 		"-fpass-plugin=/home/nmosier/llsct2/passes/build/libDeclassifyPass.so"
-	    ]
+	    ],
+	    "+deps": ["../passes/build/libDeclassifyPass.so"]
 	},
 	"llsct-lto": {
 	    "inherit": "_lto",
 	    "+ldflags": [
 		"-Wl,-mllvm,-llsct,-mllvm,-llsct-declassify",
 		"-Wl,--load-pass-plugin=/home/nmosier/llsct2/passes/build/libDeclassifyPass.so"
-	    ]
+	    ],
+	    "+deps": ["../passes/build/libDeclassifyPass.so"]
 	},
 	"llsct-lto-debug": {
 	    "inherit": "llsct-lto",
-	    "+ldflags": ["-Wl,--load-pass-plugin=/home/nmosier/llsct2/passes/build/libDebugIR.so"]
+	    "+ldflags": ["-Wl,--load-pass-plugin=/home/nmosier/llsct2/passes/build/libDebugIR.so"],
+	    "+deps": ["../passes/build/libDebugIR.so"]
 	}
     },
 
@@ -98,7 +103,16 @@
 	    "+script_opts": [
 		"--llsct-declassify=1",
 		"--llsct-declassify-all=1",
-		"--llsct-declassify-impl=cache"
+		"--llsct-declassify-impl=cache",
+		"--llsct-declassify-lines=4096"
+	    ]
+	},
+	"llsct-declassify-all-coalescing": {
+	    "inherit": "_default",
+	    "+script_opts": [
+		"--llsct-declassify=1",
+		"--llsct-declassify-all=1",
+		"--llsct-declassify-impl=coalescing"
 	    ]
 	},
 	"spt": {
@@ -114,7 +128,10 @@
 	"spt-lto": {"inherit": "spt", "sw": "base-lto"},
 	"llsct": {"sw": "llsct", "sim": "llsct", "hwmode": "llsct-declassify-all-shadow"},
 	"llsct-lto": {"inherit": "llsct", "sw": "llsct-lto"},
+	"llsct-lto-unsafe": {"inherit": "llsct-lto", "hwmode": "base"},
 	"llsct-cache": {"sw": "llsct", "sim": "llsct", "hwmode": "llsct-declassify-all-cache"},
-	"llsct-lto-debug": {"sw": "llsct-lto-debug", "sim": "llsct", "hwmode": "llsct-declassify-all-shadow"}
+	"llsct-lto-cache": {"sw": "llsct-lto", "sim": "llsct", "hwmode": "llsct-declassify-all-cache"},
+	"llsct-lto-debug": {"sw": "llsct-lto-debug", "sim": "llsct", "hwmode": "llsct-declassify-all-shadow"},
+	"llsct-lto-coalescing": {"sw": "llsct-lto", "sim": "llsct", "hwmode": "llsct-declassify-all-coalescing"}
     }
 }
