@@ -35,6 +35,7 @@
 #include "MultiLevelDeclassificationTable.h"
 #include "MultiLevelPatternDeclassificationTable.h"
 #include "SetDeclassifiedTrackerTable.h"
+#include "GraduatingDeclassificationCache.h"
 
 static KNOB<std::string> OutputFile(KNOB_MODE_WRITEONCE, "pintool", "o", "pin.log", "specify file name for output");
 static KNOB<unsigned long> Interval(KNOB_MODE_WRITEONCE, "pintool", "i", "0", "interval (default: 50M)");
@@ -113,7 +114,7 @@ static DeclassificationCache<64, 4, 1024, decltype(ep)> cache_decltab("cache",
 								      );
 
 namespace ev2 {
-  using ev = EvictionPolicies<5, std::array<bool, 128>>;
+  using ev = EvictionPolicies<3, std::array<bool, 256>>;
   static ev::LRUEvictionPolicy lru_ep;
   static ev::PopCntEvictionPolicy popcnt_ep;
   static ev::CompositeEvictionPolicy<ev::LRU_PopCnt_Functor, ev::LRUEvictionPolicy, ev::PopCntEvictionPolicy> lru_popcnt_ep(ev::LRU_PopCnt_Functor(1, 2), lru_ep, popcnt_ep);
@@ -124,7 +125,7 @@ namespace ev2 {
   static ev::MinEvictionPolicy allset_lru_popcnt_ep(lru_popcnt_ep, ev::AllSetEvictionPolicy());
   static auto ep = lru_popcnt_ep;
 }
-static DeclassificationCache<128, 5, 640, decltype(ev2::ep)> cache128_decltab("cache",
+static DeclassificationCache<256, 3, 384, decltype(ev2::ep)> cache128_decltab("cache",
 									 ev2::ep,
 									 eviction_file, 1000
 									 );
@@ -141,7 +142,15 @@ static MultiLevelPatternDeclassificationTable<64, 32> multi_level_pattern_declta
   }
 };
 static MultiLevelDeclassificationTable twolevel_decltab(cache_decltab, multi_level_pattern_decltab); // multilevel_pattern_cache_decltab);
-static SharedMultiGranularityDeclassificationTable decltab("decltab", cache128_decltab); // twolevel_decltab);
+static GraduatingDeclassificationCache grad_decltab {
+  "grad-decltab",
+  {{.line_size = 1,   .table_size = 1024, .associativity = 1},
+   {.line_size = 64,   .table_size = 1024, .associativity = 1},
+   {.line_size = 4096, .table_size = 1024, .associativity = 1}},
+  {{.size = 1024 * 1024, .quorum = 16,  .line_size = 64},
+   {.size = 1024 * 1024, .quorum = 16,  .line_size = 4096}},
+};
+static SharedMultiGranularityDeclassificationTable decltab("decltab", grad_decltab); // twolevel_decltab);
 #endif
 
 #if 0

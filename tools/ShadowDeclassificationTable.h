@@ -38,6 +38,10 @@ public:
     std::fill(ptr, ptr + eff_size, true);
   }
 
+  void setDeclassified(ADDRINT eff_addr, unsigned eff_size) {
+    setDeclassified(eff_addr, eff_size, true);
+  }
+
   void setClassified(ADDRINT eff_addr, unsigned eff_size, ADDRINT store_inst) {
     bool *ptr = &shadow_declassified[eff_addr];
     std::fill(ptr, ptr + eff_size, false);

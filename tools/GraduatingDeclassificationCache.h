@@ -53,7 +53,12 @@ private:
 	--counter;
       }
     }
-    
+
+    void dump(std::ostream& os) const {
+      for (size_t entry : entries) {
+	os << entry << "\n";
+      }
+    }
   };
 
 
@@ -107,6 +112,14 @@ private:
       std::fill(bv.begin(), bv.end(), false);
       copyRange(addr, new_bv.size(), new_bv.begin());
     }
+
+    void dump(std::ostream& os) const {
+      if (!valid) {
+	os << "(invalid)";
+      } else {
+	os << std::setfill('0') << std::setw(16) << baseaddr() << " " << (used ? "used" : "unused") << " " << bv_to_string1(bv);
+      }
+    }
   };
 
   struct Row {
@@ -146,6 +159,13 @@ private:
       line.init(addr, bv);
       return evicted_line;
     }
+
+    void dump(std::ostream& os) const {
+      for (const Line& line : lines) {
+	line.dump(os);
+	os << "\n";
+      }
+    }
   };
 
   struct Cache {
@@ -165,6 +185,7 @@ private:
     Line *tryGetLine(Addr addr) { return getRow(addr).tryGetLine(addr); }
 
     bool checkDeclassified(Addr addr, unsigned size, std::optional<Line> *grad_line) {
+      assert(size <= line_size);
       Line *line = tryGetLine(addr);
       if (!line)
 	return false;
@@ -192,6 +213,7 @@ private:
     // Returns whether we handled the setDeclassified() request.
     // NOTE: We never allocate a line here.
     bool setDeclassified(Addr addr, unsigned size) {
+      assert(size <= line_size);
       Line *line = tryGetLine(addr);
       if (!line)
 	return false;
@@ -200,6 +222,7 @@ private:
     }
 
     bool setClassified(Addr addr, unsigned size) {
+      assert(size <= line_size);
       Line *line = tryGetLine(addr);
       if (!line)
 	return false;
@@ -229,6 +252,11 @@ private:
 	grad_table->dec(addr);
       }
       return evicted_line;
+    }
+
+    void dump(std::ostream& os) const {
+      for (const Row& row : rows)
+	row.dump(os);
     }
   };
 
@@ -292,7 +320,10 @@ public:
   // any line we're handling does not belong to a higher level. 
   
   bool checkDeclassified(Addr addr, unsigned size) {
-
+    if (size > 1) {
+      return checkDeclassified(addr, size / 2) && checkDeclassified(addr + size / 2, size / 2);
+    }
+    
     tryGraduateLine(addr);
     assert(holdCount(addr) <= 1);
 
@@ -321,6 +352,12 @@ public:
   }
 
   void setDeclassified(Addr addr, unsigned size) {
+    if (size > 1) {
+      setDeclassified(addr, size / 2);
+      setDeclassified(addr + size / 2, size / 2);
+      return;
+    }
+    
     tryGraduateLine(addr);
     assert(holdCount(addr) <= 1);
 
@@ -348,6 +385,12 @@ public:
 
 
   void setClassified(Addr addr, unsigned size, Addr store_inst) {
+    if (size > 1) {
+      setClassified(addr, size / 2, store_inst);
+      setClassified(addr + size / 2, size / 2, store_inst);
+      return;
+    }
+
     tryGraduateLine(addr);
     assert(holdCount(addr) <= 1);
 
@@ -381,7 +424,9 @@ public:
     }
   };
 
-  GraduatingDeclassificationCache(const std::string& name, std::initializer_list<CacheSpec> cache_specs, std::initializer_list<GradSpec> grad_specs) {
+  GraduatingDeclassificationCache(const std::string& name, std::initializer_list<CacheSpec> cache_specs, std::initializer_list<GradSpec> grad_specs):
+    name(name)
+  {
     assert(cache_specs.size() == grad_specs.size() + 1);
     for (const CacheSpec& cache_spec : cache_specs) {
       cache_spec.validate();
@@ -403,8 +448,17 @@ public:
   }
 
   void printStats(std::ostream& os) {}
-
-  void dump(std::ostream& os) {}
+  
+  void dump(std::ostream& os) {
+    for (size_t i = 0; i < caches.size(); ++i) {
+      std::ofstream f(getFilename(name + ".cache" + std::to_string(i)));
+      caches[i].dump(f);
+    }
+    for (size_t i = 0; i < grads.size(); ++i) {
+      std::ofstream f(getFilename(name + ".grad" + std::to_string(i)));
+      grads[i].dump(f);
+    }
+  }
 
 private:
   std::string name;

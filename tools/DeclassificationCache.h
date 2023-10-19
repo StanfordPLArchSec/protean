@@ -22,6 +22,7 @@ public:
     bool valid;
     ADDRINT tag;
     std::array<bool, LineSize> bv;
+    unsigned long stat_hits = 0;
 
     Line(): valid(false) {}
 
@@ -65,7 +66,7 @@ public:
       if (valid) {
 	char tag_s[256];
 	sprintf(tag_s, "%016lx", tag);
-	os << tag_s << " " << bv_to_string8(bv.begin(), bv.end());
+	os << tag_s << " " << bv_to_string8(bv.begin(), bv.end()) << " " << stat_hits;
       } else {
 	os << "xxxxxxxxxxxxxxxx xxxxxxxxxxxxxxxx";
       }
@@ -82,7 +83,7 @@ public:
 
     // Stores the evicted line, if any, in @evicted. If no line
     // was evicted, then evicted.valid == false.
-    Line& getOrAllocateLine(ADDRINT tag, bool& evicted, ADDRINT& evicted_tag, std::array<bool, LineSize>& evicted_bv) {
+    Line& getOrAllocateLine(ADDRINT tag, bool& evicted, Line& evicted_line) {
       evicted = false;
       
       // First, check for matching line.
@@ -92,6 +93,7 @@ public:
 
       const auto init_line = [&] (Line& line) {
 	line.valid = true;
+	line.stat_hits = 0;
 	line.tag = tag;
 	std::fill(line.bv.begin(), line.bv.end(), false);
 	eviction_policy.allocated(getIndex(line), line.bv);
@@ -115,8 +117,7 @@ public:
       assert(evicted_it != lines.end());
 
       evicted = true;
-      evicted_tag = evicted_it->tag;
-      std::copy(evicted_it->bv.begin(), evicted_it->bv.end(), evicted_bv.begin());
+      evicted_line = *evicted_it;
 
       init_line(*evicted_it);
       return *evicted_it;
@@ -167,6 +168,7 @@ public:
     const bool is_declassified = line->allSet(line_off, size);
     if (is_declassified) {
       row.eviction_policy.checkDeclassifiedHit(row.getIndex(line), line->bv);
+      ++line->stat_hits;
     } else {
       row.eviction_policy.checkDeclassifiedMiss(row.getIndex(line), line->bv);
     }
@@ -191,8 +193,8 @@ public:
       return;
     }
 
-    ADDRINT evicted_tag;
-    Line& line = row.getOrAllocateLine(tag, evicted, evicted_tag, evicted_bv);
+    Line evicted_line;
+    Line& line = row.getOrAllocateLine(tag, evicted, evicted_line);
 
     row.eviction_policy.setDeclassifiedPre(row.getIndex(line), line.bv);
 
@@ -201,9 +203,13 @@ public:
     row.eviction_policy.setDeclassifiedPost(row.getIndex(line), line.bv);    
 
     if (evicted) {
-      evicted_addr = evicted_tag * LineSize;
+      evicted_addr = evicted_line.tag * LineSize;
+      std::copy(evicted_line.bv.begin(), evicted_line.bv.end(), evicted_bv.begin());
       ++stat_evictions;
-      stat_evicted_bits += popcnt(evicted_bv);
+      stat_evicted_bits += popcnt(evicted_line.bv);
+      if (evicted_line.stat_hits == 0)
+	++stat_evictions_unused;
+      stat_evictions_hits += evicted_line.stat_hits;
       static unsigned long iter = 0;
       ++iter;
       constexpr unsigned freq = 1000;
@@ -213,7 +219,7 @@ public:
 	  uint8_t& value = enc[i / 8] = 0;
 	  for (unsigned j = 0; j < 8; ++j) {
 	    value <<= 1;
-	    if (evicted_bv[i + j])
+	    if (evicted_line.bv[i + j])
 	      value |= 1;
 	  }
 	}
@@ -270,6 +276,8 @@ public:
   void printStats(std::ostream& os) {
     os << name << ".evictions " << stat_evictions << "\n";
     os << name << ".evicted_bits " << stat_evicted_bits << "\n";
+    os << name << ".evictions_unused " << stat_evictions_unused << "\n";
+    os << name << ".evictions_hits " << stat_evictions_hits << "\n";
   }
 
   void dump(std::ostream& os) {
@@ -288,6 +296,8 @@ private:
   std::array<Row, TableRows> rows;
   unsigned long stat_evictions = 0;
   unsigned long stat_evicted_bits = 0;
+  unsigned long stat_evictions_unused = 0;
+  unsigned long stat_evictions_hits = 0;
   FILE * & eviction_file;
   unsigned eviction_dump_freq;
 };
