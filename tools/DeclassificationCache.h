@@ -237,7 +237,7 @@ public:
     }
   }
 
-  void setDeclassified(ADDRINT addr, unsigned size) {
+  void setDeclassified(ADDRINT addr, unsigned size, Addr inst) {
     bool evicted;
     ADDRINT evicted_addr;
     std::array<bool, LineSize> evicted_bv;
@@ -278,6 +278,8 @@ public:
   }
 
   void claimLine(Addr addr, const std::array<bool, LineSize>& bv) {
+    fprintf(stderr, "evictions %zu\n", stat_evictions);
+    
     // TODO: Merge w/ logic in setDeclassified.
     assert((addr & (LineSize - 1)) == 0);
     assert(!contains(addr));

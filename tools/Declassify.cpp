@@ -37,6 +37,7 @@
 #include "SetDeclassifiedTrackerTable.h"
 #include "GraduatingDeclassificationCache.h"
 #include "DeclassificationQueue.h"
+#include "UtilityTracker.h"
 
 static KNOB<std::string> OutputFile(KNOB_MODE_WRITEONCE, "pintool", "o", "pin.log", "specify file name for output");
 static KNOB<unsigned long> Interval(KNOB_MODE_WRITEONCE, "pintool", "i", "0", "interval (default: 50M)");
@@ -110,7 +111,7 @@ static ev::LFU lfu_ep(256);
 static auto ep = lru_popcnt_ep;
 
 #if 1
-static DeclassificationCache<64, 8, 1024, decltype(ep)> cache_decltab("cache",
+static DeclassificationCache<64, 4, 1024, decltype(ep)> cache_decltab("cache",
 								      ep,
 								      eviction_file, 1000
 								      );
@@ -154,7 +155,9 @@ static GraduatingDeclassificationCache grad_decltab {
 };
 static DeclassificationQueue<64, 64, 1> declqueue("queue");
 static QueuedDeclassificationCache queued_decltab("decltab", declqueue, cache_decltab);
-static SharedMultiGranularityDeclassificationTable decltab("decltab", queued_decltab);
+static UtilityTracker<1024 * 1024, 8, 1> utility_tracker;
+static UtilityDeclassificationTable util_decltab("util_decltab", utility_tracker, cache_decltab);
+static SharedMultiGranularityDeclassificationTable decltab("decltab", util_decltab);
 #endif
 
 #if 0
@@ -176,12 +179,12 @@ static FiniteRandShadowDeclassificationTable decltab(2*1024*1024); // 4 MB
 static ShadowDeclassificationTable shadow_decltab;
 #endif
 
-static void RecordDeclassifiedLoad(ADDRINT eff_addr, UINT32 eff_size) {
+static void RecordDeclassifiedLoad(ADDRINT eff_addr, UINT32 eff_size, ADDRINT inst_addr) {
   // Check if aligned
-  if ((eff_addr & (eff_size - 1)) != 0) {
+  if ((eff_size & (eff_size - 1)) != 0 || (eff_addr & (eff_size - 1)) != 0) {
     // Unaligned: split in two
-    RecordDeclassifiedLoad(eff_addr, eff_size / 2);
-    RecordDeclassifiedLoad(eff_addr + eff_size / 2, eff_size / 2);
+    RecordDeclassifiedLoad(eff_addr, eff_size / 2, inst_addr);
+    RecordDeclassifiedLoad(eff_addr + eff_size / 2, eff_size - eff_size / 2, inst_addr);
     return;
   }
 
@@ -211,7 +214,7 @@ static void RecordDeclassifiedLoad(ADDRINT eff_addr, UINT32 eff_size) {
   if (old_eff_size < coarsen)
     return;
 
-  decltab.setDeclassified(eff_addr, eff_size);
+  decltab.setDeclassified(eff_addr, eff_size, inst_addr);
 #if SHADOW_DECLTAB
   shadow_decltab.setDeclassified(eff_addr, eff_size);
 #endif
@@ -219,9 +222,9 @@ static void RecordDeclassifiedLoad(ADDRINT eff_addr, UINT32 eff_size) {
 
 static void RecordClassifiedStore(ADDRINT st_inst, ADDRINT eff_addr, ADDRINT eff_size) {
   // Check if aligned
-  if ((eff_addr & (eff_size - 1)) != 0) {
+  if ((eff_size & (eff_size - 1)) != 0 || (eff_addr & (eff_size - 1)) != 0) {
     RecordClassifiedStore(st_inst, eff_addr, eff_size / 2);
-    RecordClassifiedStore(st_inst, eff_addr + eff_size / 2, eff_size / 2);
+    RecordClassifiedStore(st_inst, eff_addr + eff_size / 2, eff_size - eff_size / 2);
     return;
   }
 
@@ -237,11 +240,11 @@ static void RecordClassifiedStore(ADDRINT st_inst, ADDRINT eff_addr, ADDRINT eff
 #endif
 }
 
-static void RecordDeclassifiedStore(ADDRINT eff_addr, ADDRINT eff_size) {
+static void RecordDeclassifiedStore(ADDRINT eff_addr, ADDRINT eff_size, ADDRINT inst_addr) {
   // Check if aligned
-  if ((eff_addr & (eff_size - 1)) != 0) {
-    RecordDeclassifiedStore(eff_addr, eff_size / 2);
-    RecordDeclassifiedStore(eff_addr + eff_size / 2, eff_size / 2);
+  if ((eff_size & (eff_size - 1)) != 0 || (eff_addr & (eff_size - 1)) != 0) {
+    RecordDeclassifiedStore(eff_addr, eff_size / 2, inst_addr);
+    RecordDeclassifiedStore(eff_addr + eff_size / 2, eff_size - eff_size / 2, inst_addr);
     return;
   }
 
@@ -249,8 +252,10 @@ static void RecordDeclassifiedStore(ADDRINT eff_addr, ADDRINT eff_size) {
   if (eff_size < coarsen) {
     return;
   }
+
+  assert(eff_size != 5);
   
-  decltab.setDeclassified(eff_addr, eff_size);
+  decltab.setDeclassified(eff_addr, eff_size, inst_addr);
 #if SHADOW_DECLTAB
   shadow_decltab.setDeclassified(eff_addr, eff_size);
 #endif
@@ -275,12 +280,12 @@ static void Instruction(INS ins, void *v) {
     if (INS_MemoryOperandIsRead(ins, memOp) && declassified) {
       INS_InsertPredicatedCall(ins, IPOINT_BEFORE, (AFUNPTR) RecordDeclassifiedLoad,
 			       IARG_MEMORYOP_EA, memOp,
-			       IARG_UINT32, eff_size, IARG_END);
+			       IARG_UINT32, eff_size, IARG_INST_PTR, IARG_END);
     } else if (INS_MemoryOperandIsWritten(ins, memOp)) {
       if (declassified) {
 	INS_InsertPredicatedCall(ins, IPOINT_BEFORE, (AFUNPTR) RecordDeclassifiedStore,
 				IARG_MEMORYOP_EA, memOp,
-				 IARG_UINT32, eff_size, IARG_END);
+				 IARG_UINT32, eff_size, IARG_INST_PTR, IARG_END);
       } else {
 	INS_InsertPredicatedCall(ins, IPOINT_BEFORE, (AFUNPTR) RecordClassifiedStore,
 				 IARG_INST_PTR, IARG_MEMORYOP_EA, memOp,

@@ -40,9 +40,9 @@ public:
     return decltab.checkDeclassified(addr, size);
   }
 
-  void setDeclassified(ADDRINT addr, unsigned size) {
+  void setDeclassified(ADDRINT addr, unsigned size, ADDRINT inst) {
     encodeForDeclassification(addr, size);
-    decltab.setDeclassified(addr, size);
+    decltab.setDeclassified(addr, size, inst);
   }
 
 private:
