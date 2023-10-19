@@ -271,4 +271,37 @@ struct EvictionPolicies {
   };
 
 
+  class LFU final : public EvictionPolicy {
+  public:
+    using Counter = unsigned;
+
+    LFU() = default;
+    LFU(Counter max): max(max) {}
+    
+    void allocated(unsigned idx, const BV& bv) override {
+      lfu[idx] = N;
+    }
+
+    void checkDeclassifiedHit(unsigned idx, const BV& bv) override {
+      for (unsigned i = 0; i < N; ++i) {
+	if (i == idx) {
+	  lfu[i] += N;
+	  if (lfu[i] > max)
+	    lfu[i] = max;
+	} else {
+	  if (lfu[i] > 0) {
+	    lfu[i] -= 1;
+	  }
+	}
+      }
+    }
+
+    int score(unsigned idx, const BV& bv) override {
+      return lfu[idx];
+    }
+
+  private:
+    Counter max;
+    std::array<Counter, N> lfu;
+  };
 };

@@ -138,24 +138,27 @@ private:
       return nullptr;
     }
 
+  private:
+    Line& evictLine() {
+      for (Line& line : lines)
+	if (!line.valid)
+	  return line;
+      
+      for (Line& line : lines)
+	if (!line.used)
+	  return line;
+
+      return lines[std::rand() % lines.size()];
+    }
+
   public:
 
     template <class Range>
-    std::optional<Line> allocate(Addr addr, const Range& bv) {
+    Line allocate(Addr addr, const Range& bv) {
       assert(!contains(addr));
 
-      // Check for invalid line
-      for (Line& line : lines) {
-	if (!line.valid) {
-	  line.init(addr, bv);
-	  return std::nullopt;
-	}
-	assert(line.popcnt() > 0);
-      }
-
-      // Random eviction policy for now
-      Line& line = lines[std::rand() % lines.size()];
-      const Line evicted_line = line;
+      Line& line = evictLine();
+      const auto evicted_line = line;
       line.init(addr, bv);
       return evicted_line;
     }
@@ -169,11 +172,17 @@ private:
   };
 
   struct Cache {
+    std::string name;
     size_t line_size;
     std::vector<Row> rows;
     GradTable *grad_table;
+    unsigned long stat_evictions = 0;
+    unsigned long stat_evictions_used = 0;
+    unsigned long stat_graduations = 0;
+    unsigned long stat_hits = 0;
 
-    Cache(size_t line_size, size_t num_rows, const Row& row): line_size(line_size), rows(num_rows, row), grad_table(nullptr) {}
+    Cache(const std::string& name, size_t line_size, size_t num_rows, const Row& row):
+      name(name), line_size(line_size), rows(num_rows, row), grad_table(nullptr) {}
 
     size_t size() const { return rows.size(); }
     size_t getIndex(Addr addr) const {
@@ -204,8 +213,12 @@ private:
 	  // We hit quorum so we can graduate!
 	  *grad_line = *line;
 	  line->invalidate();
+	  ++stat_graduations;
 	}
       }
+
+      ++stat_hits;
+      
       return true;
     }
 
@@ -246,12 +259,23 @@ private:
     }
 
     template <class Range>
-    std::optional<Line> allocate(Addr addr, const Range& bv) {
-      const auto evicted_line = getRow(addr).allocate(addr, bv);
-      if (evicted_line && grad_table) {
-	grad_table->dec(addr);
+    Line allocate(Addr addr, const Range& bv) {
+      const Line evicted_line = getRow(addr).allocate(addr, bv);
+      if (evicted_line.valid) {
+	++stat_evictions;
+	if (evicted_line.used)
+	  ++stat_evictions_used;
+	if (grad_table)
+	  grad_table->dec(addr);
       }
       return evicted_line;
+    }
+
+    void printStats(std::ostream& os) const {
+      os << name << ".evictions " << stat_evictions << "\n";
+      os << name << ".evictions_used " << stat_evictions_used << "\n";
+      os << name << ".graduations " << stat_graduations << "\n";
+      os << name << ".hits " << stat_hits << "\n";
     }
 
     void dump(std::ostream& os) const {
@@ -432,7 +456,7 @@ public:
       cache_spec.validate();
       const Line line(cache_spec.line_size);
       const Row row(cache_spec.table_cols(), line);
-      caches.emplace_back(cache_spec.line_size, cache_spec.table_rows(), row);
+      caches.emplace_back(name + ".cache" + std::to_string(caches.size()), cache_spec.line_size, cache_spec.table_rows(), row);
     }
     for (const GradSpec& grad_spec : grad_specs) {
       grad_spec.validate();
@@ -447,7 +471,11 @@ public:
     os << name << ": graduating declassification cache\n";
   }
 
-  void printStats(std::ostream& os) {}
+  void printStats(std::ostream& os) {
+    for (const Cache& cache : caches) {
+      cache.printStats(os);
+    }
+  }
   
   void dump(std::ostream& os) {
     for (size_t i = 0; i < caches.size(); ++i) {

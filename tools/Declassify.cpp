@@ -36,6 +36,7 @@
 #include "MultiLevelPatternDeclassificationTable.h"
 #include "SetDeclassifiedTrackerTable.h"
 #include "GraduatingDeclassificationCache.h"
+#include "DeclassificationQueue.h"
 
 static KNOB<std::string> OutputFile(KNOB_MODE_WRITEONCE, "pintool", "o", "pin.log", "specify file name for output");
 static KNOB<unsigned long> Interval(KNOB_MODE_WRITEONCE, "pintool", "i", "0", "interval (default: 50M)");
@@ -105,10 +106,11 @@ static ev::LRVC lrvc_ep;
 static ev::CompositeEvictionPolicy<std::plus<int>, ev::LRVC, ev::PopCntEvictionPolicy> lrvc_popcnt_ep(std::plus<int>(), lrvc_ep, popcnt_ep);
 static ev::MinEvictionPolicy pat_lru_popcnt_ep(lru_popcnt_ep, ev::PatternEvictionPolicy(32));
 static ev::MinEvictionPolicy allset_lru_popcnt_ep(lru_popcnt_ep, ev::AllSetEvictionPolicy());
+static ev::LFU lfu_ep(256);
 static auto ep = lru_popcnt_ep;
 
 #if 1
-static DeclassificationCache<64, 4, 1024, decltype(ep)> cache_decltab("cache",
+static DeclassificationCache<64, 8, 1024, decltype(ep)> cache_decltab("cache",
 								      ep,
 								      eviction_file, 1000
 								      );
@@ -137,8 +139,8 @@ static RealPatternDeclassificationTable<64, 32, 1024 * 1024, 16> real_pattern_de
 static MultiLevelPatternDeclassificationTable<64, 32> multi_level_pattern_decltab {
   "multi-level-pattern",
   {
-    {.line_size = 64, .associativity = 8, .entries = 1024},
-    {.line_size = 64, .associativity = 8, .entries = 1024},
+    {.line_size = 64, .associativity = 8, .entries = 512},
+    {.line_size = 64, .associativity = 8, .entries = 512},
   }
 };
 static MultiLevelDeclassificationTable twolevel_decltab(cache_decltab, multi_level_pattern_decltab); // multilevel_pattern_cache_decltab);
@@ -147,10 +149,12 @@ static GraduatingDeclassificationCache grad_decltab {
   {{.line_size = 1,   .table_size = 1024, .associativity = 1},
    {.line_size = 64,   .table_size = 1024, .associativity = 1},
    {.line_size = 4096, .table_size = 1024, .associativity = 1}},
-  {{.size = 1024 * 1024, .quorum = 16,  .line_size = 64},
-   {.size = 1024 * 1024, .quorum = 16,  .line_size = 4096}},
+  {{.size = 1024 * 1024, .quorum = 8,  .line_size = 64},
+   {.size = 1024 * 1024, .quorum = 8,  .line_size = 4096}},
 };
-static SharedMultiGranularityDeclassificationTable decltab("decltab", grad_decltab); // twolevel_decltab);
+static DeclassificationQueue<64, 64, 1> declqueue("queue");
+static QueuedDeclassificationCache queued_decltab("decltab", declqueue, cache_decltab);
+static SharedMultiGranularityDeclassificationTable decltab("decltab", queued_decltab);
 #endif
 
 #if 0
@@ -207,7 +211,7 @@ static void RecordDeclassifiedLoad(ADDRINT eff_addr, UINT32 eff_size) {
   if (old_eff_size < coarsen)
     return;
 
-  decltab.setDeclassified(eff_addr, eff_size, /*allocate*/true);
+  decltab.setDeclassified(eff_addr, eff_size);
 #if SHADOW_DECLTAB
   shadow_decltab.setDeclassified(eff_addr, eff_size);
 #endif
@@ -246,7 +250,7 @@ static void RecordDeclassifiedStore(ADDRINT eff_addr, ADDRINT eff_size) {
     return;
   }
   
-  decltab.setDeclassified(eff_addr, eff_size, /*allocate*/true);
+  decltab.setDeclassified(eff_addr, eff_size);
 #if SHADOW_DECLTAB
   shadow_decltab.setDeclassified(eff_addr, eff_size);
 #endif

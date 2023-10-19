@@ -26,6 +26,10 @@ public:
 
     Line(): valid(false) {}
 
+    bool contains(Addr addr) const {
+      return valid && tag == addr / LineSize;
+    }
+
     bool allSet(unsigned first, unsigned size) const {
       const auto it = bv.begin() + first;
       return std::reduce(it, it + size, true, std::logical_and<bool>());
@@ -81,6 +85,12 @@ public:
     Row() = default;
     Row(const EvictionPolicy& eviction_policy): eviction_policy(eviction_policy) {}
 
+    bool contains(Addr addr) const {
+      return std::any_of(lines.begin(), lines.end(), [addr] (const Line& line) {
+	return line.contains(addr);
+      });
+    }
+
     // Stores the evicted line, if any, in @evicted. If no line
     // was evicted, then evicted.valid == false.
     Line& getOrAllocateLine(ADDRINT tag, bool& evicted, Line& evicted_line) {
@@ -105,8 +115,8 @@ public:
 	  init_line(line);
 	  return line;
 	}
-      } 
-      
+      }
+
       // Check for line with lowest population count.
       const auto metric = [&] (const Line& line) -> int {
 	return eviction_policy.score(&line - lines.data(), line.bv);
@@ -153,6 +163,12 @@ public:
     EvictionPolicy eviction_policy;
   };
 
+  bool contains(Addr addr) const {
+    const ADDRINT tag = addr / LineSize;
+    const unsigned row_idx = tag & (TableRows - 1);
+    const Row& row = rows[row_idx];
+    return row.contains(addr);
+  }
 
   bool checkDeclassified(ADDRINT addr, unsigned size) {
     const unsigned line_off = addr & (LineSize - 1);
@@ -176,7 +192,7 @@ public:
     return is_declassified;
   }
 
-  void setDeclassified(ADDRINT addr, unsigned size, bool allocate, bool& evicted,
+  void setDeclassified(ADDRINT addr, unsigned size, bool& evicted,
 		       ADDRINT& evicted_addr, std::array<bool, LineSize>& evicted_bv) {
     evicted = false;
     evicted_addr = 0;
@@ -185,13 +201,6 @@ public:
     const ADDRINT tag = addr / LineSize;
     const unsigned row_idx = tag & (TableRows - 1);
     Row& row = rows[row_idx];
-
-    if (!allocate) {
-      if (Line *line = row.tryGetLine(tag)) {
-	line->set(line_off, size);
-      }
-      return;
-    }
 
     Line evicted_line;
     Line& line = row.getOrAllocateLine(tag, evicted, evicted_line);
@@ -228,11 +237,11 @@ public:
     }
   }
 
-  void setDeclassified(ADDRINT addr, unsigned size, bool allocate) {
+  void setDeclassified(ADDRINT addr, unsigned size) {
     bool evicted;
     ADDRINT evicted_addr;
     std::array<bool, LineSize> evicted_bv;
-    setDeclassified(addr, size, allocate, evicted, evicted_addr, evicted_bv);
+    setDeclassified(addr, size, evicted, evicted_addr, evicted_bv);
   }
 
   void setClassified(ADDRINT addr, unsigned size, ADDRINT store_inst) {
@@ -261,26 +270,45 @@ public:
     const Addr tag = addr / LineSize;
     const unsigned row_idx = tag & (TableRows - 1);
     Row& row = rows[row_idx];
-    Addr evicted_tag;
-    Line& line = row.getOrAllocateLine(tag, evicted, evicted_tag, evicted_bv);
-    if (evicted)
-      evicted_addr = evicted_tag * LineSize;
+    Line evicted_line;
+    Line& line = row.getOrAllocateLine(tag, evicted, evicted_line);
+    evicted_addr = evicted_line.tag * LineSize;
+    evicted_bv = evicted_line.bv;
     line.bv = bv;
   }
-  
 
-  void printDesc(std::ostream& os) {
+  void claimLine(Addr addr, const std::array<bool, LineSize>& bv) {
+    // TODO: Merge w/ logic in setDeclassified.
+    assert((addr & (LineSize - 1)) == 0);
+    assert(!contains(addr));
+    const Addr tag = addr / LineSize;
+    const unsigned row_idx = tag & (TableRows - 1);
+    Row& row = rows[row_idx];
+    bool evicted;
+    Line evicted_line;
+    Line& line = row.getOrAllocateLine(tag, evicted, evicted_line);
+    line.bv = bv;
+    if (evicted) {
+      ++stat_evictions;
+      stat_evicted_bits += popcnt(evicted_line.bv);
+      if (evicted_line.stat_hits == 0)
+	++stat_evictions_unused;
+      stat_evictions_hits += evicted_line.stat_hits;
+    }
+  }
+
+  void printDesc(std::ostream& os) const {
     os << name << ": declassification cache with parameters linesize=" << LineSize << " associativity=" << Associativity << " numlines=" << TableSize << "\n";
   }
 
-  void printStats(std::ostream& os) {
+  void printStats(std::ostream& os) const {
     os << name << ".evictions " << stat_evictions << "\n";
     os << name << ".evicted_bits " << stat_evicted_bits << "\n";
     os << name << ".evictions_unused " << stat_evictions_unused << "\n";
     os << name << ".evictions_hits " << stat_evictions_hits << "\n";
   }
 
-  void dump(std::ostream& os) {
+  void dump(std::ostream& os) const {
     for (const auto& row : rows)
       row.dump(os);
   }
