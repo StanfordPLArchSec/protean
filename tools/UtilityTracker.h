@@ -119,6 +119,312 @@ private:
 };
 
 
+template <size_t Size>
+class UtilityTracker2 {
+public:
+  struct InstEntry {
+    Addr inst;
+    InstEntry(): inst(0) {}
+    InstEntry(Addr inst): inst(inst) {}
+  };
+
+  struct UtilEntry {
+    bool used;
+    UtilEntry(): used(false) {}
+  };
+
+  size_t getInstIndex(Addr addr) const {
+    return addr & (inst_table.size() - 1);
+  }
+
+  size_t getUtilIndex(Addr inst) const {
+    return inst & (util_table.size() - 1);
+  }
+
+  InstEntry& getInstEntry(Addr addr) {
+    return inst_table[getInstIndex(addr)];
+  }
+
+  UtilEntry& getUtilEntry(Addr inst) {
+    return util_table[getUtilIndex(inst)];
+  }
+
+  void handleCheckDeclassified(Addr addr) {
+    getUtilEntry(getInstEntry(addr).inst).used = true;
+  }
+
+  bool handleSetDeclassified(Addr addr, Addr inst) {
+    getInstEntry(addr).inst = inst;
+    const bool allocate = getUtilEntry(inst).used;
+    if (allocate) {
+      ++stat_allocates;
+    } else {
+      ++stat_noallocates;
+    }
+    return allocate;
+  }
+
+  void handleSetClassified(Addr addr) {
+    getInstEntry(addr).inst = 0;
+  }
+
+  void printDesc(std::ostream& os) const {
+    os << "simple utility tracker bitmask\n";
+  }
+
+  void printStats(std::ostream& os) const {
+    os << "allocates " << stat_allocates << "\n"
+       << "noallocates " << stat_noallocates << "\n";
+  }
+
+  void dump(std::ostream&) {
+    std::ofstream os(getFilename("utiltab.out"));
+    os << "pc used\n";
+    for (const InstEntry& inst_entry : inst_table) {
+      os << std::hex << std::setw(16) << std::setfill('0') << inst_entry.inst << " " << getUtilEntry(inst_entry.inst).used << "\n";
+    }
+  }
+  
+private:
+  std::array<InstEntry, Size> inst_table;
+  std::array<UtilEntry, Size> util_table;
+  unsigned long stat_allocates = 0;
+  unsigned long stat_noallocates = 0;
+};
+
+
+class Average {
+public:
+  float value() const {
+    if (samples == 0) {
+      return 0.f;
+    } else {
+      return sum / samples;
+    }
+  }
+
+  void add(float x) {
+    sum += x;
+    ++samples;
+  }
+
+  void reset() {
+    sum = 0.f;
+    samples = 0;
+  }
+  
+private:
+  float sum = 0.f;
+public:
+  unsigned long samples = 0;
+};
+
+
+template <size_t Size>
+class UtilityTracker3 {
+public:
+  struct InstEntry {
+    Addr inst;
+    InstEntry(): inst(0) {}
+    InstEntry(Addr inst): inst(inst) {}
+  };
+
+  using Tick = unsigned long;
+
+  struct UtilEntry {
+    // Instance stats.
+    Addr inst = 0;
+    
+    Tick alloc_tick = 0;
+    Tick first_use_tick = 0;
+    Tick last_use_tick = 0;
+    unsigned long hits = 0;
+
+    // Aggregate stats
+    Average used_avg;
+    Average hit_avg;
+    Average ttu_avg;
+    Average lifetime_avg;
+
+    void startLifetime(Addr new_inst, Tick tick) {
+      if (inst != new_inst) {
+	used_avg.reset();
+	hit_avg.reset();
+	ttu_avg.reset();
+	lifetime_avg.reset();
+      }
+      inst = new_inst;
+      alloc_tick = tick;
+      first_use_tick = 0;
+      last_use_tick = 0;
+      hits = 0;
+    }
+
+    void endLifetime() {
+      if (inst && alloc_tick) {
+	used_avg.add(first_use_tick ? 1 : 0);
+	if (first_use_tick) {
+	  ttu_avg.add(first_use_tick - alloc_tick);
+	  lifetime_avg.add(last_use_tick - alloc_tick);
+	}
+	hit_avg.add(hits);
+      }
+      hits = alloc_tick = first_use_tick = last_use_tick = 0;
+    }
+
+    void dump(std::ostream& os) const {
+      if (inst == 0)
+	return;
+      char buf[1024];
+      sprintf(buf, "%016lx %.2f %.2f %.2f %.2f\n",
+	      inst, used_avg.value(), hit_avg.value(), ttu_avg.value(), lifetime_avg.value());
+      os << buf;
+    }
+  };
+
+  size_t getInstIndex(Addr addr) const {
+    return addr & (inst_table.size() - 1);
+  }
+
+  size_t getUtilIndex(Addr inst) const {
+    return inst & (util_table.size() - 1);
+  }
+
+  InstEntry& getInstEntry(Addr addr) {
+    return inst_table[getInstIndex(addr)];
+  }
+
+  UtilEntry& getUtilEntry(Addr inst) {
+    return util_table[getUtilIndex(inst)];
+  }
+
+  void handleCheckDeclassified(Addr addr) {
+    ++tick;
+    UtilEntry& util_entry = getUtilEntry(getInstEntry(addr).inst);
+    if (util_entry.first_use_tick == 0)
+      util_entry.first_use_tick = tick;
+    util_entry.last_use_tick = tick;
+    ++util_entry.hits;
+  }
+
+  bool handleSetDeclassified(Addr addr, Addr inst) {
+    ++tick;
+    getInstEntry(addr).inst = inst;
+    UtilEntry& util_entry = getUtilEntry(inst);
+    util_entry.endLifetime();
+    util_entry.startLifetime(inst, tick);
+    return util_entry.hit_avg.samples < 16 || util_entry.hit_avg.value() * util_entry.used_avg.value() > 0.01;
+  }
+
+  void handleSetClassified(Addr addr) {
+    ++tick;
+    getInstEntry(addr).inst = 0;
+    getUtilEntry(getInstEntry(addr).inst).endLifetime();
+  }
+
+  void printDesc(std::ostream& os) {}
+  void printStats(std::ostream& os) {}
+  void dump(std::ostream&) {
+    std::ofstream os(getFilename("utiltab.out"));
+    for (const UtilEntry& util_entry : util_table) {
+      util_entry.dump(os);
+    }
+  }
+  
+private:
+  std::array<InstEntry, Size> inst_table;
+  std::array<UtilEntry, Size> util_table;
+  Tick tick = 0;
+};
+
+
+
+
+
+
+
+template <size_t Size>
+class UtilityTracker4 {
+public:
+  struct AccEntry {
+    Addr inst = 0;
+    bool used = false;
+  };
+  struct InstEntry {
+    Addr inst = 0;
+    Average used_avg;
+  };
+
+  size_t getAccIndex(Addr addr) const { return addr & (acc_table.size() - 1); }
+  size_t getInstIndex(Addr inst) const { return inst & (inst_table.size() - 1); }
+  AccEntry& getAccEntry(Addr addr) { return acc_table[getAccIndex(addr)]; }
+  InstEntry& getInstEntry(Addr inst) { return inst_table[getInstIndex(inst)]; }
+  
+  void handleCheckDeclassified(Addr addr) {
+    AccEntry& acc_entry = getAccEntry(addr);
+    if (!acc_entry.used) {
+      InstEntry& inst_entry = getInstEntry(acc_entry.inst);
+      inst_entry.used_avg.add(1);
+      acc_entry.used = true;
+    }
+  }
+
+  bool handleSetDeclassified(Addr addr, Addr inst) {
+    AccEntry& acc_entry = getAccEntry(addr);
+
+    if (!acc_entry.used) {
+      InstEntry& inst_entry = getInstEntry(acc_entry.inst);
+      inst_entry.used_avg.add(0);
+    }
+
+    acc_entry.inst = inst;
+    acc_entry.used = false;
+    InstEntry& inst_entry = getInstEntry(inst);
+    if (inst_entry.inst != inst) {
+      inst_entry.inst = inst;
+      inst_entry.used_avg.reset();
+    }
+
+    if (inst_entry.used_avg.samples < 16)
+      return true;
+    
+#if 0
+    const float randval = static_cast<float>(std::rand()) / RAND_MAX;
+    return randval / 2 < inst_entry.used_avg.value();
+#endif
+    return inst_entry.used_avg.value() > 0.01;
+  }
+
+  void handleSetClassified(Addr addr) {
+    AccEntry &acc_entry = getAccEntry(addr);
+    if (!acc_entry.used) {
+      getInstEntry(acc_entry.inst).used_avg.add(0);
+    }
+    acc_entry.inst = 0;
+    acc_entry.used = false;
+  }
+
+  void printDesc(std::ostream& os) const {}
+  void printStats(std::ostream& os) const {
+  }
+  void dump(std::ostream& os) const {
+    for (const InstEntry& inst_entry : inst_table) {
+      char buf[1024];
+      sprintf(buf, "%016lx %.2f\n", inst_entry.inst, inst_entry.used_avg.value());
+      os << buf;
+    }
+  }
+  
+private:
+  std::array<AccEntry, Size> acc_table;
+  std::array<InstEntry, Size> inst_table;
+};
+
+
+
+
+
+
 template <class UtilTab, class DeclTab>
 class UtilityDeclassificationTable {
 public:
@@ -142,13 +448,13 @@ public:
     decltab.setClassified(addr, size, inst);
   }
 
-  void printDesc(std::ostream& os) const {
+  void printDesc(std::ostream& os) {
     os << name << ": utility declassification table\n";
     utiltab.printDesc(os);
     decltab.printDesc(os);
   }
 
-  void printStats(std::ostream& os) const {
+  void printStats(std::ostream& os) {
     utiltab.printStats(os);
     decltab.printStats(os);
   }

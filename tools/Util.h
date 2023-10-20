@@ -80,3 +80,21 @@ template <class Range>
 size_t popcnt(const Range& range) {
   return popcnt(range.begin(), range.end());
 }
+
+
+namespace util {
+
+  template <size_t Value>
+  constexpr inline size_t log2() {
+    static_assert(Value > 0, "");
+    static_assert((Value & (Value - 1)) == 0, "");
+    if constexpr (Value == 1) {
+      return 0;
+    } else {
+      return 1 + log2<Value / 2>();
+    }
+  }
+
+}
+
+  

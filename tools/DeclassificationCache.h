@@ -30,6 +30,8 @@ public:
       return valid && tag == addr / LineSize;
     }
 
+    Addr baseaddr() const { return tag * LineSize; }
+
     bool allSet(unsigned first, unsigned size) const {
       const auto it = bv.begin() + first;
       return std::reduce(it, it + size, true, std::logical_and<bool>());
@@ -150,8 +152,9 @@ public:
       return getIndex(&line);
     }
 
-    void dump(std::ostream& os) const {
-      for (const auto& line : lines) {
+    void dump(std::ostream& os, const std::string& prefix) const {
+      for (const Line& line : lines) {
+	os << prefix << " ";
 	line.dump(os);
 	os << "\n";
       }
@@ -223,16 +226,8 @@ public:
       ++iter;
       constexpr unsigned freq = 1000;
       if (iter % freq == 0 && eviction_file) {
-	std::array<uint8_t, LineSize/8> enc;
-	for (unsigned i = 0; i < LineSize; i += 8) {
-	  uint8_t& value = enc[i / 8] = 0;
-	  for (unsigned j = 0; j < 8; ++j) {
-	    value <<= 1;
-	    if (evicted_line.bv[i + j])
-	      value |= 1;
-	  }
-	}
-	fwrite(enc.data(), 1, enc.size(), eviction_file);
+	fprintf(eviction_file, "%016lx %s %lu\n",
+		evicted_line.baseaddr(), bv_to_string8(evicted_line.bv).c_str(), evicted_line.stat_hits);
       }
     }
   }
@@ -311,8 +306,9 @@ public:
   }
 
   void dump(std::ostream& os) const {
-    for (const auto& row : rows)
-      row.dump(os);
+    for (size_t i = 0; i < rows.size(); ++i) {
+      rows[i].dump(os, std::to_string(i));
+    }
   }
 
   void dumpTaint(auto&) {}

@@ -38,6 +38,7 @@
 #include "GraduatingDeclassificationCache.h"
 #include "DeclassificationQueue.h"
 #include "UtilityTracker.h"
+#include "ShadowCache.h"
 
 static KNOB<std::string> OutputFile(KNOB_MODE_WRITEONCE, "pintool", "o", "pin.log", "specify file name for output");
 static KNOB<unsigned long> Interval(KNOB_MODE_WRITEONCE, "pintool", "i", "0", "interval (default: 50M)");
@@ -98,7 +99,9 @@ static RealDeclassificationCaches
 > decltab;
 #endif
 
-using ev = EvictionPolicies<4, std::array<bool, 64>>;
+static constexpr size_t cache_associativity = 16;
+
+using ev = EvictionPolicies<cache_associativity, std::array<bool, 64>>;
 static ev::LRUEvictionPolicy lru_ep;
 static ev::PopCntEvictionPolicy popcnt_ep;
 static ev::CompositeEvictionPolicy<ev::LRU_PopCnt_Functor, ev::LRUEvictionPolicy, ev::PopCntEvictionPolicy> lru_popcnt_ep(ev::LRU_PopCnt_Functor(1, 8), lru_ep, popcnt_ep);
@@ -111,10 +114,10 @@ static ev::LFU lfu_ep(256);
 static auto ep = lru_popcnt_ep;
 
 #if 1
-static DeclassificationCache<64, 4, 1024, decltype(ep)> cache_decltab("cache",
-								      ep,
-								      eviction_file, 1000
-								      );
+static DeclassificationCache<64, cache_associativity, 1024, decltype(ep)> cache_decltab("cache",
+											ep,
+											eviction_file, 1000
+											);
 
 namespace ev2 {
   using ev = EvictionPolicies<3, std::array<bool, 256>>;
@@ -156,8 +159,12 @@ static GraduatingDeclassificationCache grad_decltab {
 static DeclassificationQueue<64, 64, 1> declqueue("queue");
 static QueuedDeclassificationCache queued_decltab("decltab", declqueue, cache_decltab);
 static UtilityTracker<1024 * 1024, 8, 1> utility_tracker;
-static UtilityDeclassificationTable util_decltab("util_decltab", utility_tracker, cache_decltab);
-static SharedMultiGranularityDeclassificationTable decltab("decltab", util_decltab);
+static UtilityTracker2<1024 * 1024> utility_tracker2;
+static UtilityTracker3<1024 * 1024> utility_tracker3;
+static UtilityTracker4<1024 * 1024> utility_tracker4;
+static UtilityDeclassificationTable util_decltab("util_decltab", utility_tracker4, cache_decltab);
+static ShadowCache<64, 1024> shadow_cache;
+static SharedMultiGranularityDeclassificationTable decltab("decltab", shadow_cache);
 #endif
 
 #if 0
