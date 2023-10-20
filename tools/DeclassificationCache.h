@@ -22,12 +22,18 @@ public:
     bool valid;
     ADDRINT tag;
     std::array<bool, LineSize> bv;
+    std::array<bool, LineSize> used;
     unsigned long stat_hits = 0;
 
     Line(): valid(false) {}
 
     bool contains(Addr addr) const {
       return valid && tag == addr / LineSize;
+    }
+
+    size_t getIndex(Addr addr) const {
+      assert(contains(addr));
+      return addr & (LineSize - 1);
     }
 
     Addr baseaddr() const { return tag * LineSize; }
@@ -66,6 +72,10 @@ public:
 	}
       }
       return updated;
+    }
+
+    void markUsed(Addr addr, unsigned size) {
+      std::fill_n(used.begin() + getIndex(addr), size, true);
     }
 
     void dump(std::ostream& os) const {
@@ -108,6 +118,7 @@ public:
 	line.stat_hits = 0;
 	line.tag = tag;
 	std::fill(line.bv.begin(), line.bv.end(), false);
+	std::fill(line.used.begin(), line.used.end(), false);
 	eviction_policy.allocated(getIndex(line), line.bv);
       };
 
@@ -121,7 +132,11 @@ public:
 
       // Check for line with lowest population count.
       const auto metric = [&] (const Line& line) -> int {
+#if 0
 	return eviction_policy.score(&line - lines.data(), line.bv);
+#else
+	return eviction_policy.score(&line - lines.data(), line.used);
+#endif
       };
       auto evicted_it = std::min_element(lines.begin(), lines.end(), [&] (const Line& a, const Line& b) -> bool {
 	return metric(a) < metric(b);
@@ -160,7 +175,7 @@ public:
       }
     }
 
-  private:
+  public:
     Lines lines;
   public:
     EvictionPolicy eviction_policy;
@@ -186,6 +201,7 @@ public:
     assert(line->valid);
     const bool is_declassified = line->allSet(line_off, size);
     if (is_declassified) {
+      line->markUsed(addr, size);
       row.eviction_policy.checkDeclassifiedHit(row.getIndex(line), line->bv);
       ++line->stat_hits;
     } else {
@@ -226,8 +242,14 @@ public:
       ++iter;
       constexpr unsigned freq = 1000;
       if (iter % freq == 0 && eviction_file) {
-	fprintf(eviction_file, "%016lx %s %lu\n",
-		evicted_line.baseaddr(), bv_to_string8(evicted_line.bv).c_str(), evicted_line.stat_hits);
+	fprintf(eviction_file, "%016lx %s %lu %lu",
+		evicted_line.baseaddr(), bv_to_string8(evicted_line.bv).c_str(), evicted_line.stat_hits,
+		std::count(evicted_line.used.begin(), evicted_line.used.end(), true)
+		);
+	for (const Line& line : row.lines) {
+	  fprintf(eviction_file, " (%lu)", std::count(line.used.begin(), line.used.end(), true));
+	}
+	fprintf(eviction_file, "\n");
       }
     }
   }

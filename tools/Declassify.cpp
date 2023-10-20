@@ -99,7 +99,7 @@ static RealDeclassificationCaches
 > decltab;
 #endif
 
-static constexpr size_t cache_associativity = 16;
+static constexpr size_t cache_associativity = 4;
 
 using ev = EvictionPolicies<cache_associativity, std::array<bool, 64>>;
 static ev::LRUEvictionPolicy lru_ep;
@@ -114,7 +114,7 @@ static ev::LFU lfu_ep(256);
 static auto ep = lru_popcnt_ep;
 
 #if 1
-static DeclassificationCache<64, cache_associativity, 1024, decltype(ep)> cache_decltab("cache",
+static DeclassificationCache<64, cache_associativity, 2048, decltype(ep)> cache_decltab("cache",
 											ep,
 											eviction_file, 1000
 											);
@@ -163,8 +163,8 @@ static UtilityTracker2<1024 * 1024> utility_tracker2;
 static UtilityTracker3<1024 * 1024> utility_tracker3;
 static UtilityTracker4<1024 * 1024> utility_tracker4;
 static UtilityDeclassificationTable util_decltab("util_decltab", utility_tracker4, cache_decltab);
-static ShadowCache<64, 1024> shadow_cache;
-static SharedMultiGranularityDeclassificationTable decltab("decltab", shadow_cache);
+static ShadowCache<64, 1024 * 1024 * 8> shadow_cache;
+static SharedMultiGranularityDeclassificationTable decltab("decltab", cache_decltab);
 #endif
 
 #if 0
