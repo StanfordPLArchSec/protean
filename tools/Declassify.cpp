@@ -39,6 +39,8 @@
 #include "DeclassificationQueue.h"
 #include "UtilityTracker.h"
 #include "ShadowCache.h"
+#include "ScanQueue.h"
+#include "ProtectedCache.h"
 
 static KNOB<std::string> OutputFile(KNOB_MODE_WRITEONCE, "pintool", "o", "pin.log", "specify file name for output");
 static KNOB<unsigned long> Interval(KNOB_MODE_WRITEONCE, "pintool", "i", "0", "interval (default: 50M)");
@@ -111,10 +113,11 @@ static ev::CompositeEvictionPolicy<std::plus<int>, ev::LRVC, ev::PopCntEvictionP
 static ev::MinEvictionPolicy pat_lru_popcnt_ep(lru_popcnt_ep, ev::PatternEvictionPolicy(32));
 static ev::MinEvictionPolicy allset_lru_popcnt_ep(lru_popcnt_ep, ev::AllSetEvictionPolicy());
 static ev::LFU lfu_ep(256);
-static auto ep = lru_popcnt_ep;
+static ev::RRIP rrip_ep(4);
+static auto ep = rrip_ep;
 
 #if 1
-static DeclassificationCache<64, cache_associativity, 2048, decltype(ep)> cache_decltab("cache",
+static DeclassificationCache<64, cache_associativity, 1024, decltype(ep)> cache_decltab("cache",
 											ep,
 											eviction_file, 1000
 											);
@@ -157,13 +160,14 @@ static GraduatingDeclassificationCache grad_decltab {
    {.size = 1024 * 1024, .quorum = 8,  .line_size = 4096}},
 };
 static DeclassificationQueue<64, 64, 1> declqueue("queue");
-static QueuedDeclassificationCache queued_decltab("decltab", declqueue, cache_decltab);
+static QueuedDeclassificationCache queued_decltab("decltab", declqueue, cache_decltab, cache_decltab);
 static UtilityTracker<1024 * 1024, 8, 1> utility_tracker;
 static UtilityTracker2<1024 * 1024> utility_tracker2;
 static UtilityTracker3<1024 * 1024> utility_tracker3;
 static UtilityTracker4<1024 * 1024> utility_tracker4;
 static UtilityDeclassificationTable util_decltab("util_decltab", utility_tracker4, cache_decltab);
 static ShadowCache<64, 1024 * 1024 * 8> shadow_cache;
+static ProtectedDeclassificationTable protected_cache(cache_decltab, cache_decltab);
 static SharedMultiGranularityDeclassificationTable decltab("decltab", cache_decltab);
 #endif
 

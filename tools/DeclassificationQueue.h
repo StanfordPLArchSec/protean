@@ -66,15 +66,15 @@ public:
   };
 
 
-  bool checkDeclassified(Addr addr, unsigned size, bool& upgrade, Addr& upgrade_addr, std::array<bool, LineSize>& upgrade_bv) {
-    upgrade = false;
+  bool checkDeclassified(Addr addr, unsigned size, int& upgrade, Addr& upgrade_addr, std::array<bool, LineSize>& upgrade_bv) {
+    upgrade = 0;
     for (auto it = queue.begin(); it != queue.end(); ++it) {
       if (it->contains(addr)) {
 	if (it->allSet(addr, size)) {
 	  it->hits++;
 	  if (it->hits == Threshold) {
 	    // Promote this line.
-	    upgrade = true;
+	    upgrade = 1;
 	    upgrade_addr = it->baseaddr();
 	    upgrade_bv = it->bv;
 	  } else {
@@ -91,7 +91,9 @@ public:
     return false;
   }
 
-  void setDeclassified(Addr addr, unsigned size) {
+  void setDeclassified(Addr addr, unsigned size, int& upgrade, Addr& upgrade_addr, std::array<bool, LineSize>& upgrade_bv) {
+    upgrade = 0;
+    
     for (auto it = queue.begin(); it != queue.end(); ++it) {
       // Only count if it's not already set.
       if (it->contains(addr)) {
@@ -107,7 +109,27 @@ public:
     // Otherwise, add new entry to queue.
     // But first check if queue is full.
     if (queue.size() == QueueSize) {
+      const Entry ent = queue.front();
       queue.pop_front();
+
+      auto it = queue.begin();
+      size_t matches = 1;
+      constexpr size_t scan_threshold = 8;
+      for (; it != queue.end() && matches < scan_threshold; ++it) {
+	if (it->tag == ent.tag + matches)
+	  ++matches;
+      }
+
+      if (matches < scan_threshold) {
+	upgrade = 1;
+      } else {
+#if 0
+	upgrade = 2;
+#endif
+      }
+      
+      upgrade_addr = ent.baseaddr();
+      upgrade_bv = ent.bv;
     }
     queue.emplace_back(addr, size);
   }
@@ -147,41 +169,69 @@ private:
 };
 
 
-template <class Queue, class Cache>
+template <class Queue, class Cache1, class Cache2>
 class QueuedDeclassificationCache {
 public:
-  QueuedDeclassificationCache(const std::string& name, const Queue& queue, const Cache& cache):
-    name(name), queue(queue), cache(cache)
+  QueuedDeclassificationCache(const std::string& name, const Queue& queue, const Cache1& cache1, const Cache2& cache2):
+    name(name), queue(queue), cache1(cache1), cache2(cache2)
   {
   }
 
   bool checkDeclassified(Addr addr, unsigned size) {
-    if (cache.contains(addr)) {
-      return cache.checkDeclassified(addr, size);
+    if (cache1.contains(addr)) {
+      return cache1.checkDeclassified(addr, size);
+    } else if (cache2.contains(addr)) {
+      return cache2.checkDeclassified(addr, size);
     }
     
-    bool upgrade;
+    int upgrade;
     Addr upgrade_addr;
     std::array<bool, Queue::LineSize> upgrade_bv;
     if (!queue.checkDeclassified(addr, size, upgrade, upgrade_addr, upgrade_bv))
       return false;
     queue.validate();
-    cache.claimLine(upgrade_addr, upgrade_bv);
+    switch (upgrade) {
+    case 0:
+      break;
+    case 1:
+      cache1.claimLine(upgrade_addr, upgrade_bv);
+      break;
+    case 2:
+      cache2.claimLine(upgrade_addr, upgrade_bv);
+      break;
+    }
     return true;
   }
 
-  void setDeclassified(Addr addr, unsigned size) {
-    if (cache.contains(addr)) {
-      cache.setDeclassified(addr, size);
+  void setDeclassified(Addr addr, unsigned size, Addr inst) {
+    if (cache1.contains(addr)) {
+      cache1.setDeclassified(addr, size, inst);
+    } else if (cache2.contains(addr)) {
+      cache2.setDeclassified(addr, size, inst);
     } else {
-      queue.setDeclassified(addr, size);
+      int upgrade;
+      Addr upgrade_addr;
+      std::array<bool, Queue::LineSize> upgrade_bv;
+      queue.setDeclassified(addr, size, upgrade, upgrade_addr, upgrade_bv);
       queue.validate();
+      switch (upgrade) {
+      case 0:
+	break;
+      case 1:
+	cache1.claimLine(upgrade_addr, upgrade_bv);
+	break;
+      case 2:
+	cache2.claimLine(upgrade_addr, upgrade_bv);
+	break;
+      }
     }
   }
 
   void setClassified(Addr addr, unsigned size, Addr store_inst) {
-    if (cache.contains(addr)) {
-      cache.setClassified(addr, size, store_inst);
+    if (cache1.contains(addr)) {
+      cache1.setClassified(addr, size, store_inst);
+    } else if (cache2.contains(addr)) {
+      cache2.setClassified(addr, size, store_inst);
     } else {
       queue.setClassified(addr, size);
       queue.validate();
@@ -191,21 +241,32 @@ public:
   void printDesc(std::ostream& os) const {
     os << name << ": queued declassification table\n";
     queue.printDesc(os);
-    cache.printDesc(os);
+    cache1.printDesc(os);
+    cache2.printDesc(os);
   }
 
   void printStats(std::ostream& os) const {
     queue.printStats(os);
-    cache.printStats(os);
+    cache1.printStats(os);
+    cache2.printStats(os);
   }
 
   void dump(std::ostream& os) const {
     queue.dump(os);
-    cache.dump(os);
+    {
+      std::ofstream f1(getFilename("cache1.out"));
+      cache1.dump(f1);
+    }
+    {
+      std::ofstream f2(getFilename("cache2.out"));
+      cache2.dump(f2);
+    }
   }
   
 private:
   std::string name;
   Queue queue;
-  Cache cache;
+  Cache1 cache1;
+  Cache2 cache2;
 };
+

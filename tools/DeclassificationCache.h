@@ -24,6 +24,7 @@ public:
     std::array<bool, LineSize> bv;
     std::array<bool, LineSize> used;
     unsigned long stat_hits = 0;
+    unsigned long stat_misses = 0;
 
     Line(): valid(false) {}
 
@@ -82,7 +83,7 @@ public:
       if (valid) {
 	char tag_s[256];
 	sprintf(tag_s, "%016lx", tag);
-	os << tag_s << " " << bv_to_string8(bv.begin(), bv.end()) << " " << stat_hits;
+	os << tag_s << " " << bv_to_string8(bv.begin(), bv.end()) << " " << stat_hits << " " << stat_misses << " " << popcnt(used);
       } else {
 	os << "xxxxxxxxxxxxxxxx xxxxxxxxxxxxxxxx";
       }
@@ -116,6 +117,7 @@ public:
       const auto init_line = [&] (Line& line) {
 	line.valid = true;
 	line.stat_hits = 0;
+	line.stat_misses = 0;
 	line.tag = tag;
 	std::fill(line.bv.begin(), line.bv.end(), false);
 	std::fill(line.used.begin(), line.used.end(), false);
@@ -132,10 +134,15 @@ public:
 
       // Check for line with lowest population count.
       const auto metric = [&] (const Line& line) -> int {
-#if 0
+#if 1
 	return eviction_policy.score(&line - lines.data(), line.bv);
-#else
+#elif 0
 	return eviction_policy.score(&line - lines.data(), line.used);
+#else
+	std::array<bool, LineSize> tmp;
+	std::fill(tmp.begin(), tmp.end(), false);
+	std::fill_n(tmp.begin(), std::min<size_t>(LineSize, line.stat_misses), true);
+	return eviction_policy.score(&line - lines.data(), tmp);
 #endif
       };
       auto evicted_it = std::min_element(lines.begin(), lines.end(), [&] (const Line& a, const Line& b) -> bool {
@@ -204,8 +211,10 @@ public:
       line->markUsed(addr, size);
       row.eviction_policy.checkDeclassifiedHit(row.getIndex(line), line->bv);
       ++line->stat_hits;
+      ++stat_hits;
     } else {
       row.eviction_policy.checkDeclassifiedMiss(row.getIndex(line), line->bv);
+      ++line->stat_misses;
     }
     
     return is_declassified;
@@ -238,6 +247,7 @@ public:
       if (evicted_line.stat_hits == 0)
 	++stat_evictions_unused;
       stat_evictions_hits += evicted_line.stat_hits;
+      stat_evictions_misses += evicted_line.stat_misses;
       static unsigned long iter = 0;
       ++iter;
       constexpr unsigned freq = 1000;
@@ -295,8 +305,6 @@ public:
   }
 
   void claimLine(Addr addr, const std::array<bool, LineSize>& bv) {
-    fprintf(stderr, "evictions %zu\n", stat_evictions);
-    
     // TODO: Merge w/ logic in setDeclassified.
     assert((addr & (LineSize - 1)) == 0);
     assert(!contains(addr));
@@ -321,10 +329,12 @@ public:
   }
 
   void printStats(std::ostream& os) const {
+    os << name << ".hits " << stat_hits << "\n";
     os << name << ".evictions " << stat_evictions << "\n";
     os << name << ".evicted_bits " << stat_evicted_bits << "\n";
     os << name << ".evictions_unused " << stat_evictions_unused << "\n";
     os << name << ".evictions_hits " << stat_evictions_hits << "\n";
+    os << name << ".evictions_misses " << stat_evictions_misses << "\n";
   }
 
   void dump(std::ostream& os) const {
@@ -342,10 +352,12 @@ public:
 private:
   std::string name;
   std::array<Row, TableRows> rows;
+  unsigned long stat_hits = 0;
   unsigned long stat_evictions = 0;
   unsigned long stat_evicted_bits = 0;
   unsigned long stat_evictions_unused = 0;
   unsigned long stat_evictions_hits = 0;
+  unsigned long stat_evictions_misses = 0;
   FILE * & eviction_file;
   unsigned eviction_dump_freq;
 };

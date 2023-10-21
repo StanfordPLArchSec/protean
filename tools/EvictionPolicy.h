@@ -304,4 +304,54 @@ struct EvictionPolicies {
     Counter max;
     std::array<Counter, N> lfu;
   };
+
+
+
+
+  class RRIP final : public EvictionPolicy {
+  public:
+    RRIP() = default;
+    RRIP(size_t interval): interval(interval) {}
+    
+    void allocated(unsigned idx, const BV& bv) override {
+      values[idx] = popcnt(bv) * interval;
+    }
+
+    void setDeclassifiedPost(unsigned idx, const BV& bv) override {
+      values[idx] = std::min(maxValue(), values[idx] + 1);
+    }
+
+    void checkDeclassifiedMiss(unsigned idx, const BV& bv) override {
+      values[idx] = std::min(maxValue(), values[idx] + interval);
+    }
+
+    void checkDeclassifiedHit(unsigned idx, const BV& bv) override {
+      values[idx] = std::min(maxValue(), values[idx] + 1);
+    }
+
+    void setClassifiedPost(unsigned idx, const BV& bv) override {
+      values[idx] = std::max(values[idx], interval) - interval;
+    }
+
+    int score(unsigned idx, const BV& bv) override {
+      const auto min_it = std::min_element(values.begin(), values.end());
+      const auto min_val = *min_it;
+      if (min_val > 0) {
+	for (size_t& value : values) {
+	  value -= min_val;
+	}
+      }
+      return values[idx];
+    }
+
+    
+  private:
+    size_t interval;
+    std::array<size_t, N> values;
+
+    size_t maxValue() const {
+      return interval * 64;
+    }
+  };
+  
 };
