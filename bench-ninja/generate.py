@@ -105,9 +105,17 @@ ninja.rule(
 ## generate-leaf-ipc
 ninja.rule(
     name = 'generate-leaf-ipc',
-    command = 'if [ -f $stats ]; then grep system.switch_cpus.ipc $stats | tail -1 | awk \'{print $$2}\'; else echo 0.0; fi > $out',
+    command = 'if [ -f $stats ]; then grep -F system.switch_cpus.ipc $stats | tail -1 | awk \'{print $$2}\'; else echo 0.0; fi > $out',
     description = '($id) Generating ipc.txt',
 )
+
+## generate-leaf-miss-rate
+ninja.rule(
+    name = 'generate-leaf-miss-rate',
+    command = 'if [ -f $stats ]; then grep -F -e system.switch_cpus.decltab0.hits -e system.switch_cpus.decltab0.misses $stats | tail -2 | awk \'/hits/{hits=$$2}/misses/{misses=$$2}END{if (hits + misses > 0) { print misses/(hits+misses)*100 } else { print "0.0" } }\'; else echo 0.0; fi > $out',
+    description = '($id) Generating miss-rate.txt',
+)
+    
 
 # Define builds
 
@@ -133,6 +141,7 @@ for sw_name, sw_config in config.sw.items():
         'run_type': sw_config.test_suite_run_type,
         'id': f'sw->{sw_name}',
     }
+    deps = [sw_config.cc, sw_config.cxx, *sw_config.deps]
 
     ## test-suite-build
     ninja.build(
@@ -250,7 +259,7 @@ for sw_name, sw_config in config.sw.items():
             'cd', kvm_subdir, '&&',
             os.path.abspath(gem5_exe),
             '-r', '-e',
-            '--debug-flag=KvmRun,Kvm',
+            # '--debug-flag=KvmRun,Kvm',
             se_py,
             '--cpu-type=X86KvmCPU',
             f'--mem-size={config.vars.memsize}',
@@ -378,7 +387,7 @@ for sw_name, sw_config in config.sw.items():
             'cd', cpt_subdir, '&&',
             'rm -rf m5out &&',
             os.path.abspath(gem5_exe),
-            "--debug-flag=KvmRun,Kvm",
+            # "--debug-flag=KvmRun,Kvm",
             '-r', '-e', # redirect to simout and simerr
             se_py,
             '--cpu-type=X86KvmCPU',
@@ -550,6 +559,15 @@ for exp_name, exp_config in config.exp.items():
                 variables = {'stats': os.path.join(subdir, 'm5out', 'stats.txt') },
             )
 
+            # Generate miss-rate.txt
+            ninja.build(
+                outputs = os.path.join(subdir, 'miss-rate.txt'),
+                rule = 'generate-leaf-miss-rate',
+                inputs = run_stamp,
+                variables = {'stats': os.path.join(subdir, 'm5out', 'stats.txt')},
+            )
+            
+
         # Generate ipc.txt for benchmark
         generate_bench_ipc_py = os.path.join(os.path.dirname(__file__), 'helpers', 'bench-ipc.py')
         generate_bench_ipc_inputs = [os.path.join('exp', exp_name, bench_name, str(cpt_idx), 'ipc.txt') for cpt_idx in range(config.vars.num_simpoints)]
@@ -568,3 +586,41 @@ for exp_name, exp_config in config.exp.items():
                 'desc': 'Generating benchmark ipc.txt',
             },
         )
+
+        # Generate miss-rate.txt for benchmark
+        generate_bench_miss_rate_inputs = [os.path.join('exp', exp_name, bench_name, str(cpt_idx), 'miss-rate.txt') for cpt_idx in range(config.vars.num_simpoints)]
+        generate_bench_miss_rate_output = os.path.join('exp', exp_name, bench_name, 'miss-rate.txt')
+        generate_bench_miss_rate_cmd = ['python3', generate_bench_ipc_py, cpt_dir, *generate_bench_miss_rate_inputs, '>', generate_bench_miss_rate_output]
+        ninja.build(
+            outputs = generate_bench_miss_rate_output,
+            rule = 'custom-command',
+            inputs = [
+                *generate_bench_miss_rate_inputs,
+                generate_bench_ipc_py,
+            ],
+            variables = {
+                'cmd': ' '.join(generate_bench_miss_rate_cmd),
+                'id': f'exp->{exp_name}->{bench_name}->ipc',
+                'desc': 'Generating benchmark miss-rate.txt',
+            },
+        )
+
+    # Make phony 'all' target
+    exp_all = []
+    for bench_name in benchspec:
+        for filename in ['ipc.txt', 'miss-rate.txt']:
+            exp_all.append(os.path.join('exp', exp_name, bench_name, filename))
+    ninja.build(
+        outputs = os.path.join('exp', exp_name, 'all'),
+        rule = 'phony',
+        inputs = exp_all,
+    )
+
+# Make phony 'exp/all' target
+ninja.build(
+    outputs = os.path.join('exp', 'all'),
+    rule = 'phony',
+    inputs = [os.path.join('exp', exp_name, 'all') for exp_name in config.exp]
+)    
+    
+    
