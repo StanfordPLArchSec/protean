@@ -129,42 +129,111 @@ ninja.build(
 ## sw builds
 for sw_name, sw_config in config.sw.items():
     build_dir = os.path.join('sw', sw_name)
+
+    ## libc -- build LLVM's libc first
+    libc_build_dir = os.path.join(build_dir, 'libc')
+
+    ### Configure libc
+    libc_configure_deps = [sw_config.cc, sw_config.cxx, *sw_config.deps]
+    libc_configure_cflags = ' '.join(sw_config.cflags)
+    libc_configure_ldflags = ' '.join(sw_config.ldflags)
+    libc_configure_cmd = [
+        'cmake', '-S', os.path.join(sw_config.llvm, 'llvm'), '-B', libc_build_dir,
+        f'-DCMAKE_BUILD_TYPE={sw_config.cmake_build_type}',
+        f'-DCMAKE_C_COMPILER={sw_config.cc}',
+        f'-DCMAKE_CXX_COMPILER={sw_config.cxx}',
+        f'-DCMAKE_C_FLAGS="{libc_configure_cflags}"',
+        f'-DCMAKE_CXX_FLAGS="{libc_configure_cflags}"',
+        f'-DCMAKE_EXE_LINKER_FLAGS="{libc_configure_ldflags}"',
+        f'-DLLVM_ENABLE_PROJECTS=libc',
+    ]
+    libc_build_file = os.path.join(libc_build_dir, 'build.ninja')
+    ninja.build(
+        outputs = libc_build_file,
+        rule = 'custom-command',
+        inputs = libc_configure_deps,
+        variables = {
+            'cmd': ' '.join(libc_configure_cmd),
+            'id': f'{sw_name}->libc->configure',
+            'desc': 'Configure libc',
+        }
+    )
+    ninja.build(
+        outputs = os.path.join(libc_build_dir, 'configure'),
+        rule = 'phony',
+        inputs = libc_build_file
+    )
+
+    ### Build libc
+    libc_build_cmd = ['ninja', '-C', libc_build_dir, 'llvmlibc']
+    libc_library = os.path.join(libc_build_dir, 'projects', 'libc', 'lib', 'libllvmlibc.a')
+    #### TODO: 'restat' this.
+    ninja.build(
+        outputs = libc_library,
+        rule = 'custom-command',
+        inputs = libc_build_file,
+        variables = {
+            'cmd': ' '.join(libc_build_cmd),
+            'id': f'{sw_name}->libc->build',
+            'desc': 'Build libc',
+        }
+    )
+    ninja.build(
+        outputs = os.path.join(libc_build_dir, 'build'),
+        rule = 'phony',
+        inputs = libc_library
+    )
+
+    ## test-suite -- build LLVM's test suite
+    test_suite_ldflags = [*sw_config.ldflags, f'-L{os.path.realpath(os.path.dirname(libc_library))}', '-lllvmlibc']
+    test_suite_build_dir = os.path.join(build_dir, 'test-suite')
     variables = {
         'src': sw_config.test_suite,
-        'build': build_dir,
+        'build': test_suite_build_dir,
         'cc': sw_config.cc,
         'cxx': sw_config.cxx,
         'build_type': sw_config.cmake_build_type,
         'cflags': ' '.join(sw_config.cflags),
-        'ldflags': ' '.join(sw_config.ldflags),
+        'ldflags': ' '.join(test_suite_ldflags),
         'spec2017': sw_config.spec2017,
         'run_type': sw_config.test_suite_run_type,
-        'id': f'sw->{sw_name}',
+        'id': f'sw->{sw_name}->spec2017',
     }
-    deps = [sw_config.cc, sw_config.cxx, *sw_config.deps]
+    test_suite_configure_deps = [sw_config.cc, sw_config.cxx, *sw_config.deps, libc_library]
 
-    ## test-suite-configure
+    ### Configure test-suite
+    test_suite_build_file = os.path.join(build_dir, 'build.ninja')
     ninja.build(
-        outputs = os.path.join(build_dir, 'build.ninja'),
+        outputs = test_suite_build_file,
         rule = rule_test_suite_configure,
-        inputs = deps,
+        inputs = test_suite_configure_deps,
         variables = variables,
     )
-
-    ## test-suite-build
-    outputs = [os.path.join(build_dir, 'External', 'SPEC', 'CINT2017speed', bench_name, bench_name) for bench_name in benchspec]
     ninja.build(
-        outputs = outputs,
+        outputs = os.path.join(test_suite_build_dir, 'configure'),
+        rule = 'phony',
+        inputs = test_suite_build_file
+    )
+
+    ### Build test-suite 
+    test_suite_build_outputs = [os.path.join(test_suite_build_dir, 'External', 'SPEC', 'CINT2017speed', bench_name, bench_name) for bench_name in benchspec]
+    ninja.build(
+        outputs = test_suite_build_outputs,
         rule = rule_test_suite_build,
-        inputs = os.path.join(build_dir, 'build.ninja'),
+        inputs = test_suite_build_file,
         variables = variables,
+    )
+    ninja.build(
+        outputs = os.path.join(test_suite_build_dir, 'build'),
+        rule = 'phony',
+        inputs = test_suite_build_outputs
     )
 
     # 'all' target
     ninja.build(
-        outputs = os.path.join('sw', sw_name, 'all'),
+        outputs = os.path.join(build_dir, 'all'),
         rule = 'phony',
-        inputs = outputs
+        inputs = [os.path.join(libc_build_dir, 'build'), os.path.join(test_suite_build_dir, 'build')]
     )
         
 
@@ -190,7 +259,7 @@ for sim_name, sim_config in config.sim.items():
 # cpt builds
 for sw_name, sw_config in config.sw.items():
     for bench_name, bench_spec in benchspec.items():
-        bench_dir = os.path.join('sw', sw_name, 'External', 'SPEC', 'CINT2017speed', bench_name)
+        bench_dir = os.path.join('sw', sw_name, 'test_suite', 'External', 'SPEC', 'CINT2017speed', bench_name)
         exe = os.path.join(bench_dir, bench_name)
         rsrc_dir = os.path.join(bench_dir, f'run_{sw_config.test_suite_run_type}')
 
@@ -497,7 +566,7 @@ for exp_name, exp_config in config.exp.items():
     se_py = os.path.join(sim_config.src, sim_config.script)
 
     for bench_name, bench_spec in benchspec.items():
-        bench_dir = os.path.join('sw', sw_name, 'External', 'SPEC', 'CINT2017speed', bench_name)
+        bench_dir = os.path.join('sw', sw_name, 'test_suite', 'External', 'SPEC', 'CINT2017speed', bench_name)
         bench_exe = os.path.join(bench_dir, bench_name)
         rsrc_dir = os.path.join(bench_dir, f'run_{sw_config.test_suite_run_type}')
         cpt_dir = os.path.join('cpt', sw_name, bench_name, 'cpt', 'm5out')

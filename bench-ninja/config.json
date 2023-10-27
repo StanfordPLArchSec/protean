@@ -13,12 +13,13 @@
 	"_default": {
 	    "spec2017": "../cpu2017",
 	    "test-suite": "../test-suite",
+	    "llvm": "../llvm",
 	    "cc": "../llvm/build/bin/clang",
 	    "cxx": "../llvm/build/bin/clang++",
 	    "cmake_build_type": "Release",
 	    "test_suite_run_type": "train",
 	    "cflags": ["-fcf-protection=none"],
-	    "ldflags": ["-static", "-fuse-ld=lld"],
+	    "ldflags": ["-static", "-fuse-ld=lld", "-Wl,--allow-multiple-definition"],
 	    "deps": []
 	},
 	"_lto": {
@@ -55,28 +56,6 @@
 	},
 	"llsct-lto-debug": {
 	    "inherit": "llsct-lto",
-	    "+ldflags": ["-Wl,--load-pass-plugin=/home/nmosier/llsct2/passes/build/libDebugIR.so"],
-	    "+deps": ["../passes/build/libDebugIR.so"]
-	},
-	"llsct-ptp": {
-	    "inherit": "_default",
-	    "+cflags": [
-		"-fpass-plugin=/home/nmosier/llsct2/passes/build/libDeclassifyPTPPass.so",
-		"-mllvm", "-llsct",
-		"-mllvm", "-llsct-declassify"
-	    ],
-	    "+deps": ["../passes/build/libDeclassifyPTPPass.so"]
-	},
-	"llsct-ptp-lto": {
-	    "inherit": "_lto",
-	    "+ldflags": [
-		"-Wl,--load-pass-plugin=/home/nmosier/llsct2/passes/build/libDeclassifyPTPPass.so",
-		"-Wl,-mllvm,-llsct,-mllvm,-llsct-declassify"
-	    ],
-	    "+deps": ["../passes/build/libDeclassifyPTPPass.so"]
-	},
-	"llsct-ptp-lto-debug": {
-	    "inherit": "llsct-ptp-lto",
 	    "+ldflags": ["-Wl,--load-pass-plugin=/home/nmosier/llsct2/passes/build/libDebugIR.so"],
 	    "+deps": ["../passes/build/libDebugIR.so"]
 	}
@@ -154,18 +133,6 @@
 	"llsct-lto-unsafe": {"inherit": "llsct-lto", "hwmode": "base"},
 	"llsct-cache": {"sw": "llsct", "sim": "llsct", "hwmode": "llsct-declassify-all-cache"},
 	"llsct-lto-cache": {"sw": "llsct-lto", "sim": "llsct", "hwmode": "llsct-declassify-all-cache"},
-	"llsct-lto-debug": {"sw": "llsct-lto-debug", "sim": "llsct", "hwmode": "llsct-declassify-all-shadow"},
-
-	"unsafe-baseline-ptp": {"sw": "llsct-ptp", "sim": "base", "hwmode": "base"},
-	"unsafe-baseline-ptp-lto": {"sw": "llsct-ptp-lto", "sim": "base", "hwmode": "base"},
-	"spt-ptp": {"sw": "llsct-ptp", "sim": "spt", "hwmode": "spt"},
-	"spt-ptp-lto": {"inherit": "spt-ptp", "sw": "llsct-ptp-lto"},
-	"llsct-ptp": {"sw": "llsct-ptp", "sim": "llsct", "hwmode": "llsct-declassify-all-shadow"},
-	"llsct-ptp-lto": {"inherit": "llsct-ptp", "sw": "llsct-ptp-lto"},
-	"llsct-ptp-lto-unsafe": {"inherit": "llsct-ptp-lto", "hwmode": "base"},
-	"llsct-ptp-cache": {"sw": "llsct-ptp", "sim": "llsct", "hwmode": "llsct-declassify-all-cache"},
-	"llsct-ptp-lto-cache": {"sw": "llsct-ptp-lto", "sim": "llsct", "hwmode": "llsct-declassify-all-cache"},
-	"llsct-ptp-lto-debug": {"sw": "llsct-ptp-lto-debug", "sim": "llsct", "hwmode": "llsct-declassify-all-shadow"}
-	
+	"llsct-lto-debug": {"sw": "llsct-lto-debug", "sim": "llsct", "hwmode": "llsct-declassify-all-shadow"}
     }
 }
