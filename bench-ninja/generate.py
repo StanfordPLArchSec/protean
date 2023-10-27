@@ -143,15 +143,15 @@ for sw_name, sw_config in config.sw.items():
     }
     deps = [sw_config.cc, sw_config.cxx, *sw_config.deps]
 
-    ## test-suite-build
+    ## test-suite-configure
     ninja.build(
         outputs = os.path.join(build_dir, 'build.ninja'),
         rule = rule_test_suite_configure,
-        inputs = [sw_config.cc, sw_config.cxx],
+        inputs = deps,
         variables = variables,
     )
 
-    ## test-suite-configure
+    ## test-suite-build
     outputs = [os.path.join(build_dir, 'External', 'SPEC', 'CINT2017speed', bench_name, bench_name) for bench_name in benchspec]
     ninja.build(
         outputs = outputs,
@@ -159,6 +159,14 @@ for sw_name, sw_config in config.sw.items():
         inputs = os.path.join(build_dir, 'build.ninja'),
         variables = variables,
     )
+
+    # 'all' target
+    ninja.build(
+        outputs = os.path.join('sw', sw_name, 'all'),
+        rule = 'phony',
+        inputs = outputs
+    )
+        
 
 # sim builds
 for sim_name, sim_config in config.sim.items():

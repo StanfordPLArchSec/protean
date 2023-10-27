@@ -17,7 +17,7 @@
 	    "cxx": "../llvm/build/bin/clang++",
 	    "cmake_build_type": "Release",
 	    "test_suite_run_type": "train",
-	    "cflags": [],
+	    "cflags": ["-fcf-protection=none"],
 	    "ldflags": ["-static", "-fuse-ld=lld"],
 	    "deps": []
 	},
@@ -38,22 +38,45 @@
 	"llsct": {
 	    "inherit": "_default",
 	    "+cflags": [
+		"-fpass-plugin=/home/nmosier/llsct2/passes/build/libDeclassifyPass.so",
 		"-mllvm", "-llsct",
 		"-mllvm", "-llsct-declassify",
-		"-fpass-plugin=/home/nmosier/llsct2/passes/build/libDeclassifyPass.so"
+		"-mllvm", "-llsct-cfi"
 	    ],
 	    "+deps": ["../passes/build/libDeclassifyPass.so"]
 	},
 	"llsct-lto": {
 	    "inherit": "_lto",
 	    "+ldflags": [
-		"-Wl,-mllvm,-llsct,-mllvm,-llsct-declassify",
-		"-Wl,--load-pass-plugin=/home/nmosier/llsct2/passes/build/libDeclassifyPass.so"
+		"-Wl,--load-pass-plugin=/home/nmosier/llsct2/passes/build/libDeclassifyPass.so",
+		"-Wl,-mllvm,-llsct,-mllvm,-llsct-declassify,-mllvm,-llsct-cfi"
 	    ],
 	    "+deps": ["../passes/build/libDeclassifyPass.so"]
 	},
 	"llsct-lto-debug": {
 	    "inherit": "llsct-lto",
+	    "+ldflags": ["-Wl,--load-pass-plugin=/home/nmosier/llsct2/passes/build/libDebugIR.so"],
+	    "+deps": ["../passes/build/libDebugIR.so"]
+	},
+	"llsct-ptp": {
+	    "inherit": "_default",
+	    "+cflags": [
+		"-fpass-plugin=/home/nmosier/llsct2/passes/build/libDeclassifyPTPPass.so",
+		"-mllvm", "-llsct",
+		"-mllvm", "-llsct-declassify"
+	    ],
+	    "+deps": ["../passes/build/libDeclassifyPTPPass.so"]
+	},
+	"llsct-ptp-lto": {
+	    "inherit": "_lto",
+	    "+ldflags": [
+		"-Wl,--load-pass-plugin=/home/nmosier/llsct2/passes/build/libDeclassifyPTPPass.so",
+		"-Wl,-mllvm,-llsct,-mllvm,-llsct-declassify"
+	    ],
+	    "+deps": ["../passes/build/libDeclassifyPTPPass.so"]
+	},
+	"llsct-ptp-lto-debug": {
+	    "inherit": "llsct-ptp-lto",
 	    "+ldflags": ["-Wl,--load-pass-plugin=/home/nmosier/llsct2/passes/build/libDebugIR.so"],
 	    "+deps": ["../passes/build/libDebugIR.so"]
 	}
@@ -125,13 +148,24 @@
 	"unsafe-baseline": {"sw": "llsct", "sim": "base", "hwmode": "base"},
 	"unsafe-baseline-lto": {"sw": "llsct-lto", "sim": "base", "hwmode": "base"},
 	"spt": {"sw": "llsct", "sim": "spt", "hwmode": "spt"},
-	"spt-lto": {"inherit": "spt", "sw": "base-lto"},
+	"spt-lto": {"inherit": "spt", "sw": "llsct-lto"},
 	"llsct": {"sw": "llsct", "sim": "llsct", "hwmode": "llsct-declassify-all-shadow"},
 	"llsct-lto": {"inherit": "llsct", "sw": "llsct-lto"},
 	"llsct-lto-unsafe": {"inherit": "llsct-lto", "hwmode": "base"},
 	"llsct-cache": {"sw": "llsct", "sim": "llsct", "hwmode": "llsct-declassify-all-cache"},
 	"llsct-lto-cache": {"sw": "llsct-lto", "sim": "llsct", "hwmode": "llsct-declassify-all-cache"},
 	"llsct-lto-debug": {"sw": "llsct-lto-debug", "sim": "llsct", "hwmode": "llsct-declassify-all-shadow"},
-	"llsct-lto-coalescing": {"sw": "llsct-lto", "sim": "llsct", "hwmode": "llsct-declassify-all-coalescing"}
+
+	"unsafe-baseline-ptp": {"sw": "llsct-ptp", "sim": "base", "hwmode": "base"},
+	"unsafe-baseline-ptp-lto": {"sw": "llsct-ptp-lto", "sim": "base", "hwmode": "base"},
+	"spt-ptp": {"sw": "llsct-ptp", "sim": "spt", "hwmode": "spt"},
+	"spt-ptp-lto": {"inherit": "spt-ptp", "sw": "llsct-ptp-lto"},
+	"llsct-ptp": {"sw": "llsct-ptp", "sim": "llsct", "hwmode": "llsct-declassify-all-shadow"},
+	"llsct-ptp-lto": {"inherit": "llsct-ptp", "sw": "llsct-ptp-lto"},
+	"llsct-ptp-lto-unsafe": {"inherit": "llsct-ptp-lto", "hwmode": "base"},
+	"llsct-ptp-cache": {"sw": "llsct-ptp", "sim": "llsct", "hwmode": "llsct-declassify-all-cache"},
+	"llsct-ptp-lto-cache": {"sw": "llsct-ptp-lto", "sim": "llsct", "hwmode": "llsct-declassify-all-cache"},
+	"llsct-ptp-lto-debug": {"sw": "llsct-ptp-lto-debug", "sim": "llsct", "hwmode": "llsct-declassify-all-shadow"}
+	
     }
 }
