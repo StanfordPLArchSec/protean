@@ -34,6 +34,7 @@ test_suite_cmake_command = [
     '-B', '$build',
     '-DCMAKE_C_COMPILER=$cc',
     '-DCMAKE_CXX_COMPILER=$cxx',
+    '-DCMAKE_CXX_STANDARD=11',
     '-DCMAKE_BUILD_TYPE=$build_type',
     '-DCMAKE_C_FLAGS="$cflags"',
     '-DCMAKE_CXX_FLAGS="$cflags"',
@@ -144,7 +145,6 @@ for sw_name, sw_config in config.sw.items():
         f'-DCMAKE_CXX_COMPILER={sw_config.cxx}',
         f'-DCMAKE_C_FLAGS="{libc_configure_cflags}"',
         f'-DCMAKE_CXX_FLAGS="{libc_configure_cflags}"',
-        f'-DCMAKE_EXE_LINKER_FLAGS="{libc_configure_ldflags}"',
         f'-DLLVM_ENABLE_PROJECTS=libc',
     ]
     libc_build_file = os.path.join(libc_build_dir, 'build.ninja')
@@ -184,8 +184,67 @@ for sw_name, sw_config in config.sw.items():
         inputs = libc_library
     )
 
+    ## libc++ -- build LLVM's libc++ and libc++abi
+    libcxx_build_dir = os.path.join(build_dir, 'libcxx')
+
+    ### Configure libcxx
+    libcxx_configure_deps = [sw_config.cc, sw_config.cxx, *sw_config.deps]
+    libcxx_configure_cflags = ' '.join(sw_config.cflags)
+    libcxx_configure_ldflags = ' '.join(sw_config.ldflags)
+    libcxx_configure_cmd = [
+        'cmake', '-S', os.path.join(sw_config.llvm, 'runtimes'), '-B', libcxx_build_dir,
+        f'-DCMAKE_BUILD_TYPE={sw_config.cmake_build_type}',
+        f'-DCMAKE_C_COMPILER={sw_config.cc}',
+        f'-DCMAKE_CXX_COMPILER={sw_config.cxx}',
+        f'-DCMAKE_C_FLAGS="{libcxx_configure_cflags}"',
+        f'-DCMAKE_CXX_FLAGS="{libcxx_configure_cflags}"',
+        f'-DLLVM_ENABLE_RUNTIMES="libcxx;libcxxabi"'
+    ]
+    libcxx_build_file = os.path.join(libcxx_build_dir, 'ninja.build')
+    ninja.build(
+        outputs = libcxx_build_file,
+        rule = 'custom-command',
+        inputs = libcxx_configure_deps,
+        variables = {
+            'cmd': ' '.join(libcxx_configure_cmd),
+            'id': f'{sw_name}->libcxx->configure',
+            'desc': 'Configure libcxx',
+        }
+    )
+    ninja.build(
+        outputs = os.path.join(libcxx_build_dir, 'configure'),
+        rule = 'phony',
+        inputs = libcxx_build_file
+    )
+
+    ### Build libcxx
+    libcxx_libraries = [os.path.join(libcxx_build_dir, 'lib', f'lib{s}.a') for s in ['c++', 'c++abi']]
+    libcxx_build_cmd = ['ninja', '-C', libcxx_build_dir, 'cxx', 'cxxabi']
+    ninja.build(
+        outputs = libcxx_libraries,
+        rule = 'custom-command',
+        inputs = libcxx_build_file,
+        variables = {
+            'cmd': ' '.join(libcxx_build_cmd),
+            'id': f'{sw_name}->libcxx->build',
+            'desc': 'Build libcxx'
+        }
+    )
+    ninja.build(
+        outputs = os.path.join(libcxx_build_dir, 'build'),
+        rule = 'phony',
+        inputs = libcxx_libraries
+    )
+    libcxx_include_dir = os.path.realpath(os.path.join(libcxx_build_dir, 'include', 'c++', 'v1'))
+    libcxx_library_dir = os.path.realpath(os.path.join(libcxx_build_dir, 'lib'))
+
     ## test-suite -- build LLVM's test suite
-    test_suite_ldflags = [*sw_config.ldflags, f'-L{os.path.realpath(os.path.dirname(libc_library))}', '-lllvmlibc']
+    test_suite_cflags = [*sw_config.cflags, '-nostdinc++', '-nostdlib++',
+                         '-isystem', libcxx_include_dir]
+    test_suite_ldflags = [
+        *sw_config.ldflags, # base
+        '-L', os.path.realpath(os.path.dirname(libc_library)), '-lllvmlibc', # libc
+        '-nostdlib++', '-L', libcxx_library_dir, '-lc++', '-lc++abi'] # libcxx
     test_suite_build_dir = os.path.join(build_dir, 'test-suite')
     variables = {
         'src': sw_config.test_suite,
@@ -193,13 +252,13 @@ for sw_name, sw_config in config.sw.items():
         'cc': sw_config.cc,
         'cxx': sw_config.cxx,
         'build_type': sw_config.cmake_build_type,
-        'cflags': ' '.join(sw_config.cflags),
+        'cflags': ' '.join(test_suite_cflags),
         'ldflags': ' '.join(test_suite_ldflags),
         'spec2017': sw_config.spec2017,
         'run_type': sw_config.test_suite_run_type,
         'id': f'sw->{sw_name}->spec2017',
     }
-    test_suite_configure_deps = [sw_config.cc, sw_config.cxx, *sw_config.deps, libc_library]
+    test_suite_configure_deps = [sw_config.cc, sw_config.cxx, *sw_config.deps, libc_library, *libcxx_libraries]
 
     ### Configure test-suite
     test_suite_build_file = os.path.join(build_dir, 'build.ninja')
@@ -233,7 +292,11 @@ for sw_name, sw_config in config.sw.items():
     ninja.build(
         outputs = os.path.join(build_dir, 'all'),
         rule = 'phony',
-        inputs = [os.path.join(libc_build_dir, 'build'), os.path.join(test_suite_build_dir, 'build')]
+        inputs = [
+            os.path.join(libc_build_dir, 'build'),
+            os.path.join(libcxx_build_dir, 'build'),
+            os.path.join(test_suite_build_dir, 'build'),
+        ]
     )
         
 
@@ -259,7 +322,7 @@ for sim_name, sim_config in config.sim.items():
 # cpt builds
 for sw_name, sw_config in config.sw.items():
     for bench_name, bench_spec in benchspec.items():
-        bench_dir = os.path.join('sw', sw_name, 'test_suite', 'External', 'SPEC', 'CINT2017speed', bench_name)
+        bench_dir = os.path.join('sw', sw_name, 'test-suite', 'External', 'SPEC', 'CINT2017speed', bench_name)
         exe = os.path.join(bench_dir, bench_name)
         rsrc_dir = os.path.join(bench_dir, f'run_{sw_config.test_suite_run_type}')
 
@@ -284,7 +347,7 @@ for sw_name, sw_config in config.sw.items():
         gem5_exe = os.path.join('sim', sim_name, sim_config.target)
         se_py = os.path.join(sim_config.src, sim_config.script)
         sim_run_args = ' '.join(bench_spec.litargs)        
-        verify_path = os.path.abspath(os.path.join('sw', sw_name, 'tools'))
+        verify_path = os.path.abspath(os.path.join('sw', sw_name, 'test-suite', 'tools'))
         verify_rawcmds = ' && '.join(bench_spec.verify)
         verify_rawcmds = verify_rawcmds.replace('%b', verify_path).replace('%S', os.path.abspath(os.path.dirname(exe)))
 
@@ -566,7 +629,7 @@ for exp_name, exp_config in config.exp.items():
     se_py = os.path.join(sim_config.src, sim_config.script)
 
     for bench_name, bench_spec in benchspec.items():
-        bench_dir = os.path.join('sw', sw_name, 'test_suite', 'External', 'SPEC', 'CINT2017speed', bench_name)
+        bench_dir = os.path.join('sw', sw_name, 'test-suite', 'External', 'SPEC', 'CINT2017speed', bench_name)
         bench_exe = os.path.join(bench_dir, bench_name)
         rsrc_dir = os.path.join(bench_dir, f'run_{sw_config.test_suite_run_type}')
         cpt_dir = os.path.join('cpt', sw_name, bench_name, 'cpt', 'm5out')

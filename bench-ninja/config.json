@@ -18,7 +18,7 @@
 	    "cxx": "../llvm/build/bin/clang++",
 	    "cmake_build_type": "Release",
 	    "test_suite_run_type": "train",
-	    "cflags": ["-fcf-protection=none"],
+	    "cflags": ["-fcf-protection=none", "-mno-avx"],
 	    "ldflags": ["-static", "-fuse-ld=lld", "-Wl,--allow-multiple-definition"],
 	    "deps": []
 	},
@@ -79,6 +79,10 @@
 	"spt": {
 	    "inherit": "_default",
 	    "src": "../spt"
+	},
+	"stt": {
+	    "inherit": "_default",
+	    "src": "../stt"
 	}
     },
 
@@ -106,20 +110,24 @@
 		"--llsct-declassify=1",
 		"--llsct-declassify-all=1",
 		"--llsct-declassify-impl=cache",
-		"--llsct-declassify-lines=4096"
+		"--llsct-declassify-lines=1024"
 	    ]
 	},
-	"llsct-declassify-all-coalescing": {
-	    "inherit": "_default",
-	    "+script_opts": [
-		"--llsct-declassify=1",
-		"--llsct-declassify-all=1",
-		"--llsct-declassify-impl=coalescing"
-	    ]
+	"llsct": {
+	    "inherit": "llsct-declassify-all-cache",
+	    "+script_opts": ["--llsct-cfi=1"]
+	},
+	"llsct-pipeview": {
+	    "inherit": "llsct",
+	    "+gem5_opts": ["--debug-flags=O3PipeView,O3PipeViewLLSCT,LLSCT", "--debug-file=dbgout.gz"]
 	},
 	"spt": {
 	    "inherit": "_default",
-	    "+script_opts": ["--enableSPT=1"]
+	    "+script_opts": ["--enableSPT=1", "--moreTransmitInsts=2"]
+	},
+	"stt": {
+	    "inherit": "_default",
+	    "+script_opts": ["--STT=1"]
 	}
     },
 
@@ -127,12 +135,15 @@
 	"unsafe-baseline": {"sw": "llsct", "sim": "base", "hwmode": "base"},
 	"unsafe-baseline-lto": {"sw": "llsct-lto", "sim": "base", "hwmode": "base"},
 	"spt": {"sw": "llsct", "sim": "spt", "hwmode": "spt"},
+	"stt": {"sw": "llsct", "sim": "stt", "hwmode": "stt"},
 	"spt-lto": {"inherit": "spt", "sw": "llsct-lto"},
 	"llsct": {"sw": "llsct", "sim": "llsct", "hwmode": "llsct-declassify-all-shadow"},
 	"llsct-lto": {"inherit": "llsct", "sw": "llsct-lto"},
 	"llsct-lto-unsafe": {"inherit": "llsct-lto", "hwmode": "base"},
 	"llsct-cache": {"sw": "llsct", "sim": "llsct", "hwmode": "llsct-declassify-all-cache"},
 	"llsct-lto-cache": {"sw": "llsct-lto", "sim": "llsct", "hwmode": "llsct-declassify-all-cache"},
-	"llsct-lto-debug": {"sw": "llsct-lto-debug", "sim": "llsct", "hwmode": "llsct-declassify-all-shadow"}
+	"llsct-lto-debug": {"sw": "llsct-lto-debug", "sim": "llsct", "hwmode": "llsct-declassify-all-shadow"},
+	"llsct-cfi": {"sw": "llsct", "sim": "llsct", "hwmode": "llsct"},
+	"llsct-pipeview": {"sw": "llsct", "sim": "llsct", "hwmode": "llsct-pipeview"}
     }
 }
