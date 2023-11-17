@@ -1,5 +1,15 @@
 import os
 import types
+import sys
+
+def merge_extensions(cls):
+    for key, value in cls.items():
+        if key.startswith('+'):
+            assert type(value) is list
+            basekey = key.removeprefix('+')
+            cls[basekey] = list(cls[basekey]) + value
+    return dict(filter(lambda p: not p[0].startswith('+'), cls.items()))
+
 
 def resolve_inheritance(d: dict) -> dict:
     resolved = dict()
@@ -17,21 +27,7 @@ def resolve_inheritance(d: dict) -> dict:
                 if check_resolved(super):
                     del d[key]['inherit']
                     d[key] = {**d[super], **d[key]}
-
-                    extend_prefix = '+'
-                    extended = True
-                    while extended:
-                        extended = False
-                        for key in d:
-                            if key.startswith(extend_prefix):
-                                assert type(d[key]) is list
-                                base_key = key.removeprefix(extend_prefix)
-                                assert base_key in d and type(d[base_key]) is list
-                                d[base_key].extend(d[key])
-                                del d[key]
-                                extended = True
-                                break
-                    
+                    d[key] = merge_extensions(d[key])
                     resolved_one = True
                 else:
                     found_unresolved = True
@@ -39,15 +35,28 @@ def resolve_inheritance(d: dict) -> dict:
             print('fatal error: detected cycle in inheritance', file=sys.stderr)
             exit(1)
 
-    return dict(filter(lambda p: not p[0].startswith('_'), d.items()))
+    d = dict(filter(lambda p: not p[0].startswith('_'), d.items()))
+    # for name, cls in d.items():
+    #     for key, value in cls.items():
+    #         if key.startswith('+'):
+    #             basekey = key.removeprefix('+')
+    #             cls[basekey].extend(value)
+    #     d[name] = dict(filter(lambda p: not p[0].startswith('+'), cls.items()))
+
+    return d
 
 
 def prepare_subconfig(config: dict, path_keys, reldir) -> types.SimpleNamespace:
     for key in path_keys:
         if key not in config:
-            print(config)
-        assert key in config
-        config[key] = abspath_rel(config[key], reldir)
+            print(f'config {config} is missing key {key}', file=sys.stderr)
+            exit(1)
+        if type(config[key]) is list:
+            config[key] = [abspath_rel(path, reldir) for path in config[key]]
+        elif type(config[key]) is str:
+            config[key] = abspath_rel(config[key], reldir)
+        else:
+            assert False
     config = dict(map(lambda p: (p[0].replace('-', '_'), p[1]), config.items()))
     config = types.SimpleNamespace(**config)
     return config
@@ -62,7 +71,7 @@ def process_subconfigs(configs, path_keys, reldir):
 
 
 def process_config(config_in: dict, reldir: str) -> types.SimpleNamespace:
-    sw_configs = process_subconfigs(config_in['sw'], ['spec2017', 'test-suite', 'cc', 'cxx'], reldir)
+    sw_configs = process_subconfigs(config_in['sw'], ['spec2017', 'test-suite', 'cc', 'cxx', 'deps', 'llvm'], reldir)
     sim_configs = process_subconfigs(config_in['sim'], ['src'], reldir)
     hwmode_configs = process_subconfigs(config_in['hwmode'], [], reldir)
     exp_configs = process_subconfigs(config_in['exp'], [], reldir)
@@ -79,15 +88,20 @@ def abspath_rel(path: str, reldir: str) -> str:
 
 
 def process_benchspec(benchspec: dict) -> dict:
+    benchspec = dict(filter(lambda p: 'skip' not in p[1], benchspec.items()))
     for bench_name, bench_spec in benchspec.items():
         bench_spec['exe'] = bench_name
         if 'outputs' not in bench_spec:
             bench_spec['outputs'] = list()
         bench_spec['args'] = bench_spec['args'].split()
-        if '>' in bench_spec['args']:
-            idx = bench_spec['args'].index('>')
-            bench_spec['stdout'] = bench_spec['args'][idx + 1]
+        bench_spec['litargs'] = list(bench_spec['args'])
+        bench_spec['stdout'] = None
+        if '>' in bench_spec['litargs']:
+            idx = bench_spec['litargs'].index('>')
+            bench_spec['stdout'] = bench_spec['litargs'][idx + 1]
             bench_spec['outputs'].append(bench_spec['stdout'])
+            del bench_spec['litargs'][idx:idx+2]
+
         bench_spec = types.SimpleNamespace(**bench_spec)
 
         if type(bench_spec.verify) is not list:

@@ -21,6 +21,13 @@ with open(args.benchspec) as f:
     benchspec = json.load(f)
 benchspec = util.process_benchspec(benchspec)
 
+def get_mem(bench_name):
+    if 'mem' in benchspec[bench_name].__dict__:
+        return benchspec[bench_name].mem
+    else:
+        return config.vars.memsize
+    
+
 f = open('build.ninja', 'w')
 ninja = ninja_syntax.Writer(f)
 
@@ -42,7 +49,6 @@ test_suite_cmake_command = [
     '-DTEST_SUITE_SUBDIRS=External',
     '-DTEST_SUITE_SPEC2017_ROOT=$spec2017',
     '-DTEST_SUITE_RUN_TYPE=$run_type',
-    # '-DCMAKE_NINJA_OUTPUT_PATH_PREFIX=$build',
 ]
 rule_test_suite_configure = 'test-suite-configure'
 ninja.rule(
@@ -402,7 +408,7 @@ for sw_name, sw_config in config.sw.items():
             # '--debug-flag=KvmRun,Kvm',
             se_py,
             '--cpu-type=X86KvmCPU',
-            f'--mem-size={config.vars.memsize}',
+            f'--mem-size={get_mem(bench_name)}',
             f'--options="{sim_run_args}"',
             f'--cmd={os.path.abspath(exe)}',
             f'--errout=stderr',
@@ -531,7 +537,7 @@ for sw_name, sw_config in config.sw.items():
             '-r', '-e', # redirect to simout and simerr
             se_py,
             '--cpu-type=X86KvmCPU',
-            f'--mem-size={config.vars.memsize}',
+            f'--mem-size={get_mem(bench_name)}',
             f'--take-simpoint-checkpoint={os.path.abspath(spt_simpoints)},{os.path.abspath(spt_weights)},{config.vars.interval},{config.vars.warmup}',
             f'--options="{sim_run_args}"',
             f'--cmd={os.path.abspath(exe)}',
@@ -663,7 +669,7 @@ for exp_name, exp_config in config.exp.items():
                 f'--cmd={os.path.abspath(bench_exe)}',
                 f'--options="{sim_run_args}"',
                 '--cpu-type=X86O3CPU',
-                f'--mem-size={config.vars.memsize}',
+                f'--mem-size={get_mem(bench_name)}',
                 '--caches',
                 '--l1d_size=64kB',
                 '--l1i_size=16kB',
@@ -763,4 +769,37 @@ ninja.build(
     inputs = [os.path.join('exp', exp_name, 'all') for exp_name in config.exp]
 )    
     
+    
+
+
+# Timed host runs
+for sw_name, sw_config in config.sw.items():
+    test_suite_build_dir = os.path.join('sw', sw_name, 'test-suite')
+    llvm_lit_exe = os.path.join(os.path.dirname(sw_config.cc), 'llvm-lit')
+
+    all_jsons = []
+    
+    for bench_name in benchspec:
+        bench_dir = os.path.join(test_suite_build_dir, 'External', 'SPEC', 'CINT2017speed', bench_name)
+        json = os.path.join(bench_dir, f'{bench_name}.json')
+        lit_cmd = ['taskset', '-c0', llvm_lit_exe, bench_dir, '-o', json]
+        ninja.build(
+            outputs = json,
+            rule = 'custom-command',
+            inputs = os.path.join(bench_dir, bench_name),
+            variables = {
+                'cmd': ' '.join(lit_cmd),
+                'id': f'sw->{sw_name}->time',
+                'desc': 'Timing benchmark on host',
+            },
+        )
+        all_jsons.append(json)
+
+
+    ninja.build(
+        outputs = os.path.join('sw', sw_name, 'time'),
+        rule = 'phony',
+        inputs = all_jsons,
+    )
+
     

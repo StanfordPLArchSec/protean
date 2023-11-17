@@ -17,7 +17,7 @@
 	    "cc": "../llvm/build/bin/clang",
 	    "cxx": "../llvm/build/bin/clang++",
 	    "cmake_build_type": "Release",
-	    "test_suite_run_type": "train",
+	    "test_suite_run_type": "ref",
 	    "cflags": ["-fcf-protection=none", "-mno-avx"],
 	    "ldflags": ["-static", "-fuse-ld=lld", "-Wl,--allow-multiple-definition"],
 	    "deps": []
@@ -95,26 +95,24 @@
 	"base": {
 	    "inherit": "_default"
 	},
-	"llsct-declassify-all-shadow": {
+	"llsct-declassify-shadow": {
 	    "inherit": "_default",
 	    "+script_opts": [
 		"--llsct-declassify=1",
 		"--llsct-declassify-entries=-1",
-		"--llsct-declassify-all=1",
 		"--llsct-declassify-impl=shadow"
 	    ]
 	},
-	"llsct-declassify-all-cache": {
+	"llsct-declassify-cache": {
 	    "inherit": "_default",
 	    "+script_opts": [
 		"--llsct-declassify=1",
-		"--llsct-declassify-all=1",
 		"--llsct-declassify-impl=cache",
 		"--llsct-declassify-lines=1024"
 	    ]
 	},
 	"llsct": {
-	    "inherit": "llsct-declassify-all-cache",
+	    "inherit": "llsct-declassify-cache",
 	    "+script_opts": ["--llsct-cfi=1"]
 	},
 	"llsct-pipeview": {
@@ -128,6 +126,14 @@
 	"stt": {
 	    "inherit": "_default",
 	    "+script_opts": ["--STT=1"]
+	},
+	"llsct-arch": {
+	    "inherit": "llsct",
+	    "+script_opts": ["--llsct-threat-model=arch"]
+	},
+	"llsct-spectre": {
+	    "inherit": "llsct",
+	    "+script_opts": ["--llsct-speculation-model=spectre"]
 	}
     },
 
@@ -137,13 +143,15 @@
 	"spt": {"sw": "llsct", "sim": "spt", "hwmode": "spt"},
 	"stt": {"sw": "llsct", "sim": "stt", "hwmode": "stt"},
 	"spt-lto": {"inherit": "spt", "sw": "llsct-lto"},
-	"llsct": {"sw": "llsct", "sim": "llsct", "hwmode": "llsct-declassify-all-shadow"},
+	"llsct": {"sw": "llsct", "sim": "llsct", "hwmode": "llsct-declassify-shadow"},
 	"llsct-lto": {"inherit": "llsct", "sw": "llsct-lto"},
 	"llsct-lto-unsafe": {"inherit": "llsct-lto", "hwmode": "base"},
-	"llsct-cache": {"sw": "llsct", "sim": "llsct", "hwmode": "llsct-declassify-all-cache"},
-	"llsct-lto-cache": {"sw": "llsct-lto", "sim": "llsct", "hwmode": "llsct-declassify-all-cache"},
-	"llsct-lto-debug": {"sw": "llsct-lto-debug", "sim": "llsct", "hwmode": "llsct-declassify-all-shadow"},
+	"llsct-cache": {"sw": "llsct", "sim": "llsct", "hwmode": "llsct-declassify-cache"},
+	"llsct-lto-cache": {"sw": "llsct-lto", "sim": "llsct", "hwmode": "llsct-declassify-cache"},
+	"llsct-lto-debug": {"sw": "llsct-lto-debug", "sim": "llsct", "hwmode": "llsct-declassify-shadow"},
 	"llsct-cfi": {"sw": "llsct", "sim": "llsct", "hwmode": "llsct"},
-	"llsct-pipeview": {"sw": "llsct", "sim": "llsct", "hwmode": "llsct-pipeview"}
+	"llsct-pipeview": {"sw": "llsct", "sim": "llsct", "hwmode": "llsct-pipeview"},
+	"llsct-arch": {"sw": "llsct", "sim": "llsct", "hwmode": "llsct-arch"},
+	"llsct-spectre": {"sw": "llsct", "sim": "llsct", "hwmode": "llsct-spectre"}
     }
 }
