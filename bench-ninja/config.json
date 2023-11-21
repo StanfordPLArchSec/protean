@@ -36,7 +36,7 @@
 	    "inherit": "_lto"
 	},
 
-	"llsct": {
+	"_llsct": {
 	    "inherit": "_default",
 	    "+cflags": [
 		"-fpass-plugin=/home/nmosier/llsct2/passes/build/libDeclassifyPass.so",
@@ -45,6 +45,10 @@
 		"-mllvm", "-llsct-cfi"
 	    ],
 	    "+deps": ["../passes/build/libDeclassifyPass.so"]
+	},
+	"llsct": {
+	    "inherit": "_default",
+	    "cflags": ["-DontUseThisSwMode"]
 	},
 	"llsct-lto": {
 	    "inherit": "_lto",
@@ -58,6 +62,18 @@
 	    "inherit": "llsct-lto",
 	    "+ldflags": ["-Wl,--load-pass-plugin=/home/nmosier/llsct2/passes/build/libDebugIR.so"],
 	    "+deps": ["../passes/build/libDebugIR.so"]
+	},
+	"llsct-ct": {
+	    "inherit": "_llsct",
+	    "+cflags": ["-mllvm", "-tpe-privacy-policy=ct"]
+	},
+	"llsct-ctd": {
+	    "inherit": "_llsct",
+	    "+cflags": ["-mllvm", "-tpe-privacy-policy=ctdecl"]
+	},
+	"llsct-sbox": {
+	    "inherit": "_llsct",
+	    "+cflags": ["-mllvm", "-tpe-privacy-policy=sandbox"]
 	}
     },
 
@@ -134,15 +150,20 @@
 	"llsct-spectre": {
 	    "inherit": "llsct",
 	    "+script_opts": ["--llsct-speculation-model=spectre"]
+	},
+	"stt-spectre": {
+	    "inherit": "stt",
+	    "+script_opts": ["--speculation-model=spectre"]
+	},
+	"spt-spectre": {
+	    "inherit": "spt",
+	    "+script_opts": ["--speculation-model=spectre"]
 	}
     },
 
     "exp": {
 	"unsafe-baseline": {"sw": "llsct", "sim": "base", "hwmode": "base"},
 	"unsafe-baseline-lto": {"sw": "llsct-lto", "sim": "base", "hwmode": "base"},
-	"spt": {"sw": "llsct", "sim": "spt", "hwmode": "spt"},
-	"stt": {"sw": "llsct", "sim": "stt", "hwmode": "stt"},
-	"spt-lto": {"inherit": "spt", "sw": "llsct-lto"},
 	"llsct": {"sw": "llsct", "sim": "llsct", "hwmode": "llsct-declassify-shadow"},
 	"llsct-lto": {"inherit": "llsct", "sw": "llsct-lto"},
 	"llsct-lto-unsafe": {"inherit": "llsct-lto", "hwmode": "base"},
@@ -152,6 +173,20 @@
 	"llsct-cfi": {"sw": "llsct", "sim": "llsct", "hwmode": "llsct"},
 	"llsct-pipeview": {"sw": "llsct", "sim": "llsct", "hwmode": "llsct-pipeview"},
 	"llsct-arch": {"sw": "llsct", "sim": "llsct", "hwmode": "llsct-arch"},
-	"llsct-spectre": {"sw": "llsct", "sim": "llsct", "hwmode": "llsct-spectre"}
+	"llsct-spectre": {"sw": "llsct", "sim": "llsct", "hwmode": "llsct-spectre"},
+
+	"unsafe-ct":  {"sw": "llsct-ct",   "sim": "base",  "hwmode": "base"},
+	"unsafe-sbox":{"sw": "llsct-sbox", "sim": "base",  "hwmode": "base"},
+
+	"llsct-ct-futuristic":   {"sw": "llsct-ct",   "sim": "llsct", "hwmode": "llsct"},
+	"llsct-sbox-futuristic": {"sw": "llsct-sbox", "sim": "llsct", "hwmode": "llsct"},
+	"llsct-ct-spectre":   {"sw": "llsct-ct",   "sim": "llsct", "hwmode": "llsct-spectre"},
+	"llsct-sbox-spectre": {"sw": "llsct-sbox", "sim": "llsct", "hwmode": "llsct-spectre"},
+
+	"spt-ct-futuristic": {"sw": "llsct-ct", "sim": "spt", "hwmode": "spt"},
+	"spt-ct-spectre": {"sw": "llsct-ct", "sim": "spt", "hwmode": "spt-spectre"},
+
+	"stt-sbox-futuristic": {"sw": "llsct-sbox", "sim": "stt", "hwmode": "stt"},
+	"stt-sbox-spectre": {"sw": "llsct-sbox", "sim": "stt", "hwmode": "stt-spectre"}
     }
 }

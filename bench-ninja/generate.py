@@ -671,8 +671,10 @@ for exp_name, exp_config in config.exp.items():
                 '--cpu-type=X86O3CPU',
                 f'--mem-size={get_mem(bench_name)}',
                 '--caches',
-                '--l1d_size=64kB',
-                '--l1i_size=16kB',
+                '--l1d_size=32kB', '--l1d_assoc=8',
+                '--l1i_size=32kB', '--l1i_assoc=8',
+                '--l2_size=256kB', '--l2_assoc=16',
+                '--l3_size=2mB', '--l3_assoc=16',
                 f'--checkpoint-dir={os.path.abspath(cpt_dir)}',
                 '--restore-simpoint-checkpoint',
                 f'--checkpoint-restore={cpt_idx + 1}',
@@ -782,7 +784,7 @@ for sw_name, sw_config in config.sw.items():
     for bench_name in benchspec:
         bench_dir = os.path.join(test_suite_build_dir, 'External', 'SPEC', 'CINT2017speed', bench_name)
         json = os.path.join(bench_dir, f'{bench_name}.json')
-        lit_cmd = ['taskset', '-c0', llvm_lit_exe, bench_dir, '-o', json]
+        lit_cmd = ['taskset', '-c', '0', llvm_lit_exe, bench_dir, '-o', json]
         ninja.build(
             outputs = json,
             rule = 'custom-command',

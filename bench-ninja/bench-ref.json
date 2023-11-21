@@ -1,0 +1,45 @@
+{
+    "600.perlbench_s": {
+	"args": "-I./lib checkspam.pl 2500 5 25 11 150 1 1 1 1 > checkspam.2500.5.25.11.150.1.1.1.1.out",
+	"verify": "%b/fpcmp-target -i compare/checkspam.2500.5.25.11.150.1.1.1.1.out checkspam.2500.5.25.11.150.1.1.1.1.out"
+    },
+    "602.gcc_s": {
+	"args": "gcc-pp.c -O5 -fipa-pta -o gcc-pp.opts-O5_-fipa-pta.s",
+	"outputs": ["gcc-pp.opts-O5_-fipa-pta.s"],
+	"verify": "%b/fpcmp-target -i compare/gcc-pp.opts-O5_-fipa-pta.s gcc-pp.opts-O5_-fipa-pta.s"
+    },
+    "605.mcf_s": {
+	"args": "inp.in > inp.out",
+	"verify": [
+	    "%b/fpcmp-target -i compare/inp.out inp.out",
+	    "%b/fpcmp-target -i compare/mcf.out mcf.out"
+	],
+	"mem": "16GB"
+    },
+    "620.omnetpp_s": {
+	"args": "-c General -r 0 > omnetpp.General-0.out",
+	"verify": "%b/fpcmp-target -a 0.000001 -r 0.00001 -i compare/General-0.sca General-0.sca"
+    },
+    "625.x264_s": {
+	"args": "--pass 1 --stats x264_stats.log --bitrate 1000 --frames 1000 -o BuckBunny_New.264 BuckBunny.yuv 1280x720",
+	"outputs": [
+	    "BuckBunny_New.264",
+	    "x264_stats.log",
+	    "x264_stats.log.mbtree"
+	],
+	"verify": "true"
+    },
+    "631.deepsjeng_s": {
+	"args": "ref.txt > ref.out",
+	"verify": "%b/fpcmp-target -i compare/ref.out ref.out"
+    },
+    "641.leela_s": {
+	"args": "ref.sgf > ref.out",
+	"verify": "%b/fpcmp-target -i compare/ref.out ref.out"
+    },
+    "657.xz_s": {
+	"args": "cpu2006docs.tar.xz 6643 055ce243071129412e9dd0b3b69a21654033a9b723d874b2015c774fac1553d9713be561ca86f74e4f16f22e664fc17a79f30caa5ad2c04fbc447549c2810fae 1036078272 1111795472 4 > cpu2006docs.tar-6643-4.out",
+	"verify": "%b/fpcmp-target -i compare/cpu2006docs.tar-6643-4.out cpu2006docs.tar-6643-4.out",
+	"mem": "32GB"
+    }
+}

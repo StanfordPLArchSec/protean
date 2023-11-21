@@ -15,6 +15,10 @@ def resolve_inheritance(d: dict) -> dict:
     resolved = dict()
 
     def check_resolved(key) -> bool:
+        if key not in d:
+            print(f'missing key {key} from dict:', file=sys.stderr)
+            print(d, file=sys.stderr)
+            exit(1)
         return 'inherit' not in d[key]
 
     found_unresolved = True
