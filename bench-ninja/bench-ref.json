@@ -20,6 +20,10 @@
 	"args": "-c General -r 0 > omnetpp.General-0.out",
 	"verify": "%b/fpcmp-target -a 0.000001 -r 0.00001 -i compare/General-0.sca General-0.sca"
     },
+    "623.xalancbmk_s": {
+	"args": "-v t5.xml xalanc.xsl > ref-t5.out",
+	"verify": "%b/fpcmp-target -i compare/ref-t5.out ref-t5.out"
+    },
     "625.x264_s": {
 	"args": "--pass 1 --stats x264_stats.log --bitrate 1000 --frames 1000 -o BuckBunny_New.264 BuckBunny.yuv 1280x720",
 	"outputs": [
@@ -38,6 +42,7 @@
 	"verify": "%b/fpcmp-target -i compare/ref.out ref.out"
     },
     "657.xz_s": {
+	"skip": 1,
 	"args": "cpu2006docs.tar.xz 6643 055ce243071129412e9dd0b3b69a21654033a9b723d874b2015c774fac1553d9713be561ca86f74e4f16f22e664fc17a79f30caa5ad2c04fbc447549c2810fae 1036078272 1111795472 4 > cpu2006docs.tar-6643-4.out",
 	"verify": "%b/fpcmp-target -i compare/cpu2006docs.tar-6643-4.out cpu2006docs.tar-6643-4.out",
 	"mem": "32GB"
