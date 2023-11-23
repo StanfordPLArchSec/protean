@@ -1,6 +1,8 @@
 {
     "vars": {
 	"checkpoint-sim": "base",
+	"pin": "../pin/pin",
+	"pinpoints": "../tools/build/libbbtrace.so",
 	"valgrind": "../valgrind/install/bin/valgrind",
 	"interval": 10000000,
 	"simpoint": "../simpoint/bin/simpoint",
@@ -39,7 +41,6 @@
 	"_llsct": {
 	    "inherit": "_default",
 	    "+cflags": [
-		"-fpass-plugin=/home/nmosier/llsct2/passes/build/libDeclassifyPass.so",
 		"-mllvm", "-llsct",
 		"-mllvm", "-llsct-declassify",
 		"-mllvm", "-llsct-cfi"
@@ -50,7 +51,7 @@
 	    "inherit": "_default",
 	    "cflags": ["-DontUseThisSwMode"]
 	},
-	"llsct-lto": {
+	"_llsct-lto": {
 	    "inherit": "_lto",
 	    "+ldflags": [
 		"-Wl,--load-pass-plugin=/home/nmosier/llsct2/passes/build/libDeclassifyPass.so",
@@ -58,22 +59,32 @@
 	    ],
 	    "+deps": ["../passes/build/libDeclassifyPass.so"]
 	},
+	"llsct-lto": {
+	    "inherit": "_default",
+	    "cflags": ["-DontUsethisSwMode"]
+	},
 	"llsct-lto-debug": {
 	    "inherit": "llsct-lto",
 	    "+ldflags": ["-Wl,--load-pass-plugin=/home/nmosier/llsct2/passes/build/libDebugIR.so"],
 	    "+deps": ["../passes/build/libDebugIR.so"]
 	},
+
 	"llsct-ct": {
 	    "inherit": "_llsct",
 	    "+cflags": ["-mllvm", "-tpe-privacy-policy=ct"]
 	},
-	"llsct-ctd": {
-	    "inherit": "_llsct",
-	    "+cflags": ["-mllvm", "-tpe-privacy-policy=ctdecl"]
-	},
 	"llsct-sbox": {
 	    "inherit": "_llsct",
 	    "+cflags": ["-mllvm", "-tpe-privacy-policy=sandbox"]
+	},
+
+	"llsct-lto-ct": {
+	    "inherit": "_llsct-lto",
+	    "+ldflags": ["-Wl,-mllvm,-tpe-privacy-policy=ct"]
+	},
+	"llsct-lto-sbox": {
+	    "inherit": "_llsct-lto",
+	    "+ldflags": ["-Wl,-mllvm,-tpe-privacy-policy=sandbox"]
 	}
     },
 
