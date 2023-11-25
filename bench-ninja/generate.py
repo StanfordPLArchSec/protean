@@ -102,6 +102,14 @@ ninja.rule(
     description = '($id) $desc',
 )
 
+## restat'ed custom command -- cmd, id, desc
+ninja.rule(
+    name = 'restated-custom-command',
+    command= '$cmd',
+    description = '($id) $desc',
+    restat = True,
+)   
+
 ## copy-checkpoint -- srcdir, dst, dep
 ninja.rule(
     name = 'copy-checkpoint',
@@ -112,7 +120,7 @@ ninja.rule(
 ## generate-leaf-ipc
 ninja.rule(
     name = 'generate-leaf-ipc',
-    command = 'if [ -f $stats ]; then grep -F system.switch_cpus.ipc $stats | tail -1 | awk \'{print $$2}\'; else echo 0.0; fi > $out',
+    command = 'if [ -s $stats ]; then grep -F system.switch_cpus.ipc $stats | tail -1 | awk \'{print $$2}\'; else echo 0.0; fi > $out',
     description = '($id) Generating ipc.txt',
 )
 
@@ -142,7 +150,7 @@ for sw_name, sw_config in config.sw.items():
 
     ### Configure libc
     libc_configure_deps = [sw_config.cc, sw_config.cxx, *sw_config.deps]
-    libc_configure_cflags = ' '.join(sw_config.cflags)
+    libc_configure_cflags = ' '.join(sw_config.cflags + sw_config.libc_cflags)
     libc_configure_ldflags = ' '.join(sw_config.ldflags)
     libc_configure_cmd = [
         'cmake', '-S', os.path.join(sw_config.llvm, 'llvm'), '-B', libc_build_dir,
@@ -152,6 +160,7 @@ for sw_name, sw_config in config.sw.items():
         f'-DCMAKE_C_FLAGS="{libc_configure_cflags}"',
         f'-DCMAKE_CXX_FLAGS="{libc_configure_cflags}"',
         f'-DLLVM_ENABLE_PROJECTS=libc',
+        '&&', 'ninja', '--quiet', '-C', libc_build_dir, 'clean', # really, should just remove the directory
     ]
     libc_build_file = os.path.join(libc_build_dir, 'build.ninja')
     ninja.build(
@@ -171,12 +180,11 @@ for sw_name, sw_config in config.sw.items():
     )
 
     ### Build libc
-    libc_build_cmd = ['ninja', '-C', libc_build_dir, 'llvmlibc']
+    libc_build_cmd = ['ninja', '--quiet', '-C', libc_build_dir, 'llvmlibc']
     libc_library = os.path.join(libc_build_dir, 'projects', 'libc', 'lib', 'libllvmlibc.a')
-    #### TODO: 'restat' this.
     ninja.build(
         outputs = libc_library,
-        rule = 'custom-command',
+        rule = 'restated-custom-command',
         inputs = libc_build_file,
         variables = {
             'cmd': ' '.join(libc_build_cmd),
@@ -195,7 +203,7 @@ for sw_name, sw_config in config.sw.items():
 
     ### Configure libcxx
     libcxx_configure_deps = [sw_config.cc, sw_config.cxx, *sw_config.deps]
-    libcxx_configure_cflags = ' '.join(sw_config.cflags)
+    libcxx_configure_cflags = ' '.join(sw_config.cflags + sw_config.libcxx_cflags)
     libcxx_configure_ldflags = ' '.join(sw_config.ldflags)
     libcxx_configure_cmd = [
         'cmake', '-S', os.path.join(sw_config.llvm, 'runtimes'), '-B', libcxx_build_dir,
@@ -204,9 +212,10 @@ for sw_name, sw_config in config.sw.items():
         f'-DCMAKE_CXX_COMPILER={sw_config.cxx}',
         f'-DCMAKE_C_FLAGS="{libcxx_configure_cflags}"',
         f'-DCMAKE_CXX_FLAGS="{libcxx_configure_cflags}"',
-        f'-DLLVM_ENABLE_RUNTIMES="libcxx;libcxxabi"'
+        f'-DLLVM_ENABLE_RUNTIMES="libcxx;libcxxabi"',
+        '&&', 'ninja', '--quiet', '-C', libcxx_build_dir, 'clean',
     ]
-    libcxx_build_file = os.path.join(libcxx_build_dir, 'ninja.build')
+    libcxx_build_file = os.path.join(libcxx_build_dir, 'build.ninja')
     ninja.build(
         outputs = libcxx_build_file,
         rule = 'custom-command',
@@ -228,7 +237,7 @@ for sw_name, sw_config in config.sw.items():
     libcxx_build_cmd = ['ninja', '-C', libcxx_build_dir, 'cxx', 'cxxabi']
     ninja.build(
         outputs = libcxx_libraries,
-        rule = 'custom-command',
+        rule = 'restated-custom-command',
         inputs = libcxx_build_file,
         variables = {
             'cmd': ' '.join(libcxx_build_cmd),
@@ -245,6 +254,7 @@ for sw_name, sw_config in config.sw.items():
     libcxx_library_dir = os.path.realpath(os.path.join(libcxx_build_dir, 'lib'))
 
     ## test-suite -- build LLVM's test suite
+    ### Configure test-suite
     test_suite_cflags = [*sw_config.cflags, '-nostdinc++', '-nostdlib++',
                          '-isystem', libcxx_include_dir]
     test_suite_ldflags = [
@@ -252,27 +262,33 @@ for sw_name, sw_config in config.sw.items():
         '-L', os.path.realpath(os.path.dirname(libc_library)), '-lllvmlibc', # libc
         '-nostdlib++', '-L', libcxx_library_dir, '-lc++', '-lc++abi'] # libcxx
     test_suite_build_dir = os.path.join(build_dir, 'test-suite')
-    variables = {
-        'src': sw_config.test_suite,
-        'build': test_suite_build_dir,
-        'cc': sw_config.cc,
-        'cxx': sw_config.cxx,
-        'build_type': sw_config.cmake_build_type,
-        'cflags': ' '.join(test_suite_cflags),
-        'ldflags': ' '.join(test_suite_ldflags),
-        'spec2017': sw_config.spec2017,
-        'run_type': sw_config.test_suite_run_type,
-        'id': f'sw->{sw_name}->spec2017',
-    }
     test_suite_configure_deps = [sw_config.cc, sw_config.cxx, *sw_config.deps, libc_library, *libcxx_libraries]
-
-    ### Configure test-suite
-    test_suite_build_file = os.path.join(build_dir, 'build.ninja')
+    test_suite_build_file = os.path.join(test_suite_build_dir, 'build.ninja')
+    test_suite_configure_cmd = [
+        'cmake',
+        '-S', sw_config.test_suite,
+        '-B', test_suite_build_dir,
+        f'-DCMAKE_C_COMPILER={sw_config.cc}',
+        f'-DCMAKE_CXX_COMPILER={sw_config.cxx}',
+        '-DCMAKE_CXX_STANDARD=11',
+        f'-DCMAKE_BUILD_TYPE={sw_config.cmake_build_type}',
+        '-DCMAKE_C_FLAGS="{}"'.format(' '.join(test_suite_cflags)),
+        '-DCMAKE_CXX_FLAGS="{}"'.format(' '.join(test_suite_cflags)),
+        '-DCMAKE_EXE_LINKER_FLAGS="{}"'.format(' '.join(test_suite_ldflags)),
+        '-DTEST_SUITE_SUBDIRS=External',
+        '-DTEST_SUITE_SPEC2017_ROOT=' + sw_config.spec2017,
+        '-DTEST_SUITE_RUN_TYPE=' + sw_config.test_suite_run_type,
+        '&&', 'ninja', '--quiet', '-C', test_suite_build_dir, 'clean',
+    ]
     ninja.build(
         outputs = test_suite_build_file,
-        rule = rule_test_suite_configure,
+        rule = 'custom-command',
         inputs = test_suite_configure_deps,
-        variables = variables,
+        variables = {
+            'cmd': ' '.join(test_suite_configure_cmd),
+            'id': f'{sw_name}->test-suite->configure',
+            'desc': 'Configure test-suite',
+        }
     )
     ninja.build(
         outputs = os.path.join(test_suite_build_dir, 'configure'),
@@ -282,11 +298,18 @@ for sw_name, sw_config in config.sw.items():
 
     ### Build test-suite 
     test_suite_build_outputs = [os.path.join(test_suite_build_dir, 'External', 'SPEC', 'CINT2017speed', bench_name, bench_name) for bench_name in benchspec]
+    test_suite_build_cmd = [
+        'ninja', '--quiet', '-C', test_suite_build_dir, 'fpcmp-target', 'imagevalidate_625-target', *benchspec,
+    ]
     ninja.build(
         outputs = test_suite_build_outputs,
-        rule = rule_test_suite_build,
+        rule = 'restated-custom-command',
         inputs = test_suite_build_file,
-        variables = variables,
+        variables = {
+            'cmd': ' '.join(test_suite_build_cmd),
+            'id': f'{sw_name}->test-suite->build',
+            'desc': 'Build test-suite',
+        },
     )
     ninja.build(
         outputs = os.path.join(test_suite_build_dir, 'build'),
@@ -460,14 +483,29 @@ for sw_name, sw_config in config.sw.items():
         bbv_outputs = [bbv_file, *bbv_run_outputs]
         assert len(bbv_outputs) >= 2
         bbv_run_args = ' '.join(bench_spec.args)
-        bbv_run_cmd = [
-            'cd', bbv_subdir, '&&',
-            config.vars.valgrind, '--tool=exp-bbv', '--bb-out-file=bbv.out', f'--interval-size={config.vars.interval}',
-            '--log-file=valout',
-            '--quiet',
-            '--', os.path.abspath(exe), *bench_spec.args,
-            '2>', 'stderr',
-        ]
+        if config.vars.bbv_impl == 'valgind':
+            bbv_run_cmd = [
+                'cd', bbv_subdir, '&&',
+                config.vars.valgrind, '--tool=exp-bbv', '--bb-out-file=bbv.out',
+                f'--interval-size={config.vars.interval}',
+                '--log-file=valout',
+                '--quiet',
+                '--', os.path.abspath(exe), *bench_spec.args, '2>stderr',
+            ]
+        elif config.vars.bbv_impl == 'pin':
+            bbv_run_cmd = [
+                'cd', bbv_subdir, '&&',
+                config.vars.pin, '-t', config.vars.pinpoints, '-o', 'bbv.out', '-interval-size', str(config.vars.interval),
+                # config.vars.valgrind, '--tool=exp-bbv', '--bb-out-file=bbv.out',
+                # f'--interval-size={config.vars.interval}',
+                # '--log-file=valout',
+                # '--quiet',
+                '--', os.path.abspath(exe), *bench_spec.args,
+                '2>', 'stderr',
+            ]
+        else:
+            print(f'error: unrecognized bbv profiler: {config.vars.bbv_impl}', file = sys.stderr)
+        
         if not bench_spec.stdout:
             bbv_run_cmd.extend(['>', 'stdout'])
         ninja.build(
@@ -477,11 +515,13 @@ for sw_name, sw_config in config.sw.items():
                 exe,
                 os.path.join('cpt', sw_name, bench_name, 'host', 'verify.stamp'),
                 os.path.join('cpt', sw_name, bench_name, 'bbv', 'copy.stamp'),
+                config.vars.pinpoints,
+                config.vars.pin
             ],
             variables = {
                 'cmd': ' '.join(bbv_run_cmd),
                 'id': f'{sw_name}->{bench_name}->bbv->run',
-                'desc': 'Profile using valgrind',
+                'desc': 'Profile using Intel Pin',
             },
         )
 
@@ -548,7 +588,7 @@ for sw_name, sw_config in config.sw.items():
         else:
             cpt_run_cmd.append(f'--output=stdout')
         
-        cpt_run_cmd.append(f' && expected_simpoints="$$(wc -l < {os.path.abspath(spt_simpoints)})" actual_simpoints="$$(echo {os.path.abspath(cpt_subdir)}/m5out/cpt.simpoint_* | wc -w)" && if [ "$$expected_simpoints" -ne "$$actual_simpoints" ]; then echo "unexpected number of checkpoints (expected $$expected_simpoints, got $$actual_simpoints)"; exit 1; fi')
+        # cpt_run_cmd.append(f' && expected_simpoints="$$(wc -l < {os.path.abspath(spt_simpoints)})" actual_simpoints="$$(echo {os.path.abspath(cpt_subdir)}/m5out/cpt.simpoint_* | wc -w)" && if [ "$$expected_simpoints" -ne "$$actual_simpoints" ]; then echo "unexpected number of checkpoints (expected $$expected_simpoints, got $$actual_simpoints)"; exit 1; fi')
         ninja.build(
             outputs = cpt_outputs,
             rule = 'stamped-custom-command',
@@ -661,7 +701,7 @@ for exp_name, exp_config in config.exp.items():
             # Resume from checkpoint
             run_stamp = os.path.join(subdir, 'run.stamp')
             exp_run_cmd = [
-                f'if [ -d {cpt_dir}/cpt.simpoint_{cpt_idx:02}_* ]; then '
+                f'if [ -d {cpt_dir}/cpt.simpoint_{cpt_idx+1:02}_* ]; then '
                 f'cd {subdir} && rm -rf m5out &&',
                 os.path.abspath(gem5_exe),
                 *hw_config.gem5_opts,

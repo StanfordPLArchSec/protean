@@ -8,7 +8,8 @@
 	"simpoint": "../simpoint/bin/simpoint",
 	"num_simpoints": 10,
 	"memsize": "8GB",
-	"warmup": 50000000
+	"warmup": 50000000,
+	"bbv-impl": "pin"
     },
     
     "sw": {
@@ -22,6 +23,8 @@
 	    "test_suite_run_type": "ref",
 	    "cflags": ["-fcf-protection=none", "-mno-avx"],
 	    "ldflags": ["-static", "-fuse-ld=lld", "-Wl,--allow-multiple-definition"],
+	    "libc_cflags": [],
+	    "libcxx_cflags": [],
 	    "deps": []
 	},
 	"_lto": {
@@ -45,7 +48,9 @@
 		"-mllvm", "-llsct-declassify",
 		"-mllvm", "-llsct-cfi"
 	    ],
-	    "+deps": ["../passes/build/libDeclassifyPass.so"]
+	    "+libc_cflags": ["-mllvm", "-tpe-ncsrs=0"],
+	    "+libcxx_cflags": ["-mllvm", "-tpe-ncsrs=0"],
+	    "+cflags": ["-fpass-plugin=/home/nmosier/llsct2/passes/build/libDeclassifyPass.so"]
 	},
 	"llsct": {
 	    "inherit": "_default",
@@ -85,6 +90,24 @@
 	"llsct-lto-sbox": {
 	    "inherit": "_llsct-lto",
 	    "+ldflags": ["-Wl,-mllvm,-tpe-privacy-policy=sandbox"]
+	},
+
+	"llsct-ct-none": {
+	    "inherit": "llsct-ct",
+	    "+cflags": ["-mllvm", "-tpe-privr=0", "-mllvm", "-tpe-privm=0", "-mllvm", "-tpe-ncsrs=0"]
+	},
+	"llsct-ct-ncsrs": {
+	    "inherit": "llsct-ct",
+	    "+cflags": ["-mllvm", "-tpe-privr=0", "-mllvm", "-tpe-privm=0"]
+	},
+	"llsct-ct-ncsrs+privm": {
+	    "inherit": "llsct-ct",
+	    "+cflags": ["-mllvm", "-tpe-privr=0"]
+	},
+
+	"llsct-sbox-none": {
+	    "inherit": "llsct-sbox",
+	    "+cflags": ["-mllvm", "-tpe-privr=0"]
 	}
     },
 
@@ -101,15 +124,18 @@
 	},
 	"llsct": {
 	    "inherit": "_default",
-	    "src": "../gem5"
+	    "src": "../gem5",
+	    "target": "build/X86/gem5.fast"
 	},
 	"spt": {
 	    "inherit": "_default",
-	    "src": "../spt"
+	    "src": "../spt",
+	    "target": "build/X86/gem5.fast"
 	},
 	"stt": {
 	    "inherit": "_default",
-	    "src": "../stt"
+	    "src": "../stt",
+	    "target": "build/X86/gem5.fast"
 	}
     },
 
@@ -125,7 +151,7 @@
 	"llsct-declassify-shadow": {
 	    "inherit": "_default",
 	    "+script_opts": [
-		"--llsct-declassify=1",
+		"--tpe-mem=1",
 		"--llsct-declassify-entries=-1",
 		"--llsct-declassify-impl=shadow"
 	    ]
@@ -133,14 +159,14 @@
 	"llsct-declassify-cache": {
 	    "inherit": "_default",
 	    "+script_opts": [
-		"--llsct-declassify=1",
+		"--tpe-mem=1",
 		"--llsct-declassify-impl=cache",
 		"--llsct-declassify-lines=1024"
 	    ]
 	},
 	"llsct": {
 	    "inherit": "llsct-declassify-cache",
-	    "+script_opts": ["--llsct-cfi=1"]
+	    "+script_opts": ["--tpe-reg=1"]
 	},
 	"llsct-pipeview": {
 	    "inherit": "llsct",
@@ -193,6 +219,7 @@
 	"llsct-sbox-futuristic": {"sw": "llsct-sbox", "sim": "llsct", "hwmode": "llsct"},
 	"llsct-ct-spectre":   {"sw": "llsct-ct",   "sim": "llsct", "hwmode": "llsct-spectre"},
 	"llsct-sbox-spectre": {"sw": "llsct-sbox", "sim": "llsct", "hwmode": "llsct-spectre"},
+	"llsct-ct-futuristic-mem": {"sw": "llsct-ct", "sim": "llsct", "hwmode": "llsct-declassify-cache"},
 
 	"spt-ct-futuristic": {"sw": "llsct-ct", "sim": "spt", "hwmode": "spt"},
 	"spt-ct-spectre": {"sw": "llsct-ct", "sim": "spt", "hwmode": "spt-spectre"},
