@@ -11,6 +11,7 @@ import ninja_syntax
 parser = argparse.ArgumentParser()
 parser.add_argument('config', help='Path to JSON configuration file')
 parser.add_argument('benchspec', help='Path to benchmark specifications')
+parser.add_argument('--run-type', required=True, choices=['ref', 'train'])
 args = parser.parse_args()
 
 with open(args.config) as f:
@@ -72,6 +73,7 @@ ninja.rule(
 )
 
 ## gem5-build
+ninja.pool('sim', 1)
 gem5_build_command = [ 'scons', '--quiet', '-C', '$src', '$out', '$sconsopts']
 rule_gem5_build = 'gem5-build'
 ninja.rule(
@@ -79,6 +81,7 @@ ninja.rule(
     command = ' '.join(gem5_build_command),
     description = '($id) Build gem5',
     restat = True,
+    pool = 'sim',
 )
 
 ## copy-resource-dir
@@ -277,7 +280,7 @@ for sw_name, sw_config in config.sw.items():
         '-DCMAKE_EXE_LINKER_FLAGS="{}"'.format(' '.join(test_suite_ldflags)),
         '-DTEST_SUITE_SUBDIRS=External',
         '-DTEST_SUITE_SPEC2017_ROOT=' + sw_config.spec2017,
-        '-DTEST_SUITE_RUN_TYPE=' + sw_config.test_suite_run_type,
+        '-DTEST_SUITE_RUN_TYPE=' + args.run_type,
         '&&', 'ninja', '--quiet', '-C', test_suite_build_dir, 'clean',
     ]
     ninja.build(
@@ -353,7 +356,7 @@ for sw_name, sw_config in config.sw.items():
     for bench_name, bench_spec in benchspec.items():
         bench_dir = os.path.join('sw', sw_name, 'test-suite', 'External', 'SPEC', 'CINT2017speed', bench_name)
         exe = os.path.join(bench_dir, bench_name)
-        rsrc_dir = os.path.join(bench_dir, f'run_{sw_config.test_suite_run_type}')
+        rsrc_dir = os.path.join(bench_dir, f'run_{args.run_type}')
 
         for subdir in ['host', 'kvm', 'bbv', 'cpt']:
             dir = os.path.join('cpt', sw_name, bench_name, subdir)
@@ -677,7 +680,7 @@ for exp_name, exp_config in config.exp.items():
     for bench_name, bench_spec in benchspec.items():
         bench_dir = os.path.join('sw', sw_name, 'test-suite', 'External', 'SPEC', 'CINT2017speed', bench_name)
         bench_exe = os.path.join(bench_dir, bench_name)
-        rsrc_dir = os.path.join(bench_dir, f'run_{sw_config.test_suite_run_type}')
+        rsrc_dir = os.path.join(bench_dir, f'run_{args.run_type}')
         cpt_dir = os.path.join('cpt', sw_name, bench_name, 'cpt', 'm5out')
         sim_run_args = ' '.join(bench_spec.litargs)
 
@@ -843,5 +846,3 @@ for sw_name, sw_config in config.sw.items():
         rule = 'phony',
         inputs = all_jsons,
     )
-
-    

@@ -42,9 +42,12 @@
 	"verify": "%b/fpcmp-target -i compare/ref.out ref.out"
     },
     "657.xz_s": {
+	"args": "input.combined.xz 40 a841f68f38572a49d86226b7ff5baeb31bd19dc637a922a972b2e6d1257a890f6a544ecab967c313e370478c74f760eb229d4eef8a8d2836d233d3e9dd1430bf 6356684 -1 8 > input.combined-40-8.out",
+	"verify": "true"
+    },
+    "657.xz_s:ref": {
 	"skip": 1,
 	"args": "cpu2006docs.tar.xz 6643 055ce243071129412e9dd0b3b69a21654033a9b723d874b2015c774fac1553d9713be561ca86f74e4f16f22e664fc17a79f30caa5ad2c04fbc447549c2810fae 1036078272 1111795472 4 > cpu2006docs.tar-6643-4.out",
-	"verify": "%b/fpcmp-target -i compare/cpu2006docs.tar-6643-4.out cpu2006docs.tar-6643-4.out",
-	"mem": "32GB"
+	"verify": "true"
     }
 }

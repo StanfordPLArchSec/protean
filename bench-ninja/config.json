@@ -9,7 +9,8 @@
 	"num_simpoints": 10,
 	"memsize": "8GB",
 	"warmup": 50000000,
-	"bbv-impl": "pin"
+	"bbv-impl": "pin",
+	"cfitool": "../tools/build/libCFI.so"
     },
     
     "sw": {
@@ -20,7 +21,6 @@
 	    "cc": "../llvm/build/bin/clang",
 	    "cxx": "../llvm/build/bin/clang++",
 	    "cmake_build_type": "Release",
-	    "test_suite_run_type": "ref",
 	    "cflags": ["-fcf-protection=none", "-mno-avx"],
 	    "ldflags": ["-static", "-fuse-ld=lld", "-Wl,--allow-multiple-definition"],
 	    "libc_cflags": [],
@@ -46,11 +46,11 @@
 	    "+cflags": [
 		"-mllvm", "-llsct",
 		"-mllvm", "-llsct-declassify",
-		"-mllvm", "-llsct-cfi"
+		"-mllvm", "-llsct-cfi",
+		"-fpass-plugin=/home/nmosier/llsct2/passes/build/libDeclassifyPass.so"
 	    ],
 	    "+libc_cflags": ["-mllvm", "-tpe-ncsrs=0"],
-	    "+libcxx_cflags": ["-mllvm", "-tpe-ncsrs=0"],
-	    "+cflags": ["-fpass-plugin=/home/nmosier/llsct2/passes/build/libDeclassifyPass.so"]
+	    "+libcxx_cflags": ["-mllvm", "-tpe-ncsrs=0"]
 	},
 	"llsct": {
 	    "inherit": "_default",
@@ -108,6 +108,10 @@
 	"llsct-sbox-none": {
 	    "inherit": "llsct-sbox",
 	    "+cflags": ["-mllvm", "-tpe-privr=0"]
+	},
+	"llsct-ct-simple": {
+	    "inherit": "llsct-ct",
+	    "+cflags": ["-mllvm", "-tpe-args=0"]
 	}
     },
 
@@ -124,8 +128,7 @@
 	},
 	"llsct": {
 	    "inherit": "_default",
-	    "src": "../gem5",
-	    "target": "build/X86/gem5.fast"
+	    "src": "../gem5"
 	},
 	"spt": {
 	    "inherit": "_default",
@@ -142,18 +145,24 @@
     "hwmode": {
 	"_default": {
 	    "gem5_opts": [],
-	    "script_opts": []
+	    "script_opts": ["--ruby"]
 	},
 
 	"base": {
 	    "inherit": "_default"
 	},
-	"llsct-declassify-shadow": {
+	"llsct-declassify-shadowmem": {
 	    "inherit": "_default",
 	    "+script_opts": [
 		"--tpe-mem=1",
-		"--llsct-declassify-entries=-1",
-		"--llsct-declassify-impl=shadow"
+		"--llsct-declassify-impl=shadowmem"
+	    ]
+	},
+	"llsct-declassify-shadowl1": {
+	    "inherit": "_default",
+	    "+script_opts": [
+		"--tpe-mem=1",
+		"--llsct-declassify-impl=shadowl1"
 	    ]
 	},
 	"llsct-declassify-cache": {
@@ -164,8 +173,17 @@
 		"--llsct-declassify-lines=1024"
 	    ]
 	},
+
 	"llsct": {
 	    "inherit": "llsct-declassify-cache",
+	    "+script_opts": ["--tpe-reg=1"]
+	},
+	"llsct-shadowmem": {
+	    "inherit": "llsct-declassify-shadowmem",
+	    "+script_opts": ["--tpe-reg=1"]
+	},
+	"llsct-shadowl1": {
+	    "inherit": "llsct-declassify-shadowl1",
 	    "+script_opts": ["--tpe-reg=1"]
 	},
 	"llsct-pipeview": {
@@ -201,12 +219,12 @@
     "exp": {
 	"unsafe-baseline": {"sw": "llsct", "sim": "base", "hwmode": "base"},
 	"unsafe-baseline-lto": {"sw": "llsct-lto", "sim": "base", "hwmode": "base"},
-	"llsct": {"sw": "llsct", "sim": "llsct", "hwmode": "llsct-declassify-shadow"},
+	"llsct": {"sw": "llsct", "sim": "llsct", "hwmode": "llsct-declassify-shadowmem"},
 	"llsct-lto": {"inherit": "llsct", "sw": "llsct-lto"},
 	"llsct-lto-unsafe": {"inherit": "llsct-lto", "hwmode": "base"},
 	"llsct-cache": {"sw": "llsct", "sim": "llsct", "hwmode": "llsct-declassify-cache"},
 	"llsct-lto-cache": {"sw": "llsct-lto", "sim": "llsct", "hwmode": "llsct-declassify-cache"},
-	"llsct-lto-debug": {"sw": "llsct-lto-debug", "sim": "llsct", "hwmode": "llsct-declassify-shadow"},
+	"llsct-lto-debug": {"sw": "llsct-lto-debug", "sim": "llsct", "hwmode": "llsct-declassify-shadowmem"},
 	"llsct-cfi": {"sw": "llsct", "sim": "llsct", "hwmode": "llsct"},
 	"llsct-pipeview": {"sw": "llsct", "sim": "llsct", "hwmode": "llsct-pipeview"},
 	"llsct-arch": {"sw": "llsct", "sim": "llsct", "hwmode": "llsct-arch"},
@@ -216,11 +234,25 @@
 	"unsafe-sbox":{"sw": "llsct-sbox", "sim": "base",  "hwmode": "base"},
 
 	"llsct-ct-futuristic":   {"sw": "llsct-ct",   "sim": "llsct", "hwmode": "llsct"},
-	"llsct-sbox-futuristic": {"sw": "llsct-sbox", "sim": "llsct", "hwmode": "llsct"},
+	"llsct-ct-futuristic-mem-cache": {"sw": "llsct-ct", "sim": "llsct", "hwmode": "llsct-declassify-cache"},
+	"llsct-ct-futuristic-none": {"sw": "llsct-ct", "sim": "llsct", "hwmode": "base"},
+	"llsct-ct-futuristic-mem-shadowmem": {"sw": "llsct-ct", "sim": "llsct", "hwmode": "llsct-declassify-shadowmem"},
+	"llsct-ct-futuristic-mem-shadowl1": {"sw": "llsct-ct", "sim": "llsct", "hwmode": "llsct-declassify-shadowl1"},
 	"llsct-ct-spectre":   {"sw": "llsct-ct",   "sim": "llsct", "hwmode": "llsct-spectre"},
-	"llsct-sbox-spectre": {"sw": "llsct-sbox", "sim": "llsct", "hwmode": "llsct-spectre"},
-	"llsct-ct-futuristic-mem": {"sw": "llsct-ct", "sim": "llsct", "hwmode": "llsct-declassify-cache"},
 
+	"llsct-ct-futuristic-shadowmem": {"sw": "llsct-ct", "sim": "llsct", "hwmode": "llsct-shadowmem"},
+	"llsct-ct-futuristic-shadowl1": {"sw": "llsct-ct", "sim": "llsct", "hwmode": "llsct-shadowl1"},
+
+	"llsct-sbox-futuristic": {"sw": "llsct-sbox", "sim": "llsct", "hwmode": "llsct"},
+	"llsct-sbox-futuristic-mem-cache": {"sw": "llsct-sbox", "sim": "llsct", "hwmode": "llsct-declassify-cache"},
+	"llsct-sbox-futuristic-none": {"sw": "llsct-sbox", "sim": "llsct", "hwmode": "base"},
+	"llsct-sbox-futuristic-mem-shadowmem": {"sw": "llsct-sbox", "sim": "llsct", "hwmode": "llsct-declassify-shadowmem"},
+	"llsct-sbox-futuristic-mem-shadowl1": {"sw": "llsct-sbox", "sim": "llsct", "hwmode": "llsct-declassify-shadowl1"},
+	"llsct-sbox-spectre": {"sw": "llsct-sbox", "sim": "llsct", "hwmode": "llsct-spectre"},
+
+	"llsct-sbox-futuristic-shadowmem": {"sw": "llsct-sbox", "sim": "llsct", "hwmode": "llsct-shadowmem"},
+	"llsct-sbox-futuristic-shadowl1": {"sw": "llsct-sbox", "sim": "llsct", "hwmode": "llsct-shadowl1"},
+	
 	"spt-ct-futuristic": {"sw": "llsct-ct", "sim": "spt", "hwmode": "spt"},
 	"spt-ct-spectre": {"sw": "llsct-ct", "sim": "spt", "hwmode": "spt-spectre"},
 
