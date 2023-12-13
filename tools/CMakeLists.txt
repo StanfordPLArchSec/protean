@@ -33,3 +33,22 @@ add_pin_tool(AccessSizes AccessSizes.cpp)
 add_pin_tool(RFSizes RFSizes.cpp)
 
 add_executable(popcount popcount.c)
+
+add_pin_tool(CFI CFI.cpp)
+
+add_pin_tool(Count Count.cpp)
+
+add_executable(cfitool cfitool.c)
+
+add_executable(validate-trace validate-trace.cc)
+target_link_libraries(validate-trace PRIVATE capstone elf)
+
+add_executable(validate-trace2 validate-trace2.cc)
+
+
+add_pin_tool(bbtrace bbtrace.cpp)
+
+
+add_pin_tool(PrintInsts PrintInsts.cpp)
+
+add_pin_tool(bbtrace2 bbtrace2.cpp)
