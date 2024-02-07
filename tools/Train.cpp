@@ -24,12 +24,24 @@ static constexpr size_t kAlignment = 1 << kAlignmentBits;
 
 
 
-struct Allocation {
-  
-  ADDRINT base;
-  ADDRINT size;
+class Allocation {
+public:
+  Allocation(ADDRINT base, ADDRINT size): base_(base), size_(size), taint(size, true) {}
 
-  Allocation(ADDRINT base, ADDRINT size): base(base), size(size) {}
+  ADDRINT base() const { return base_; }
+  ADDRINT size() const { return size_; }
+  ADDRINT end() const { return base() + size(); }
+  void realloc(size_t newbase, size_t newsize) {
+    taint.resize(newsize, true);
+    size_ = newsize;
+    base_ = newbase;
+  }
+
+private:
+  ADDRINT base_;
+  ADDRINT size_;
+  std::vector<bool> taint; // true = public, false = private.
+
 };
 using AllocationList = std::list<Allocation>;
 using AllocationIt = AllocationList::iterator;
@@ -41,7 +53,7 @@ static void handle_alloc(ADDRINT base, ADDRINT size) {
   allocations.push_front(Allocation(base, size));
   auto it = allocations.begin();
   assert(base % kAlignment == 0); // malloc should return 16-byte-aligned allocations.
-  for (ADDRINT ptr = base; ptr < base + it->size; ptr += kAlignment) {
+  for (ADDRINT ptr = it->base(); ptr < it->end(); ptr += kAlignment) {
     assert(shadow[ptr] == allocations.end());
     shadow[ptr] = it;
   }
@@ -52,8 +64,8 @@ static void handle_realloc(ADDRINT oldbase, ADDRINT newbase, ADDRINT newsize) {
 
   auto it = shadow[oldbase];
   assert(it != allocations.end());
-  assert(it->base == oldbase);
-  const ADDRINT oldsize = it->size;
+  assert(it->base() == oldbase);
+  const ADDRINT oldsize = it->size();
 
   // Reset old allocation region.
   for (ADDRINT oldptr = oldbase; oldptr < oldbase + oldsize; oldptr += kAlignment) {
@@ -70,8 +82,7 @@ static void handle_realloc(ADDRINT oldbase, ADDRINT newbase, ADDRINT newsize) {
   }
 
   // Update allocation object.
-  it->base = newbase;
-  it->size = newsize;
+  it->realloc(newbase, newsize);
 }
 
 static size_t arg_malloc_size;
@@ -135,8 +146,8 @@ static void Handle_free(ADDRINT base) {
   log() << "free(" << (void *) base << ")\n";
   auto it = shadow[base];
   assert(it != allocations.end());
-  assert(it->base == base);
-  for (ADDRINT ptr = base; ptr < base + it->size; ptr += kAlignment) {
+  assert(it->base() == base);
+  for (ADDRINT ptr = base; ptr < it->end(); ptr += kAlignment) {
     assert(shadow[ptr] == it);
     shadow[ptr] = allocations.end();
   }
