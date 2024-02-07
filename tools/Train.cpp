@@ -19,7 +19,10 @@ static std::ostream &log() {
 }
 
 // TODO: Support multi-threaded programs.
-static constexpr size_t kAlignment = 16;
+static constexpr size_t kAlignmentBits = 4;
+static constexpr size_t kAlignment = 1 << kAlignmentBits;
+
+
 
 struct Allocation {
   
@@ -32,7 +35,7 @@ using AllocationList = std::list<Allocation>;
 using AllocationIt = AllocationList::iterator;
 
 static std::list<Allocation> allocations;
-static ShadowMemory<AllocationIt, 4, kAlignment> shadow(allocations.end());
+static ShadowMemory<AllocationIt, kAlignmentBits, 16> shadow(allocations.end());
 
 static void handle_alloc(ADDRINT base, ADDRINT size) {
   allocations.push_front(Allocation(base, size));
@@ -42,6 +45,33 @@ static void handle_alloc(ADDRINT base, ADDRINT size) {
     assert(shadow[ptr] == allocations.end());
     shadow[ptr] = it;
   }
+}
+
+static void handle_realloc(ADDRINT oldbase, ADDRINT newbase, ADDRINT newsize) {
+  assert(oldbase && newbase);
+
+  auto it = shadow[oldbase];
+  assert(it != allocations.end());
+  assert(it->base == oldbase);
+  const ADDRINT oldsize = it->size;
+
+  // Reset old allocation region.
+  for (ADDRINT oldptr = oldbase; oldptr < oldbase + oldsize; oldptr += kAlignment) {
+    auto &itref = shadow[oldptr];
+    assert(itref == it);
+    itref = allocations.end();
+  }
+
+  // Fill newly allocated region with same old iterators.
+  for (ADDRINT newptr = newbase; newptr < newbase + newsize; newptr += kAlignment) {
+    auto &itref = shadow[newptr];
+    assert(itref == allocations.end());
+    itref = it;
+  }
+
+  // Update allocation object.
+  it->base = newbase;
+  it->size = newsize;
 }
 
 static size_t arg_malloc_size;
@@ -68,12 +98,37 @@ static void Handle_calloc_after(ADDRINT base) {
     handle_alloc(base, arg_calloc_nmemb * arg_calloc_size);
 }
 
-static void Handle_realloc(void *ptr, ADDRINT size) {
-  log() << "realloc(" << ptr << ", " << size << ")\n";
+static ADDRINT arg_realloc_oldbase;
+static size_t arg_realloc_newsize;
+static void Handle_realloc_before(ADDRINT ptr, ADDRINT size) {
+  arg_realloc_oldbase = ptr;
+  arg_realloc_newsize = size;
+  log() << "realloc(" << (void *) ptr << ", " << size << ") = ";
 }
 
-static void Handle_reallocarray(void *ptr, ADDRINT nmemb, ADDRINT size) {
-  log() << "reallocarray(" << ptr << ", " << nmemb << ", " << size << ")\n";
+static void Handle_realloc_after(ADDRINT newbase) {
+  log() << (void *) newbase << "\n";
+  if (!newbase)
+    return;
+  handle_realloc(arg_realloc_oldbase, newbase, arg_realloc_newsize);
+}
+
+
+static ADDRINT arg_reallocarray_ptr;
+static ADDRINT arg_reallocarray_nmemb;
+static ADDRINT arg_reallocarray_size;
+static void Handle_reallocarray_before(ADDRINT ptr, ADDRINT nmemb, ADDRINT size) {
+  arg_reallocarray_ptr = ptr;
+  arg_reallocarray_nmemb = nmemb;
+  arg_reallocarray_size = size;
+  log() << "reallocarray(" << (void *) ptr << ", " << nmemb << ", " << size << ") = ";
+}
+
+static void Handle_reallocarray_after(ADDRINT newbase) {
+  log() << (void *) newbase << "\n";
+  if (!newbase)
+    return;
+  handle_realloc(arg_reallocarray_ptr, newbase, arg_reallocarray_nmemb * arg_reallocarray_size);
 }
 
 static void Handle_free(ADDRINT base) {
@@ -112,18 +167,22 @@ static void HandleRoutine(RTN rtn, void *) {
     RTN_Close(rtn);
   } else if (name == "__wrap_realloc") {
     RTN_Open(rtn);
-    RTN_InsertCall(rtn, IPOINT_BEFORE, (AFUNPTR) Handle_realloc,
+    RTN_InsertCall(rtn, IPOINT_BEFORE, (AFUNPTR) Handle_realloc_before,
 		   IARG_FUNCARG_ENTRYPOINT_VALUE, 0,
 		   IARG_FUNCARG_ENTRYPOINT_VALUE, 1,
 		   IARG_END);
+    RTN_InsertCall(rtn, IPOINT_AFTER, (AFUNPTR) Handle_realloc_after,
+		   IARG_FUNCRET_EXITPOINT_VALUE, IARG_END);
     RTN_Close(rtn);
   } else if (name == "__wrap_reallocarray") {
     RTN_Open(rtn);
-    RTN_InsertCall(rtn, IPOINT_BEFORE, (AFUNPTR) Handle_reallocarray,
+    RTN_InsertCall(rtn, IPOINT_BEFORE, (AFUNPTR) Handle_reallocarray_before,
 		   IARG_FUNCARG_ENTRYPOINT_VALUE, 0,
 		   IARG_FUNCARG_ENTRYPOINT_VALUE, 1,
 		   IARG_FUNCARG_ENTRYPOINT_VALUE, 2,
 		   IARG_END);
+    RTN_InsertCall(rtn, IPOINT_AFTER, (AFUNPTR) Handle_reallocarray_after,
+		   IARG_FUNCRET_EXITPOINT_VALUE, IARG_END);
     RTN_Close(rtn);
   } else if (name == "__wrap_free") {
     RTN_Open(rtn);

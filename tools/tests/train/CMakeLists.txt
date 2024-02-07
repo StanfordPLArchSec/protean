@@ -12,5 +12,5 @@ endfunction()
 
 add_train_test(train_malloc malloc.c)
 add_train_test(train_calloc calloc.c)
-
-
+add_train_test(train_realloc realloc.c)
+add_train_test(train_reallocarray reallocarray.c)
