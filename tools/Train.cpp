@@ -36,6 +36,19 @@ public:
     size_ = newsize;
     base_ = newbase;
   }
+  void markPrivate(size_t effbase, size_t effsize) {
+    const auto effend = effbase + effsize;
+    assert(effbase >= base() && effbase + effsize <= end());
+    for (size_t effaddr = effbase; effaddr < effend; ++effaddr) {
+      taint[effaddr - base()] = false;
+    }
+  }
+
+  void print(std::ostream &os) const {
+    os << "base=" << (void *) base() << ", size=" << size() << ", taint=";
+    for (bool t : taint)
+      os << t;
+  }
 
 private:
   ADDRINT base_;
@@ -60,7 +73,8 @@ static void handle_alloc(ADDRINT base, ADDRINT size) {
 }
 
 static void handle_realloc(ADDRINT oldbase, ADDRINT newbase, ADDRINT newsize) {
-  assert(oldbase && newbase);
+  assert(oldbase);
+  assert(newbase);
 
   auto it = shadow[oldbase];
   assert(it != allocations.end());
@@ -121,7 +135,10 @@ static void Handle_realloc_after(ADDRINT newbase) {
   log() << (void *) newbase << "\n";
   if (!newbase)
     return;
-  handle_realloc(arg_realloc_oldbase, newbase, arg_realloc_newsize);
+  if (arg_realloc_oldbase)
+    handle_realloc(arg_realloc_oldbase, newbase, arg_realloc_newsize);
+  else
+    handle_alloc(newbase, arg_realloc_newsize);
 }
 
 
@@ -139,11 +156,17 @@ static void Handle_reallocarray_after(ADDRINT newbase) {
   log() << (void *) newbase << "\n";
   if (!newbase)
     return;
-  handle_realloc(arg_reallocarray_ptr, newbase, arg_reallocarray_nmemb * arg_reallocarray_size);
+  const size_t newsize = arg_reallocarray_nmemb * arg_reallocarray_size;
+  if (arg_realloc_oldbase)
+    handle_realloc(arg_reallocarray_ptr, newbase, newsize);
+  else
+    handle_alloc(newbase, newsize);
 }
 
 static void Handle_free(ADDRINT base) {
-  log() << "free(" << (void *) base << ")\n";
+  log() << "free(" << (void *) base << ") = ";
+  if (!base)
+    return;
   auto it = shadow[base];
   assert(it != allocations.end());
   assert(it->base() == base);
@@ -151,11 +174,75 @@ static void Handle_free(ADDRINT base) {
     assert(shadow[ptr] == it);
     shadow[ptr] = allocations.end();
   }
+
+  // Print allocation info.
+  it->print(log());
+  log() << "\n";
+  
   allocations.erase(it);
 }
 
+
+static void RecordPrivateStore(ADDRINT effaddr, UINT32 effsize) {
+  assert(effsize > 0);
+  assert(effsize <= kAlignment);
+
+  // If spans 16-byte boundary, split into two accesses.
+  if (effaddr / kAlignment != (effaddr + effsize - 1) / kAlignment) {
+    const ADDRINT lo_begin = effaddr;
+    const ADDRINT lo_end = (effaddr / kAlignment + 1) * kAlignment;
+    const ADDRINT hi_begin = lo_end;
+    const ADDRINT hi_end = effaddr + effsize;
+    RecordPrivateStore(lo_begin, lo_end - lo_begin);
+    RecordPrivateStore(hi_begin, hi_end - hi_begin);
+    return;
+  }
+
+  // Is it in allocated memory?
+  const AllocationIt it = shadow[effaddr];
+  if (it == allocations.end()) {
+    // std::cerr << "not in heap: " << (void *) effaddr << "\n";
+    return;
+  }
+  
+  it->markPrivate(effaddr, effsize);
+}
+
+
 static void PrintRoutineName(const char *s) {
   log() << s << "\n";
+}
+
+static void HandleInstruction(INS ins, void *) {
+  const auto num_memops = INS_MemoryOperandCount(ins);
+  if (num_memops == 0)
+    return;
+
+  if (INS_HasScatteredMemoryAccess(ins)) {
+    std::cerr << "don't handle scattered memory accesses yet!\n";
+    abort();
+  }
+
+  bool is_public = true;
+  {
+    char buf[16];
+    PIN_SafeCopy(buf, (void *) INS_Address(ins), INS_Size(ins));
+    if (buf[0] == 0x36 /*SS*/ || (buf[0] == 0x66 && buf[1] == 0x36)) {
+      is_public = false;
+    }
+  }
+  if (is_public)
+    return;
+
+  for (auto i = 0; i < num_memops; ++i) {
+    const auto eff_size = INS_MemoryOperandSize(ins, i);
+    if (!INS_MemoryOperandIsWritten(ins, i))
+      continue;
+    INS_InsertPredicatedCall(ins, IPOINT_BEFORE, (AFUNPTR) RecordPrivateStore,
+			     IARG_MEMORYOP_EA, i,
+			     IARG_UINT32, eff_size,
+			     IARG_END);
+  }
 }
 
 static void HandleRoutine(RTN rtn, void *) {
@@ -233,6 +320,7 @@ int main(int argc, char *argv[]) {
 #endif
 
   RTN_AddInstrumentFunction(HandleRoutine, nullptr);
+  INS_AddInstrumentFunction(HandleInstruction, nullptr);
 
   log_.open(LogFile.Value());
 
