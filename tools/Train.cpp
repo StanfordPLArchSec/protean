@@ -52,16 +52,18 @@ class CallSite {
 public:
   void observeAlloc(size_t alloc_size) {
     ++num_allocs;
+    alloc_total += alloc_size;
+    
     assert(alloc_size > 0);
-    if (size == 0) {
-      size = alloc_size;
-      taint.resize(size, true);
+    if (common_size == 0) {
+      common_size = alloc_size;
+      taint.resize(common_size, true);
       return;
     }
     
-    const size_t old_size = this->size;
+    const size_t old_size = this->common_size;
     const size_t new_size = std::gcd(old_size, alloc_size);
-    this->size = new_size;
+    this->common_size = new_size;
     assert(new_size <= old_size);
     
     for (size_t i = new_size; i < old_size; ++i)
@@ -69,23 +71,26 @@ public:
     taint.resize(new_size);
   }
   void observeRealloc(size_t size) {
+    // FIXME: Not updating alloc_total? 
     observeAlloc(size);
   }
   void observeFree(const std::vector<bool> &free_taint) {
-    assert(size > 0 && taint.size() == size);
+    assert(common_size > 0 && taint.size() == common_size);
     assert(free_taint.size() >= taint.size() && free_taint.size() % taint.size() == 0);
     for (size_t i = 0; i < free_taint.size(); ++i)
-      taint[i % size] &= free_taint[i];
+      taint[i % common_size] &= free_taint[i];
   }
 
-  size_t getSize() const { return size; }
+  size_t getCommonSize() const { return common_size; }
   size_t getNumAllocs() const { return num_allocs; }
+  size_t getAllocTotal() const { return alloc_total; }
   const std::vector<bool> &getTaint() const { return taint; }
 
 private:
-  size_t size = 0;
+  size_t common_size = 0;
   std::vector<bool> taint;
   size_t num_allocs = 0;
+  size_t alloc_total = 0;
 };
 
 static std::vector<void *> backtrace;
@@ -424,7 +429,7 @@ static void Fini(int32_t code, void *) {
     if (callsite.getSize() == 1)
       continue;
 #endif
-    log() << (void *) inst << " " << callsite.getNumAllocs() << " " << callsite.getSize() << " ";
+    log() << (void *) inst << " " << callsite.getNumAllocs() << " " << callsite.getAllocTotal() << " ";
     for (bool b : callsite.getTaint())
       log() << b;
     log() << "\n";
