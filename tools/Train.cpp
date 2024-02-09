@@ -5,10 +5,17 @@
 #include <cassert>
 #include <list>
 #include <fstream>
+#include <numeric>
+#include <unordered_map>
 
 #include "ShadowMemory.h"
 
 static KNOB<std::string> LogFile(KNOB_MODE_WRITEONCE, "pintool", "l", "", "log file");
+static KNOB<unsigned> Verbose(KNOB_MODE_WRITEONCE, "pintool", "v", "0", "verbose");
+
+static unsigned verbose() {
+  return Verbose.Value();
+}
 
 static std::ofstream log_;
 static std::ostream &log() {
@@ -22,11 +29,47 @@ static std::ostream &log() {
 static constexpr size_t kAlignmentBits = 4;
 static constexpr size_t kAlignment = 1 << kAlignmentBits;
 
+static void get_backtrace(const CONTEXT *ctx, std::vector<void *> &bt) {
+  PIN_LockClient();
+  bt.resize(16);
+  while (PIN_Backtrace(ctx, bt.data(), bt.size()) == bt.size())
+    bt.resize(bt.size() * 2);
+  PIN_UnlockClient();
+}
 
+static void dump_backtrace(std::ostream &os, const CONTEXT *ctx) {
+  std::vector<void *> bt;
+  get_backtrace(ctx, bt);
+  for (void *p : bt)
+    os << "\t" << p << "\n";
+}
+
+class CallSite {
+public:
+  CallSite(size_t alloc_size): size_gcd(alloc_size) { ++num_allocs; }
+
+  void observeAlloc(size_t size) {
+    ++num_allocs;
+    size_gcd = std::gcd(size_gcd, size);
+  }
+  void observeRealloc(size_t size) {
+    observeAlloc(size);
+  }
+
+  size_t getSize() const { return size_gcd; }
+  size_t getNumAllocs() const { return num_allocs; }
+
+private:
+  size_t size_gcd;
+  size_t num_allocs = 0;
+};
+
+static std::vector<void *> backtrace;
+static std::unordered_map<ADDRINT, CallSite> callsites;
 
 class Allocation {
 public:
-  Allocation(ADDRINT base, ADDRINT size): base_(base), size_(size), taint(size, true) {}
+  Allocation(ADDRINT base, ADDRINT size, std::vector<void *> &&backtrace): base_(base), size_(size), taint(size, true), callstack(std::move(backtrace)) {}
 
   ADDRINT base() const { return base_; }
   ADDRINT size() const { return size_; }
@@ -50,10 +93,13 @@ public:
       os << t;
   }
 
+  const std::vector<void *> &getCallStack() const { return callstack; }
+  
 private:
   ADDRINT base_;
   ADDRINT size_;
   std::vector<bool> taint; // true = public, false = private.
+  std::vector<void *> callstack;
 
 };
 using AllocationList = std::list<Allocation>;
@@ -63,12 +109,22 @@ static std::list<Allocation> allocations;
 static ShadowMemory<AllocationIt, kAlignmentBits, 16> shadow(allocations.end());
 
 static void handle_alloc(ADDRINT base, ADDRINT size) {
-  allocations.push_front(Allocation(base, size));
+  allocations.push_front(Allocation(base, size, std::move(backtrace)));
   auto it = allocations.begin();
   assert(base % kAlignment == 0); // malloc should return 16-byte-aligned allocations.
   for (ADDRINT ptr = it->base(); ptr < it->end(); ptr += kAlignment) {
     assert(shadow[ptr] == allocations.end());
     shadow[ptr] = it;
+  }
+
+  // Update callsites as necessary.
+  for (void *callsite_ : it->getCallStack()) {
+    const ADDRINT callsite = reinterpret_cast<ADDRINT>(callsite_);
+    auto it = callsites.find(callsite);
+    if (it == callsites.end())
+      it = callsites.emplace(callsite, CallSite(size)).first;
+    else
+      it->second.observeAlloc(size);
   }
 }
 
@@ -97,42 +153,62 @@ static void handle_realloc(ADDRINT oldbase, ADDRINT newbase, ADDRINT newsize) {
 
   // Update allocation object.
   it->realloc(newbase, newsize);
+
+  for (void *callsite_ : it->getCallStack()) {
+    const ADDRINT callsite = reinterpret_cast<ADDRINT>(callsite_);
+    auto it = callsites.find(callsite);
+    if (it == callsites.end())
+      it = callsites.emplace(callsite, CallSite(newsize)).first;
+    else
+      it->second.observeRealloc(newsize);
+  }
 }
 
+// TODO: Assert no recursion!
 static size_t arg_malloc_size;
-static void Handle_malloc_before(ADDRINT size) {
+static void Handle_malloc_before(ADDRINT size, const CONTEXT *ctx) {
   arg_malloc_size = size;
-  log() << "malloc(" << size << ") = ";
+  if (verbose())
+    log() << "malloc(" << size << ") = ";
+  get_backtrace(ctx, backtrace);
 }
 static void Handle_malloc_after(ADDRINT base) {
-  log() << (void *) base << "\n";
+  if (verbose())
+    log() << (void *) base << "\n";
   if (base) 
     handle_alloc(base, arg_malloc_size);
+
 }
 
 static size_t arg_calloc_nmemb, arg_calloc_size;
-static void Handle_calloc_before(ADDRINT nmemb, ADDRINT size) {
+static void Handle_calloc_before(ADDRINT nmemb, ADDRINT size, const CONTEXT *ctx) {
   arg_calloc_nmemb = nmemb;
   arg_calloc_size = size;
-  log() << "calloc(" << nmemb << ", " << size << ") = ";
+  if (verbose())
+    log() << "calloc(" << nmemb << ", " << size << ") = ";
+  get_backtrace(ctx, backtrace);
 }
 
 static void Handle_calloc_after(ADDRINT base) {
-  log() << (void *) base << "\n";
+  if (verbose())
+    log() << (void *) base << "\n";
   if (base)
     handle_alloc(base, arg_calloc_nmemb * arg_calloc_size);
 }
 
 static ADDRINT arg_realloc_oldbase;
 static size_t arg_realloc_newsize;
-static void Handle_realloc_before(ADDRINT ptr, ADDRINT size) {
+static void Handle_realloc_before(ADDRINT ptr, ADDRINT size, const CONTEXT *ctx) {
   arg_realloc_oldbase = ptr;
   arg_realloc_newsize = size;
-  log() << "realloc(" << (void *) ptr << ", " << size << ") = ";
+  if (verbose())
+    log() << "realloc(" << (void *) ptr << ", " << size << ") = ";
+  get_backtrace(ctx, backtrace);
 }
 
 static void Handle_realloc_after(ADDRINT newbase) {
-  log() << (void *) newbase << "\n";
+  if (verbose())
+    log() << (void *) newbase << "\n";
   if (!newbase)
     return;
   if (arg_realloc_oldbase)
@@ -145,15 +221,18 @@ static void Handle_realloc_after(ADDRINT newbase) {
 static ADDRINT arg_reallocarray_ptr;
 static ADDRINT arg_reallocarray_nmemb;
 static ADDRINT arg_reallocarray_size;
-static void Handle_reallocarray_before(ADDRINT ptr, ADDRINT nmemb, ADDRINT size) {
+static void Handle_reallocarray_before(ADDRINT ptr, ADDRINT nmemb, ADDRINT size, const CONTEXT *ctx) {
   arg_reallocarray_ptr = ptr;
   arg_reallocarray_nmemb = nmemb;
   arg_reallocarray_size = size;
-  log() << "reallocarray(" << (void *) ptr << ", " << nmemb << ", " << size << ") = ";
+  if (verbose())
+    log() << "reallocarray(" << (void *) ptr << ", " << nmemb << ", " << size << ") = ";
+  get_backtrace(ctx, backtrace);
 }
 
-static void Handle_reallocarray_after(ADDRINT newbase) {
-  log() << (void *) newbase << "\n";
+static void Handle_reallocarray_after(ADDRINT newbase, const CONTEXT *ctx) {
+  if (verbose())
+    log() << (void *) newbase << "\n";
   if (!newbase)
     return;
   const size_t newsize = arg_reallocarray_nmemb * arg_reallocarray_size;
@@ -164,9 +243,13 @@ static void Handle_reallocarray_after(ADDRINT newbase) {
 }
 
 static void Handle_free(ADDRINT base) {
-  log() << "free(" << (void *) base << ") = ";
-  if (!base)
+  if (verbose())
+    log() << "free(" << (void *) base << ") = ";
+  if (!base) {
+    if (verbose())
+      log() << "\n";
     return;
+  }
   auto it = shadow[base];
   assert(it != allocations.end());
   assert(it->base() == base);
@@ -176,8 +259,10 @@ static void Handle_free(ADDRINT base) {
   }
 
   // Print allocation info.
-  it->print(log());
-  log() << "\n";
+  if (verbose()) {
+    it->print(log());
+    log() << "\n";
+  }
   
   allocations.erase(it);
 }
@@ -208,10 +293,6 @@ static void RecordPrivateStore(ADDRINT effaddr, UINT32 effsize) {
   it->markPrivate(effaddr, effsize);
 }
 
-
-static void PrintRoutineName(const char *s) {
-  log() << s << "\n";
-}
 
 static void HandleInstruction(INS ins, void *) {
   const auto num_memops = INS_MemoryOperandCount(ins);
@@ -250,27 +331,34 @@ static void HandleRoutine(RTN rtn, void *) {
   if (name == "__wrap_malloc") {
     RTN_Open(rtn);
     RTN_InsertCall(rtn, IPOINT_BEFORE, (AFUNPTR) Handle_malloc_before,
-		   IARG_FUNCARG_ENTRYPOINT_VALUE, 0, IARG_END);
+		   IARG_FUNCARG_ENTRYPOINT_VALUE, 0,
+		   IARG_CONST_CONTEXT,
+		   IARG_END);
     RTN_InsertCall(rtn, IPOINT_AFTER, (AFUNPTR) Handle_malloc_after,
-		   IARG_FUNCRET_EXITPOINT_VALUE, IARG_END);
+		   IARG_FUNCRET_EXITPOINT_VALUE,
+		   IARG_END);
     RTN_Close(rtn);
   } else if (name == "__wrap_calloc") {
     RTN_Open(rtn);
     RTN_InsertCall(rtn, IPOINT_BEFORE, (AFUNPTR) Handle_calloc_before,
 		   IARG_FUNCARG_ENTRYPOINT_VALUE, 0,
 		   IARG_FUNCARG_ENTRYPOINT_VALUE, 1,
+		   IARG_CONST_CONTEXT,
 		   IARG_END);
     RTN_InsertCall(rtn, IPOINT_AFTER, (AFUNPTR) Handle_calloc_after,
-		   IARG_FUNCRET_EXITPOINT_VALUE, IARG_END);
+		   IARG_FUNCRET_EXITPOINT_VALUE,
+		   IARG_END);
     RTN_Close(rtn);
   } else if (name == "__wrap_realloc") {
     RTN_Open(rtn);
     RTN_InsertCall(rtn, IPOINT_BEFORE, (AFUNPTR) Handle_realloc_before,
 		   IARG_FUNCARG_ENTRYPOINT_VALUE, 0,
 		   IARG_FUNCARG_ENTRYPOINT_VALUE, 1,
+		   IARG_CONST_CONTEXT,
 		   IARG_END);
     RTN_InsertCall(rtn, IPOINT_AFTER, (AFUNPTR) Handle_realloc_after,
-		   IARG_FUNCRET_EXITPOINT_VALUE, IARG_END);
+		   IARG_FUNCRET_EXITPOINT_VALUE,
+		   IARG_END);
     RTN_Close(rtn);
   } else if (name == "__wrap_reallocarray") {
     RTN_Open(rtn);
@@ -278,9 +366,11 @@ static void HandleRoutine(RTN rtn, void *) {
 		   IARG_FUNCARG_ENTRYPOINT_VALUE, 0,
 		   IARG_FUNCARG_ENTRYPOINT_VALUE, 1,
 		   IARG_FUNCARG_ENTRYPOINT_VALUE, 2,
+		   IARG_CONST_CONTEXT,
 		   IARG_END);
     RTN_InsertCall(rtn, IPOINT_AFTER, (AFUNPTR) Handle_reallocarray_after,
-		   IARG_FUNCRET_EXITPOINT_VALUE, IARG_END);
+		   IARG_FUNCRET_EXITPOINT_VALUE,
+		   IARG_END);
     RTN_Close(rtn);
   } else if (name == "__wrap_free") {
     RTN_Open(rtn);
@@ -305,6 +395,14 @@ static void usage(std::ostream &os) {
 }
 
 static void Fini(int32_t code, void *) {
+  // Classify callsites.
+  for (const auto &[inst, callsite] : callsites) {
+    if (callsite.getSize() == 1)
+      continue;
+    log() << (void *) inst << " " << callsite.getNumAllocs() << " " << callsite.getSize() << "\n";
+  }
+  
+  
   log_.close();
 }
 
@@ -313,11 +411,7 @@ int main(int argc, char *argv[]) {
     usage(std::cerr);
     return EXIT_FAILURE;
   }
-#if 1
   PIN_InitSymbols();
-#else
-  PIN_InitSymbolsAlt(SYMBOL_INFO_MODE(UINT32(IFUNC_SYMBOLS) | UINT32(DEBUG_OR_EXPORT_SYMBOLS)));
-#endif
 
   RTN_AddInstrumentFunction(HandleRoutine, nullptr);
   INS_AddInstrumentFunction(HandleInstruction, nullptr);
