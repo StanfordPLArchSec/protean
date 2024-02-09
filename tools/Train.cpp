@@ -10,6 +10,10 @@
 
 #include "ShadowMemory.h"
 
+std::vector<bool>::reference operator&=(std::vector<bool>::reference lhs, std::vector<bool>::const_reference rhs) {
+  return lhs = lhs && rhs;
+}
+
 static KNOB<std::string> LogFile(KNOB_MODE_WRITEONCE, "pintool", "l", "", "log file");
 static KNOB<unsigned> Verbose(KNOB_MODE_WRITEONCE, "pintool", "v", "0", "verbose");
 
@@ -46,21 +50,41 @@ static void dump_backtrace(std::ostream &os, const CONTEXT *ctx) {
 
 class CallSite {
 public:
-  CallSite(size_t alloc_size): size_gcd(alloc_size) { ++num_allocs; }
-
-  void observeAlloc(size_t size) {
+  void observeAlloc(size_t alloc_size) {
     ++num_allocs;
-    size_gcd = std::gcd(size_gcd, size);
+    assert(alloc_size > 0);
+    if (size == 0) {
+      size = alloc_size;
+      taint.resize(size, true);
+      return;
+    }
+    
+    const size_t old_size = this->size;
+    const size_t new_size = std::gcd(old_size, alloc_size);
+    this->size = new_size;
+    assert(new_size <= old_size);
+    
+    for (size_t i = new_size; i < old_size; ++i)
+      taint[i % new_size] &= taint[i];
+    taint.resize(new_size);
   }
   void observeRealloc(size_t size) {
     observeAlloc(size);
   }
+  void observeFree(const std::vector<bool> &free_taint) {
+    assert(size > 0 && taint.size() == size);
+    assert(free_taint.size() >= taint.size() && free_taint.size() % taint.size() == 0);
+    for (size_t i = 0; i < free_taint.size(); ++i)
+      taint[i % size] &= free_taint[i];
+  }
 
-  size_t getSize() const { return size_gcd; }
+  size_t getSize() const { return size; }
   size_t getNumAllocs() const { return num_allocs; }
+  const std::vector<bool> &getTaint() const { return taint; }
 
 private:
-  size_t size_gcd;
+  size_t size = 0;
+  std::vector<bool> taint;
   size_t num_allocs = 0;
 };
 
@@ -94,6 +118,8 @@ public:
   }
 
   const std::vector<void *> &getCallStack() const { return callstack; }
+
+  const std::vector<bool> &getTaint() const { return taint; }
   
 private:
   ADDRINT base_;
@@ -120,11 +146,7 @@ static void handle_alloc(ADDRINT base, ADDRINT size) {
   // Update callsites as necessary.
   for (void *callsite_ : it->getCallStack()) {
     const ADDRINT callsite = reinterpret_cast<ADDRINT>(callsite_);
-    auto it = callsites.find(callsite);
-    if (it == callsites.end())
-      it = callsites.emplace(callsite, CallSite(size)).first;
-    else
-      it->second.observeAlloc(size);
+    callsites[callsite].observeAlloc(size);
   }
 }
 
@@ -156,11 +178,7 @@ static void handle_realloc(ADDRINT oldbase, ADDRINT newbase, ADDRINT newsize) {
 
   for (void *callsite_ : it->getCallStack()) {
     const ADDRINT callsite = reinterpret_cast<ADDRINT>(callsite_);
-    auto it = callsites.find(callsite);
-    if (it == callsites.end())
-      it = callsites.emplace(callsite, CallSite(newsize)).first;
-    else
-      it->second.observeRealloc(newsize);
+    callsites[callsite].observeRealloc(newsize);
   }
 }
 
@@ -256,6 +274,11 @@ static void Handle_free(ADDRINT base) {
   for (ADDRINT ptr = base; ptr < it->end(); ptr += kAlignment) {
     assert(shadow[ptr] == it);
     shadow[ptr] = allocations.end();
+  }
+
+  for (void *callsite_ : it->getCallStack()) {
+    const ADDRINT callsite = reinterpret_cast<ADDRINT>(callsite_);
+    callsites.at(callsite).observeFree(it->getTaint());
   }
 
   // Print allocation info.
@@ -397,9 +420,14 @@ static void usage(std::ostream &os) {
 static void Fini(int32_t code, void *) {
   // Classify callsites.
   for (const auto &[inst, callsite] : callsites) {
+#if 0
     if (callsite.getSize() == 1)
       continue;
-    log() << (void *) inst << " " << callsite.getNumAllocs() << " " << callsite.getSize() << "\n";
+#endif
+    log() << (void *) inst << " " << callsite.getNumAllocs() << " " << callsite.getSize() << " ";
+    for (bool b : callsite.getTaint())
+      log() << b;
+    log() << "\n";
   }
   
   
