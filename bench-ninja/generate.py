@@ -133,6 +133,13 @@ ninja.rule(
     command = 'if [ -f $stats ]; then grep -F -e system.switch_cpus.decltab0.hits -e system.switch_cpus.decltab0.misses $stats | tail -2 | awk \'/hits/{hits=$$2}/misses/{misses=$$2}END{if (hits + misses > 0) { print misses/(hits+misses)*100 } else { print "0.0" } }\'; else echo 0.0; fi > $out',
     description = '($id) Generating miss-rate.txt',
 )
+
+## generate-leaf-miss-penalty
+ninja.rule(
+    name = 'generate-leaf-miss-penalty',
+    command = 'if [ -f $stats ]; then grep -F -e system.switch_cpus.lsq0.delayedWritebackTicks -e system.switch_cpus.lsq0.delayedWritebackCount $stats | tail -2 | awk \'/system.switch_cpus.lsq0.delayedWritebackTicks/{ticks=$$2}/system.switch_cpus.lsq0.delayedWritebackCount/{count=$$2}END{if (count > 0) print ticks/count; else print 0.0}\'; else echo 0.0; fi > $out',
+    description = '($id) Generating miss-penalty.txt'
+)
     
 
 # Define builds
@@ -300,7 +307,7 @@ for sw_name, sw_config in config.sw.items():
     )
 
     ### Build test-suite 
-    test_suite_build_outputs = [os.path.join(test_suite_build_dir, 'External', 'SPEC', 'CINT2017speed', bench_name, bench_name) for bench_name in benchspec]
+    test_suite_build_outputs = [os.path.join(test_suite_build_dir, 'External', 'SPEC', f'C{benchspec[bench_name].type}2017speed', bench_name, bench_name) for bench_name in benchspec]
     test_suite_build_cmd = [
         'ninja', '--quiet', '-C', test_suite_build_dir, 'fpcmp-target', 'imagevalidate_625-target', *benchspec,
     ]
@@ -354,7 +361,7 @@ for sim_name, sim_config in config.sim.items():
 # cpt builds
 for sw_name, sw_config in config.sw.items():
     for bench_name, bench_spec in benchspec.items():
-        bench_dir = os.path.join('sw', sw_name, 'test-suite', 'External', 'SPEC', 'CINT2017speed', bench_name)
+        bench_dir = os.path.join('sw', sw_name, 'test-suite', 'External', 'SPEC', f'C{bench_spec.type}2017speed', bench_name)
         exe = os.path.join(bench_dir, bench_name)
         rsrc_dir = os.path.join(bench_dir, f'run_{args.run_type}')
 
@@ -486,7 +493,7 @@ for sw_name, sw_config in config.sw.items():
         bbv_outputs = [bbv_file, *bbv_run_outputs]
         assert len(bbv_outputs) >= 2
         bbv_run_args = ' '.join(bench_spec.args)
-        if config.vars.bbv_impl == 'valgind':
+        if config.vars.bbv_impl == 'valgrind':
             bbv_run_cmd = [
                 'cd', bbv_subdir, '&&',
                 config.vars.valgrind, '--tool=exp-bbv', '--bb-out-file=bbv.out',
@@ -678,7 +685,7 @@ for exp_name, exp_config in config.exp.items():
     se_py = os.path.join(sim_config.src, sim_config.script)
 
     for bench_name, bench_spec in benchspec.items():
-        bench_dir = os.path.join('sw', sw_name, 'test-suite', 'External', 'SPEC', 'CINT2017speed', bench_name)
+        bench_dir = os.path.join('sw', sw_name, 'test-suite', 'External', 'SPEC', f'C{bench_spec.type}2017speed', bench_name)
         bench_exe = os.path.join(bench_dir, bench_name)
         rsrc_dir = os.path.join(bench_dir, f'run_{args.run_type}')
         cpt_dir = os.path.join('cpt', sw_name, bench_name, 'cpt', 'm5out')
@@ -757,6 +764,14 @@ for exp_name, exp_config in config.exp.items():
                 inputs = run_stamp,
                 variables = {'stats': os.path.join(subdir, 'm5out', 'stats.txt')},
             )
+
+            # Generate miss-penalty.txt
+            ninja.build(
+                outputs = os.path.join(subdir, 'miss-penalty.txt'),
+                rule = 'generate-leaf-miss-penalty',
+                inputs = run_stamp,
+                variables = {'stats': os.path.join(subdir, 'm5out', 'stats.txt')}
+            )
             
 
         # Generate ipc.txt for benchmark
@@ -796,10 +811,28 @@ for exp_name, exp_config in config.exp.items():
             },
         )
 
+        # Generate miss-penalty.txt for benchmark
+        generate_bench_miss_penalty_inputs = [os.path.join('exp', exp_name, bench_name, str(cpt_idx), 'miss-penalty.txt') for cpt_idx in range(config.vars.num_simpoints)]
+        generate_bench_miss_penalty_output = os.path.join('exp', exp_name, bench_name, 'miss-penalty.txt')
+        generate_bench_miss_penalty_cmd = ['python3', generate_bench_ipc_py, cpt_dir, *generate_bench_miss_penalty_inputs, '>', generate_bench_miss_penalty_output]
+        ninja.build(
+            outputs = generate_bench_miss_penalty_output,
+            rule = 'custom-command',
+            inputs = [
+                *generate_bench_miss_penalty_inputs,
+                generate_bench_ipc_py,
+            ],
+            variables = {
+                'cmd': ' '.join(generate_bench_miss_penalty_cmd),
+                'id': f'exp->{exp_name}->{bench_name}->miss-penalty',
+                'desc': 'Generating benchmark miss-penalty.txt',
+            },
+        )
+
     # Make phony 'all' target
     exp_all = []
     for bench_name in benchspec:
-        for filename in ['ipc.txt', 'miss-rate.txt']:
+        for filename in ['ipc.txt', 'miss-rate.txt', 'miss-penalty.txt']:
             exp_all.append(os.path.join('exp', exp_name, bench_name, filename))
     ninja.build(
         outputs = os.path.join('exp', exp_name, 'all'),
@@ -825,7 +858,7 @@ for sw_name, sw_config in config.sw.items():
     all_jsons = []
     
     for bench_name in benchspec:
-        bench_dir = os.path.join(test_suite_build_dir, 'External', 'SPEC', 'CINT2017speed', bench_name)
+        bench_dir = os.path.join(test_suite_build_dir, 'External', 'SPEC', f'C{benchspec[bench_name].type}2017speed', bench_name)
         json = os.path.join(bench_dir, f'{bench_name}.json')
         lit_cmd = ['taskset', '-c', '0', llvm_lit_exe, bench_dir, '-o', json]
         ninja.build(

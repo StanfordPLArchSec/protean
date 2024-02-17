@@ -10,7 +10,6 @@ def merge_extensions(cls):
             cls[basekey] = list(cls[basekey]) + value
     return dict(filter(lambda p: not p[0].startswith('+'), cls.items()))
 
-
 def resolve_inheritance(d: dict) -> dict:
     resolved = dict()
 
@@ -79,7 +78,7 @@ def process_config(config_in: dict, reldir: str) -> types.SimpleNamespace:
     sim_configs = process_subconfigs(config_in['sim'], ['src'], reldir)
     hwmode_configs = process_subconfigs(config_in['hwmode'], [], reldir)
     exp_configs = process_subconfigs(config_in['exp'], [], reldir)
-    vars = prepare_subconfig(config_in['vars'], ['valgrind', 'simpoint'], reldir)
+    vars = prepare_subconfig(config_in['vars'], ['valgrind', 'simpoint', 'pin', 'pinpoints'], reldir)
     return types.SimpleNamespace(sw=sw_configs, sim=sim_configs, hwmode=hwmode_configs, vars=vars, exp=exp_configs)
 
 
