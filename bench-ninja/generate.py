@@ -27,36 +27,18 @@ def get_mem(bench_name):
         return benchspec[bench_name].mem
     else:
         return config.vars.memsize
-    
+
+def get_ss(bench_name):
+    if 'ss' in benchspec[bench_name].__dict__:
+        return benchspec[bench_name].ss
+    else:
+        return config.vars.ss
 
 f = open('build.ninja', 'w')
 ninja = ninja_syntax.Writer(f)
 
 
 # Define rules
-
-## test-suite-configure
-test_suite_cmake_command = [
-    'cmake',
-    '-S', '$src',
-    '-B', '$build',
-    '-DCMAKE_C_COMPILER=$cc',
-    '-DCMAKE_CXX_COMPILER=$cxx',
-    '-DCMAKE_CXX_STANDARD=11',
-    '-DCMAKE_BUILD_TYPE=$build_type',
-    '-DCMAKE_C_FLAGS="$cflags"',
-    '-DCMAKE_CXX_FLAGS="$cflags"',
-    '-DCMAKE_EXE_LINKER_FLAGS="$ldflags"',
-    '-DTEST_SUITE_SUBDIRS=External',
-    '-DTEST_SUITE_SPEC2017_ROOT=$spec2017',
-    '-DTEST_SUITE_RUN_TYPE=$run_type',
-]
-rule_test_suite_configure = 'test-suite-configure'
-ninja.rule(
-    name = rule_test_suite_configure,
-    command = ' '.join(test_suite_cmake_command),
-    description = '($id) Configure the LLVM test suite',
-)
 
 ## test-suite-build
 test_suite_build_targets = ['fpcmp-target', 'imagevalidate_625-target', *benchspec]
@@ -83,6 +65,7 @@ ninja.rule(
     restat = True,
     pool = 'sim',
 )
+ninja.pool('mem', 100) # for 100 GB
 
 ## copy-resource-dir
 ninja.rule(
@@ -272,7 +255,7 @@ for sw_name, sw_config in config.sw.items():
         '-L', os.path.realpath(os.path.dirname(libc_library)), '-lllvmlibc', # libc
         '-nostdlib++', '-L', libcxx_library_dir, '-lc++', '-lc++abi'] # libcxx
     test_suite_build_dir = os.path.join(build_dir, 'test-suite')
-    test_suite_configure_deps = [sw_config.cc, sw_config.cxx, *sw_config.deps, libc_library, *libcxx_libraries]
+    test_suite_configure_deps = [sw_config.cc, sw_config.cxx, sw_config.fc, *sw_config.deps, libc_library, *libcxx_libraries]
     test_suite_build_file = os.path.join(test_suite_build_dir, 'build.ninja')
     test_suite_configure_cmd = [
         'cmake',
@@ -285,6 +268,9 @@ for sw_name, sw_config in config.sw.items():
         '-DCMAKE_C_FLAGS="{}"'.format(' '.join(test_suite_cflags)),
         '-DCMAKE_CXX_FLAGS="{}"'.format(' '.join(test_suite_cflags)),
         '-DCMAKE_EXE_LINKER_FLAGS="{}"'.format(' '.join(test_suite_ldflags)),
+        f'-DCMAKE_Fortran_COMPILER={sw_config.fc}',
+        '-DCMAKE_Fortran_FLAGS="{}"'.format(' '.join(sw_config.fflags)),
+        '-DTEST_SUITE_FORTRAN=1',
         '-DTEST_SUITE_SUBDIRS=External',
         '-DTEST_SUITE_SPEC2017_ROOT=' + sw_config.spec2017,
         '-DTEST_SUITE_RUN_TYPE=' + args.run_type,
@@ -394,6 +380,8 @@ for sw_name, sw_config in config.sw.items():
         host_subdir = os.path.join('cpt', sw_name, bench_name, 'host')
         ### host run
         host_outputs = [os.path.join(host_subdir, output) for output in bench_spec.outputs]
+        if len(host_outputs) == 0:
+            print(f'zero outputs for {host_subdir}', file=sys.stderr)
         assert len(host_outputs) > 0
         host_run_args = ' '.join(bench_spec.args)
         host_run_cmd = f'cd {host_subdir} && {os.path.abspath(exe)} {host_run_args} 2> stderr'
@@ -408,6 +396,7 @@ for sw_name, sw_config in config.sw.items():
                 'cmd': host_run_cmd,
                 'id': f'{sw_name}->{bench_name}->host->run',
                 'desc': 'Run benchmark on host',
+                'pool': 'mem', 'weight': get_mem(bench_name),
             },
         )
 
@@ -442,6 +431,7 @@ for sw_name, sw_config in config.sw.items():
             se_py,
             '--cpu-type=X86KvmCPU',
             f'--mem-size={get_mem(bench_name)}',
+            f'--max-stack-size={get_ss(bench_name)}',
             f'--options="{sim_run_args}"',
             f'--cmd={os.path.abspath(exe)}',
             f'--errout=stderr',
@@ -465,6 +455,7 @@ for sw_name, sw_config in config.sw.items():
                 'cmd': ' '.join(kvm_run_cmd),
                 'id': f'{sw_name}->{bench_name}->kvm->run',
                 'desc': 'Run under KVM',
+                'pool': 'mem', 'weight': get_mem(bench_name),
             },
         )
 
@@ -488,11 +479,12 @@ for sw_name, sw_config in config.sw.items():
         bbv_subdir = os.path.join('cpt', sw_name, bench_name, 'bbv')
 
         ### bbv run
-        bbv_file = os.path.join(bbv_subdir, 'bbv.out')
+        bbv_file = os.path.join(bbv_subdir, 'bbv.out.gz')
         bbv_run_outputs = [os.path.join(bbv_subdir, output) for output in bench_spec.outputs]
         bbv_outputs = [bbv_file, *bbv_run_outputs]
         assert len(bbv_outputs) >= 2
         bbv_run_args = ' '.join(bench_spec.args)
+        # FIXME: Remove support for Valgrind.
         if config.vars.bbv_impl == 'valgrind':
             bbv_run_cmd = [
                 'cd', bbv_subdir, '&&',
@@ -505,11 +497,7 @@ for sw_name, sw_config in config.sw.items():
         elif config.vars.bbv_impl == 'pin':
             bbv_run_cmd = [
                 'cd', bbv_subdir, '&&',
-                config.vars.pin, '-t', config.vars.pinpoints, '-o', 'bbv.out', '-interval-size', str(config.vars.interval),
-                # config.vars.valgrind, '--tool=exp-bbv', '--bb-out-file=bbv.out',
-                # f'--interval-size={config.vars.interval}',
-                # '--log-file=valout',
-                # '--quiet',
+                config.vars.pin, '-t', config.vars.pinpoints, '-o', '>(gzip > bbv.out.gz)', '-interval-size', str(config.vars.interval),
                 '--', os.path.abspath(exe), *bench_spec.args,
                 '2>', 'stderr',
             ]
@@ -532,6 +520,7 @@ for sw_name, sw_config in config.sw.items():
                 'cmd': ' '.join(bbv_run_cmd),
                 'id': f'{sw_name}->{bench_name}->bbv->run',
                 'desc': 'Profile using Intel Pin',
+                'pool': 'mem', 'weight': get_mem(bench_name),
             },
         )
 
@@ -560,6 +549,7 @@ for sw_name, sw_config in config.sw.items():
             '-saveSimpoints', spt_simpoints, '-saveSimpointWeights', spt_weights,
             '>', os.path.join(spt_subdir, 'stdout'),
             '2>', os.path.join(spt_subdir, 'stderr'),
+            '-inputVectorsGzipped',
         ]
         ninja.build(
             outputs = spt_outputs,
@@ -588,6 +578,7 @@ for sw_name, sw_config in config.sw.items():
             se_py,
             '--cpu-type=X86KvmCPU',
             f'--mem-size={get_mem(bench_name)}',
+            f'--max-stack-size={get_ss(bench_name)}',
             f'--take-simpoint-checkpoint={os.path.abspath(spt_simpoints)},{os.path.abspath(spt_weights)},{config.vars.interval},{config.vars.warmup}',
             f'--options="{sim_run_args}"',
             f'--cmd={os.path.abspath(exe)}',
@@ -616,6 +607,7 @@ for sw_name, sw_config in config.sw.items():
                 'cmd': ' '.join(cpt_run_cmd),
                 'id': f'{sw_name}->{bench_name}->cpt',
                 'desc': 'Take checkpoints',
+                'pool': 'mem', 'weight': get_mem(bench_name),
             },
         )
         
@@ -720,6 +712,7 @@ for exp_name, exp_config in config.exp.items():
                 f'--options="{sim_run_args}"',
                 '--cpu-type=X86O3CPU',
                 f'--mem-size={get_mem(bench_name)}',
+                f'--max-stack-size={get_ss(bench_name)}',
                 '--caches',
                 '--l1d_size=32kB', '--l1d_assoc=8',
                 '--l1i_size=32kB', '--l1i_assoc=8',
@@ -746,6 +739,7 @@ for exp_name, exp_config in config.exp.items():
                     'cmd': ' '.join(exp_run_cmd),
                     'id': f'exp->{exp_name}->{bench_name}->{cpt_idx}',
                     'desc': 'Resume from checkpoints',
+                    'pool': 'mem', 'weight': get_mem(bench_name),
                 },
             )
 
