@@ -4,3 +4,9 @@ build/
 cpu2017*.iso
 __pycache__/
 cpu2017/
+CMakeCache.txt
+*.out
+CMakeFiles/
+tmp/
+*.o
+*.asm

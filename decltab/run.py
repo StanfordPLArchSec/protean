@@ -5,6 +5,7 @@ import gzip
 import multiprocessing
 import subprocess
 import shutil
+import math
 from collections import defaultdict as ddict
 
 parser = argparse.ArgumentParser()
@@ -62,34 +63,37 @@ for bench, bench_dir in mylistdir(args.dir):
             # stdout = subprocess.PIPE)
             processes[bench][test].append((cpt_weight, process))
 
-all_stats = ddict(lambda: 0)
+all_stats = ddict(lambda: 1)
             
 for bench, tests in processes.items():
-    bench_stats = ddict(lambda: 0)
+    bench_stats = ddict(lambda: 1)
     for test, cpts in tests.items():
         total_weight = 0
-        stats = ddict(lambda: 0)
+        test_stats = ddict(lambda: 0)
         for cpt_weight, process in cpts:
             for key, value in output_to_dict(process.stdout).items():
-                stats[key] += cpt_weight * value
+                test_stats[key] += cpt_weight * value
+            process.wait()
+            if process.returncode != 0:
+                raise ChildProcessError
             total_weight += cpt_weight
         assert total_weight > 0
-        for key in stats:
-            stats[key] /= total_weight
-            
-        for key, value in stats.items():
-            bench_stats[key] += value
+        for key in test_stats:
+            test_stats[key] /= total_weight
+
+        test_miss_rate = test_stats['misses'] / (test_stats['hits'] + test_stats['misses'])
+        bench_stats['miss-rate'] *= test_miss_rate
 
     for key in bench_stats:
-        bench_stats[key] /= len(tests)
+        bench_stats[key] = math.pow(bench_stats[key], 1 / len(tests))
 
     for key, value in bench_stats.items():
         print(bench, key, value)
-        all_stats[key] += value
+        all_stats[key] *= value
 
 
 for key in all_stats:
-    all_stats[key] /= len(processes)
+    all_stats[key] = math.pow(all_stats[key], 1 / len(processes))
 
 for key, value in all_stats.items():
     print('mean', key, value)

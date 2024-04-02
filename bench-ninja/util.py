@@ -74,7 +74,7 @@ def process_subconfigs(configs, path_keys, reldir):
 
 
 def process_config(config_in: dict, reldir: str) -> types.SimpleNamespace:
-    sw_configs = process_subconfigs(config_in['sw'], ['spec2017', 'test-suite', 'cc', 'cxx', 'deps', 'llvm'], reldir)
+    sw_configs = process_subconfigs(config_in['sw'], ['spec2017', 'test-suite', 'cc', 'cxx', 'fc', 'deps', 'llvm'], reldir)
     sim_configs = process_subconfigs(config_in['sim'], ['src'], reldir)
     hwmode_configs = process_subconfigs(config_in['hwmode'], [], reldir)
     exp_configs = process_subconfigs(config_in['exp'], [], reldir)
@@ -99,10 +99,15 @@ def process_benchspec(benchspec: dict) -> dict:
         bench_spec['args'] = bench_spec['args'].split()
         bench_spec['litargs'] = list(bench_spec['args'])
         bench_spec['stdout'] = None
+        bench_spec['stdin'] = None
         if '>' in bench_spec['litargs']:
             idx = bench_spec['litargs'].index('>')
             bench_spec['stdout'] = bench_spec['litargs'][idx + 1]
             bench_spec['outputs'].append(bench_spec['stdout'])
+            del bench_spec['litargs'][idx:idx+2]
+        if '<' in bench_spec['litargs']:
+            idx = bench_spec['litargs'].index('<')
+            bench_spec['stdin'] = bench_spec['litargs'][idx + 1]
             del bench_spec['litargs'][idx:idx+2]
 
         bench_spec = types.SimpleNamespace(**bench_spec)

@@ -114,7 +114,7 @@ static ev::MinEvictionPolicy pat_lru_popcnt_ep(lru_popcnt_ep, ev::PatternEvictio
 static ev::MinEvictionPolicy allset_lru_popcnt_ep(lru_popcnt_ep, ev::AllSetEvictionPolicy());
 static ev::LFU lfu_ep(256);
 static ev::RRIP rrip_ep(4);
-static auto ep = rrip_ep;
+static auto ep = lru_popcnt_ep;
 
 #if 1
 static DeclassificationCache<64, cache_associativity, 1024, decltype(ep)> cache_decltab("cache",
@@ -160,15 +160,16 @@ static GraduatingDeclassificationCache grad_decltab {
    {.size = 1024 * 1024, .quorum = 8,  .line_size = 4096}},
 };
 static DeclassificationQueue<64, 64, 1> declqueue("queue");
-static QueuedDeclassificationCache queued_decltab("decltab", declqueue, cache_decltab, cache_decltab);
+static QueuedDeclassificationCache queued_decltab("decltab", declqueue, cache_decltab);
 static UtilityTracker<1024 * 1024, 8, 1> utility_tracker;
 static UtilityTracker2<1024 * 1024> utility_tracker2;
 static UtilityTracker3<1024 * 1024> utility_tracker3;
 static UtilityTracker4<1024 * 1024> utility_tracker4;
-static UtilityDeclassificationTable util_decltab("util_decltab", utility_tracker4, cache_decltab);
+static UtilityTracker5<64, 1024 * 1024> utility_tracker5;
+static UtilityDeclassificationTable util_decltab("util_decltab", utility_tracker5, cache_decltab);
 static ShadowCache<64, 1024 * 1024 * 8> shadow_cache;
 static ProtectedDeclassificationTable protected_cache(cache_decltab, cache_decltab);
-static SharedMultiGranularityDeclassificationTable decltab("decltab", cache_decltab);
+static SharedMultiGranularityDeclassificationTable decltab("decltab", util_decltab);
 #endif
 
 #if 0

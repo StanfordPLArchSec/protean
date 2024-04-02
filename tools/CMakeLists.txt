@@ -52,3 +52,26 @@ add_pin_tool(bbtrace bbtrace.cpp)
 add_pin_tool(PrintInsts PrintInsts.cpp)
 
 add_pin_tool(bbtrace2 bbtrace2.cpp)
+
+
+# add_pin_tool(Instrument Instrument.cpp)
+# add_pin_tool(CallStack CallStack.cpp)
+# target_link_libraries(CallStack PRIVATE Instrument)
+add_pin_tool(CallStackTest CallStackTest.cpp CallStack.cpp Instrument.cpp)
+
+
+add_pin_tool(Train Train.cpp)
+
+add_library(TrainRuntime STATIC TrainRuntime.c)
+
+
+add_subdirectory(tests/train)
+
+add_executable(patternify patternify.cpp)
+
+
+add_executable(norecurse norecurse.cpp)
+
+add_library(align_runtime STATIC align_runtime.c)
+
+add_pin_tool(Tmp Tmp.cpp)

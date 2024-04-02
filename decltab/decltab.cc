@@ -355,8 +355,12 @@ bool HeteroCacheDeclTab::checkDeclassifiedOnce(Addr base, unsigned orig_size, un
 }
 
 bool HeteroCacheDeclTab::checkDeclassified(Addr base, unsigned orig_size) {
-  if (!isAligned(base, orig_size))
-    return false;
+  if (!isAligned(base, orig_size)) {
+    return
+      checkDeclassified(base, orig_size / 2) &&
+      checkDeclassified(base + orig_size / 2, orig_size / 2);
+  }
+  
   for (unsigned check_size : this->check_sizes)
     if (checkDeclassifiedOnce(base, orig_size, check_size))
       return true;
@@ -364,8 +368,12 @@ bool HeteroCacheDeclTab::checkDeclassified(Addr base, unsigned orig_size) {
 }
 
 void HeteroCacheDeclTab::setDeclassified(Addr base, unsigned orig_size) {
-  if (!isAligned(base, orig_size))
+  if (!isAligned(base, orig_size)) {
+    setDeclassified(base, orig_size / 2);
+    setDeclassified(base + orig_size / 2, orig_size / 2);
     return;
+  }
+  
   for (unsigned check_size : check_sizes) {
     Index index = getIndex(base, orig_size, check_size, /*tight*/true);
     if (!index.data && check_size == orig_size)
@@ -379,8 +387,12 @@ void HeteroCacheDeclTab::setDeclassified(Addr base, unsigned orig_size) {
 }
 
 void HeteroCacheDeclTab::setClassified(Addr base, unsigned orig_size) {
-  if (!isAligned(base, orig_size))
+  if (!isAligned(base, orig_size)) {
+    setClassified(base, orig_size / 2);
+    setClassified(base + orig_size / 2, orig_size / 2);
     return;
+  }
+  
   for (unsigned check_size : check_sizes) {
     Index index = getIndex(base, orig_size, check_size, /*tight*/false);
     if (index.data) {

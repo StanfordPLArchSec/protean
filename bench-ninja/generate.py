@@ -436,6 +436,10 @@ for sw_name, sw_config in config.sw.items():
             f'--cmd={os.path.abspath(exe)}',
             f'--errout=stderr',
         ]
+        if bench_spec.stdin:
+            kvm_run_cmd.append(f'--input={os.path.abspath(os.path.join(kvm_subdir, bench_spec.stdin))}')
+        else:
+            kvm_run_cmd.append(f'--input=/dev/null')
         if bench_spec.stdout:
             kvm_run_cmd.append(f'--output={os.path.abspath(os.path.join(kvm_subdir, bench_spec.stdout))}')
         else:
@@ -584,6 +588,10 @@ for sw_name, sw_config in config.sw.items():
             f'--cmd={os.path.abspath(exe)}',
             f'--errout=stderr',
         ]
+        if bench_spec.stdin:
+            cpt_run_cmd.append(f'--input={os.path.abspath(os.path.join(cpt_subdir, bench_spec.stdin))}')
+        else:
+            cpt_run_cmd.append(f'--input=/dev/null')
         if bench_spec.stdout:
             cpt_run_cmd.append(f'--output={os.path.abspath(os.path.join(cpt_subdir, bench_spec.stdout))}')
         else:

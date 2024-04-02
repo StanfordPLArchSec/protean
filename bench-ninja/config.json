@@ -8,6 +8,7 @@
 	"simpoint": "../simpoint/bin/simpoint",
 	"num_simpoints": 10,
 	"memsize": "8GB",
+	"ss": "8MB",
 	"warmup": 50000000,
 	"bbv-impl": "pin",
 	"cfitool": "../tools/build/libCFI.so"
@@ -20,9 +21,11 @@
 	    "llvm": "../llvm",
 	    "cc": "../llvm/build/bin/clang",
 	    "cxx": "../llvm/build/bin/clang++",
+	    "fc": "../llvm/build/bin/flang-new",
 	    "cmake_build_type": "Release",
 	    "cflags": ["-fcf-protection=none", "-mno-avx"],
-	    "ldflags": ["-static", "-fuse-ld=lld", "-Wl,--allow-multiple-definition"],
+	    "fflags": ["-O3"],
+	    "ldflags": ["-static", "-fuse-ld=lld", "-Wl,--allow-multiple-definition", "-L/home/nmosier/llsct2/llvm/build/lib"],
 	    "libc_cflags": [],
 	    "libcxx_cflags": [],
 	    "deps": []
@@ -44,6 +47,11 @@
 	"_llsct": {
 	    "inherit": "_default",
 	    "+cflags": [
+		"-mllvm", "-llsct",
+		"-mllvm", "-llsct-declassify",
+		"-mllvm", "-llsct-cfi"
+	    ],
+	    "+fflags": [
 		"-mllvm", "-llsct",
 		"-mllvm", "-llsct-declassify",
 		"-mllvm", "-llsct-cfi"
@@ -75,11 +83,13 @@
 
 	"llsct-ct": {
 	    "inherit": "_llsct",
-	    "+cflags": ["-mllvm", "-tpe-privacy-policy=ct"]
+	    "+cflags": ["-mllvm", "-tpe-privacy-policy=ct"],
+	    "+fflags": ["-mllvm", "-tpe-privacy-policy=ct"]
 	},
 	"llsct-sbox": {
 	    "inherit": "_llsct",
-	    "+cflags": ["-mllvm", "-tpe-privacy-policy=sandbox"]
+	    "+cflags": ["-mllvm", "-tpe-privacy-policy=sandbox"],
+	    "+fflags": ["-mllvm", "-tpe-privacy-policy=sandbox"]
 	},
 
 	"llsct-lto-ct": {

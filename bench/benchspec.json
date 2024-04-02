@@ -1,17 +1,39 @@
 {
     "500.perlbench_r": {
-	"makerand": {
-	    "args": ["-I%R", "-I%R/lib", "%R/%n.pl"],
+	"diffmail": {
+	    "cd": "%R",
 	    "stdout": 1,
-	    "compare": "%R/compare/%n.out"
+	    "exe": "../%N",
+	    "args": ["-I%R/lib", "%R/%n.pl", "2", "550", "15", "24", "23", "100"],
+	    "compare": "%R/compare/diffmail.2.550.15.24.23.100.out"
 	},
-	"test": {
-	    "skip": 1,
+	"perfect": {
+	    "cd": "%R",
+	    "stdout": 1,
+	    "exe": "../%N",
+	    "args": ["-I%R/lib", "%R/%n.pl", "b", "3"],
+	    "compare": "%R/compare/perfect.b.3.out"
+	},
+	"scrabbl": {
+	    "cd": "%R",
+	    "stdout": 1,
+	    "exe": "../%N",
+	    "args": ["-I%R", "-I%R/lib", "%R/%n.pl", "-i", "%n.in", "-o", "%T/stdout"],
+	    "compare": "%R/compare/scrabbl.out"
+	},
+	"splitmail": {
+	    "cd": "%R",
+	    "stdout": 1,
+	    "exe": "../%N",
+	    "args": ["-I%R/lib", "%R/%n.pl", "535", "13", "25", "24", "1091", "1"],
+	    "compare": "%R/compare/splitmail.535.13.25.24.1091.1.out"
+	},
+	"suns": {
 	    "cd": "%R",
 	    "stdout": 1,
 	    "exe": "../%N",
 	    "args": ["-I%R", "-I%R/lib", "%R/%n.pl"],
-	    "compare": "%R/compare/%n.out"
+	    "compare": "%R/compare/suns.out"
 	}
     },
     "502.gcc_r": {
@@ -99,7 +121,6 @@
 	}
     },
     "525.x264_r": {
-	"skip": 1,
 	"buckbunny": {
 	    "args": ["--dumpyuv", "50", "--frames", "156", "-o", "BuckBunny_New.264", "%R/BuckBunny.yuv", "1280x720"],
 	    "cd": "%T",
@@ -114,7 +135,6 @@
 	}
     },
     "526.blender_r": {
-	"skip": 1,
 	"cube": {
 	    "args": ["%R/cube.blend", "--render-output", "%T/cube_", "--threads", "1", "-b", "-F", "RAWTGA", "-s", "1", "-e", "1", "-a"],
 	    "cp": ["cube_0001.tga"],
@@ -275,7 +295,6 @@
     "605.mcf_s": {"inherit": "505.mcf_r"},
     "619.lbm_s": {
 	"lbm": {
-	    "skip": 1,
 	    "cpu": "X86NonCachingSimpleCPU",
 	    "memsize": "4GB",
 	    "cp": ["200_200_260_ldc.of"],

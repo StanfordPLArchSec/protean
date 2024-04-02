@@ -4,6 +4,7 @@ import sys
 import signal
 import multiprocessing
 import gzip
+import glob
 
 import shared
 from shared import *
@@ -60,7 +61,7 @@ def execute_gem5_test(cmd: list, se_args: list, test_spec: dict, output_dir: str
 def run_benchmark_test_checkpoint(bench_exe: str, test_name: str, test_spec: dict, bindir: str, cptdir: str, outdir: str) -> int:
     if check_success(outdir):
         return 0
-
+    
     os.makedirs(outdir, exist_ok = True)
     bench_name = os.path.basename(bench_exe)
     test_spec = perform_test_substitutions(test_spec, bench_name, test_name, bindir, outdir, test_suite = args.bindir)
@@ -82,7 +83,7 @@ def run_benchmark_test_checkpoint(bench_exe: str, test_name: str, test_spec: dic
     ]
     returncode = execute_gem5_test(test_spec['cmd'], se_args, test_spec, outdir)
     if returncode != 0:
-        print(f'ERROR: {bench_name}->{test_name}->{checkpoint_id}: failed')
+        print(f'{ERROR}: {bench_name}->{test_name}->{checkpoint_id}: failed')
         return returncode
 
     with open(f'{outdir}/ipc.txt', 'w') as ipc_file, \
@@ -132,7 +133,7 @@ def run_benchmark_test(bench_exe: str, test_name: str, test_spec: dict, bindir: 
             returncode = 1
 
     if returncode == 0:
-        print(f'DONE: {bench_name}->{test_name}')
+        print(f'{DONE}: {bench_name}->{test_name}')
     
     sys.exit(returncode)
 
@@ -144,7 +145,9 @@ def run_benchmark(bench_exe: str, bench_tests: dict, bindir: str, cptdir: str, o
 
     jobs = []
     for test_name, test_spec in bench_tests.items():
-        test_bindir = f'{bindir}/run_test'
+        test_bindirs = glob.glob(f'{bindir}/run_*')
+        assert len(test_bindirs) == 1
+        test_bindir = test_bindirs[0]
         test_cptdir = f'{cptdir}/{test_name}/cpt'
         test_outdir = f'{outdir}/{test_name}'
         job = multiprocessing.Process(target = run_benchmark_test,
@@ -160,7 +163,7 @@ def run_benchmark(bench_exe: str, bench_tests: dict, bindir: str, cptdir: str, o
             returncode = 1
 
     if returncode == 0:
-        print(f'DONE: {bench_name}', file = sys.stderr)
+        print(f'{DONE}: {bench_name}', file = sys.stderr)
     sys.exit(returncode)
 
 def run_benchmarks(benchspec: dict, bindir: str, cptdir: str, outdir: str):

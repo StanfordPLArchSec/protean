@@ -10,8 +10,13 @@ struct Block {
   unsigned long id;
   unsigned long size;
   unsigned long hits;
+  std::string disasm;
 
-  Block(unsigned long id, unsigned long size): id(id), size(size), hits(0) {
+  Block(unsigned long id, BBL bbl): id(id), size(BBL_NumIns(bbl)), hits(0) {
+    for (INS ins = BBL_InsHead(bbl); INS_Valid(ins); ins = INS_Next(ins)) {
+      disasm += "\t" + INS_Disassemble(ins) + "\n";
+    }
+    
     assert(id > 0);
     reset();
   }
@@ -24,6 +29,7 @@ struct Block {
 static std::ofstream out;
 static unsigned long interval_size;
 static unsigned long inst_count;
+static unsigned long next_block_id = 0;
 static std::map<ADDRINT, Block> blocks;
 
 static void DumpInterval() {
@@ -46,19 +52,22 @@ static void HandleBlock(Block *block) {
   }
 }
 
+static void disassemble_block(std::ostream &os, BBL bbl) {
+  for (INS ins = BBL_InsHead(bbl); INS_Valid(ins); ins = INS_Next(ins))
+    std::cerr << "\t" << INS_Disassemble(ins) << "\n";
+}
+
 static void Trace(TRACE trace, void *) {
   for (BBL bbl = TRACE_BblHead(trace); BBL_Valid(bbl); bbl = BBL_Next(bbl)) {
     const ADDRINT addr = BBL_Address(bbl);
     auto block_it = blocks.find(addr);
-    if (block_it == blocks.end()) {
-      const auto result = blocks.emplace(addr, Block(blocks.size() + 1, BBL_NumIns(bbl)));
-      assert(result.second);
-      block_it = result.first;
+    if (block_it != blocks.end()) {
+      assert(BBL_Original(bbl)); // Don't support self-modifying code.
+      if (BBL_NumIns(bbl) == block_it->second.size)
+	continue;
     }
-    assert(block_it != blocks.end());
-    Block *block = &block_it->second;
-    assert(block->size == BBL_Size(bbl));
-    BBL_InsertCall(bbl, IPOINT_BEFORE, (AFUNPTR) HandleBlock, IARG_ADDRINT, block, IARG_END);
+    block_it = blocks.insert_or_assign(block_it, addr, Block(++next_block_id, bbl));
+    BBL_InsertCall(bbl, IPOINT_BEFORE, (AFUNPTR) HandleBlock, IARG_ADDRINT, &block_it->second, IARG_END);
   }
 }
 

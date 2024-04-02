@@ -423,6 +423,108 @@ private:
 
 
 
+template <size_t LineSize, size_t Size>
+class UtilityTracker5 {
+public:
+  struct DynamicLine {
+    Addr tag;
+    size_t stc_idx;
+
+    DynamicLine(Addr addr, size_t stc_idx): tag(getTag(addr)), stc_idx(stc_idx) {}
+
+    Addr getTag(Addr addr) const { return addr / LineSize; }
+    Addr baseaddr() const { return tag * LineSize; }
+    bool contains(Addr addr) const { return tag == getTag(addr); }
+  };
+
+  struct StaticLine {
+    size_t checks = 0;
+    size_t sets = 0;
+
+    void dump(std::ostream& os) const {
+      os << checks << " " << sets << "\n";
+    }
+  };
+
+  struct Inst {
+    size_t stc_idx;
+
+    Inst(size_t stc_idx): stc_idx(stc_idx) {}
+  };
+
+  size_t getDynLineIndex(Addr addr) const {
+    return (addr / LineSize) & (dyn_lines.size() - 1);
+  }
+  std::optional<DynamicLine>& getDynLine(Addr addr) {
+    return dyn_lines[getDynLineIndex(addr)];
+  }
+  size_t getInstIndex(Addr inst) const { return inst & (insts.size() - 1); }
+  std::optional<Inst>& getInst(Addr inst) { return insts[getInstIndex(inst)]; }
+
+
+  void handleCheckDeclassified(Addr addr) {
+    std::optional<DynamicLine>& dyn_line = getDynLine(addr);
+    if (!(dyn_line && dyn_line->contains(addr)))
+      return;
+    std::optional<StaticLine>& stc_line = stc_lines[dyn_line->stc_idx];
+    if (!stc_line)
+      return;
+    stc_line->checks++;
+  }
+
+  bool handleSetDeclassified(Addr addr, Addr inst_addr) {
+    std::optional<DynamicLine>& dyn_line = getDynLine(addr);
+    std::optional<Inst>& inst = getInst(inst_addr);
+
+    if (dyn_line && !dyn_line->contains(addr))
+      dyn_line = std::nullopt;
+
+    if (!dyn_line && !inst) {
+      inst = Inst(std::rand() % stc_lines.size());
+      std::optional<StaticLine>& stc_line = stc_lines[inst->stc_idx];
+      stc_line = StaticLine();
+    } else if (!dyn_line && inst) {
+      dyn_line = DynamicLine(addr, inst->stc_idx);
+    } else if (dyn_line && !inst) {
+      inst = Inst(dyn_line->stc_idx);
+    } else if (dyn_line->stc_idx != inst->stc_idx) {
+      inst->stc_idx = dyn_line->stc_idx;
+    }
+    assert(inst->stc_idx == dyn_line->stc_idx);
+
+    StaticLine& stc_line = *stc_lines[dyn_line->stc_idx];
+    ++stc_line.sets;
+
+    return stc_line.sets >= stc_line.checks;
+  }
+    
+  void handleSetClassified(Addr addr) {
+    std::optional<DynamicLine>& dyn_line = getDynLine(addr);
+    if (dyn_line) {
+      StaticLine& stc_line = *stc_lines[dyn_line->stc_idx];
+#if 0
+      stc_line.sets = std::max<size_t>(1, stc_line.sets) - 1;
+#endif
+    }
+  }
+
+  void printDesc(std::ostream& os) const {}
+  void printStats(std::ostream& os) const {}
+  void dump(std::ostream& os) const {
+    for (const auto& stc_line : stc_lines) {
+      if (stc_line)
+	stc_line->dump(os);
+    }
+  }
+
+private:
+  std::array<std::optional<DynamicLine>, Size> dyn_lines;
+  std::array<std::optional<Inst>, Size> insts;
+  std::array<std::optional<StaticLine>, Size> stc_lines;
+};
+
+
+
 
 
 template <class UtilTab, class DeclTab>

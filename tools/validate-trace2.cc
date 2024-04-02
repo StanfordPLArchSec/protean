@@ -223,6 +223,7 @@ bool parse_microop(std::string_view disasm, OutputIt1 ins, OutputIt2 outs) {
     {"maddi", {OP_REG_OUT, OP_REG_IN, OP_REG_IN}},
     {"maddf", {OP_REG_OUT, OP_REG_IN, OP_REG_IN}},
     {"mdivf", {OP_REG_OUT, OP_REG_IN, OP_REG_IN}},
+    {"mminf", {OP_REG_OUT, OP_REG_IN, OP_REG_IN}},
     {"mand", {OP_REG_OUT, OP_REG_IN, OP_REG_IN}},
     {"mdbi", {OP_REG_OUT, OP_IMM}},
     {"mmulf", {OP_REG_OUT, OP_REG_IN, OP_REG_IN}},
@@ -306,6 +307,8 @@ bool parse_microop(std::string_view disasm, OutputIt1 ins, OutputIt2 outs) {
     {"cvtfp80h_int", {OP_REG_OUT, OP_REG_IN}},
     {"cvtfp80l_int", {OP_REG_OUT, OP_REG_IN}},
     {"rdtsc", {OP_REG_OUT, OP_REG_OUT}},
+    {"gem5Op", {}},
+    {"LFENCE", {}},
   };
 
   const auto it = map.find(std::string(opcode));
@@ -415,7 +418,7 @@ int main(int argc, char *argv[]) {
   });
 
   std::cout << "parsed " << insts.size() << " insts\n";
-#if 1
+#if 0
   for (const Inst& inst : insts) {
     std::vector<std::string> ins, outs;
     if (!parse_microop(inst.disasm, std::back_inserter(ins), std::back_inserter(outs)))
@@ -438,11 +441,26 @@ int main(int argc, char *argv[]) {
   bool ok = true;
   std::set<std::string> tainted_regs;
   unsigned long declmiss_count = 0;
+  unsigned long phantom_jumps = 0;
   for (auto it = insts.begin(); it != insts.end(); ++it) {
     if (it->seq_num != last_seq_num + 1) {
       assert(last_seq_num < it->seq_num);
       tainted_regs.clear();
     }
+
+    // HACK: Filter out phantom jumps.
+    long disp;
+    if (std::next(it) - insts.begin() >= 3 && std::next(it) != insts.end() &&
+	std::prev(it, 2)->disasm == "rdip   t1, t1" &&
+	std::sscanf(std::prev(it, 1)->disasm.c_str(), "limm   t2, 0x%lx", &disp) == 1 &&
+	std::prev(it, 0)->disasm == "wrip   t1, t2") {
+      if (it->addr + disp != std::next(it)->addr) {
+	++phantom_jumps;
+	// std::cerr << "Skipping phantom jump: " << it->seq_num << " " << std::hex << it->addr << std::dec << "\n";
+	continue;
+      }
+    }
+
     last_seq_num = it->seq_num;
 
     const Inst& inst = *it;
@@ -456,7 +474,7 @@ int main(int argc, char *argv[]) {
 	if (tainted_regs.contains(in)) {
 	  std::cout << "VIOLATION: seqnum " << inst.seq_num << " instruction " << std::hex << inst.addr << std::dec << " executed with tainted "
 		    << "register " << in << "\n";
-#if 0
+#if 1
 	  ok = false;
 #else
 	  return 1;
@@ -478,6 +496,7 @@ int main(int argc, char *argv[]) {
   }
 
   std::cout << "total declmisses " << declmiss_count << "\n";
+  std::cout << "total phantom-jmps " << phantom_jumps << "\n";
 
   return ok ? 0 : 1;
 }

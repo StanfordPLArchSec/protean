@@ -157,3 +157,9 @@ add_custom_target(gem5_test ALL gem5::gem5 --help >/dev/null)
 add_custom_target(clang_test ALL llvm::clang ${CMAKE_CURRENT_SOURCE_DIR}/test.c)
 
 # 
+
+
+
+include(cmake/CPM)
+include(cmake/IntelPin)
+add_subdirectory(tools)

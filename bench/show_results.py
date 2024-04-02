@@ -9,6 +9,7 @@ import functools
 
 parser = argparse.ArgumentParser()
 parser.add_argument('results_dirs', nargs = '+')
+parser.add_argument('--stat', default = 'ipc')
 args = parser.parse_args()
 
 def parse_checkpoint_args(checkpoint_dir):
@@ -30,8 +31,20 @@ def get_results_for_checkpoint(checkpoint_dir):
     assert len(lines) == 1
     tokens = lines[0].split()
     assert len(tokens) == 1
-    return float(tokens[0])
-
+    if args.stat == 'ipc':
+        return float(tokens[0])
+    else:
+        stats_path = f'{checkpoint_dir}/m5out/stats.txt'
+        matching_lines = []
+        with open(stats_path) as f:
+            for line in f:
+                if args.stat in line:
+                    matching_lines.append(line)
+        if len(matching_lines) == 0:
+            print('error: stat not found in stats.txt', file = sys.stderr)
+            exit(1)
+        line = matching_lines[-1]
+        return float(line.split()[1])
 
 def prune(x):
     if type(x) != dict:
@@ -60,10 +73,25 @@ def get_results_for_dir(dir: str):
                 cpt_dir = f'{test_dir}/{cpt_name}'
                 ipc_path = f'{cpt_dir}/ipc.txt'
                 if os.path.exists(ipc_path):
-                    with open(ipc_path) as f:
-                        lines = f.read().splitlines()
-                        ipc = float(lines[0])
-                        results[bench_name][test_name][cpt_name] = [ipc]
+                    if args.stat == 'ipc':
+                        with open(ipc_path) as f:
+                            lines = f.read().splitlines()
+                            ipc = float(lines[0])
+                            results[bench_name][test_name][cpt_name] = [ipc]
+                    else:
+                        stats_path = f'{cpt_dir}/m5out/stats.txt'
+                        matching_lines = []
+                        with open(stats_path) as f:
+                            for line in f:
+                                if args.stat in line:
+                                    matching_lines.append(line)
+                        if len(matching_lines) == 0:
+                            print(f'error: stat not found in {stats_path}', file = sys.stderr)
+                            # exit(1)
+                            matching_lines.append('0 0 0')
+                        line = matching_lines[-1]
+                        results[bench_name][test_name][cpt_name] = [float(line.split()[1])]
+                        
 
     # Prune if necessary
     prune(results)

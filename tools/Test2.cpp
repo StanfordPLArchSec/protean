@@ -305,9 +305,17 @@ void InstrumentInstruction_Trace(INS ins, void *) {
   // fprintf(stderr, "trace: %p %s\n", (void *) INS_Address(ins), INS_Disassemble(ins).c_str());
 }
 
-static void HandleCPUID(ADDRINT *rax, ADDRINT *rbx, ADDRINT *rcx, ADDRINT *rdx) {
-  const uint32_t in_eax = *rax;
-  const uint32_t in_ecx = *rcx;
+uint32_t cpuid_in_eax, cpuid_in_ecx;
+
+static void HandleCPUID_Pre(ADDRINT rax, ADDRINT rcx) {
+  cpuid_in_eax = rax;
+  cpuid_in_ecx = rcx;
+}
+  
+
+static void HandleCPUID_Post(ADDRINT *rax, ADDRINT *rbx, ADDRINT *rcx, ADDRINT *rdx) {
+  const uint32_t in_eax = cpuid_in_eax;
+  const uint32_t in_ecx = cpuid_in_ecx;
 
   if (in_eax == 0) {
     *rax = 0xd;
@@ -691,13 +699,16 @@ static void HandleSyscallExit(THREADID threadIndex, CONTEXT *ctx, SYSCALL_STANDA
 
 static void InstrumentInstruction_CPUID(INS ins, void *) {
   if (INS_Opcode(ins) == XED_ICLASS_CPUID) {
-    INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR) HandleCPUID,
+    INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR) HandleCPUID_Pre,
+		   IARG_REG_VALUE, REG_RAX,
+		   IARG_REG_VALUE, REG_RCX,
+		   IARG_END);
+    INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR) HandleCPUID_Post,
 		   IARG_REG_REFERENCE, REG_RAX,
 		   IARG_REG_REFERENCE, REG_RBX,
 		   IARG_REG_REFERENCE, REG_RCX,
 		   IARG_REG_REFERENCE, REG_RDX,
 		   IARG_END);
-    INS_Delete(ins);
   }
 }
 

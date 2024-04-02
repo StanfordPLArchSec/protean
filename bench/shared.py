@@ -8,6 +8,10 @@ import copy
 import glob
 import types
 import multiprocessing
+import colorama
+
+DONE = f'{colorama.Fore.GREEN}DONE{colorama.Style.RESET_ALL}'
+ERROR = f'{colorama.Fore.RED}ERROR{colorama.Style.RESET_ALL}'
 
 jobs_sema = None 
 
@@ -47,17 +51,27 @@ def load_benchspec(path: str) -> dict:
 
     return bench_spec
 
+def escape_str(s: str) -> str:
+    assert '"' not in s
+    return f'"{s}"'
 
 def execute_test(cmd: list, test_spec: dict, stdout: str = None, stderr: str = None, cmdline: str = None, **kwargs) -> int:
     copy_assets(test_spec)
     if cmdline:
         with open(cmdline, 'w') as f:
-            print(' '.join(cmd), file = f)
+            if type(cmd) is list:
+                cmdlinestr = ' '.join(map(escape_str, cmd))
+            else:
+                assert type(cmd) is str
+                cmdlinestr = cmd
+            print(cmdlinestr, file = f)
     with jobs_sema, \
          open(stdout, 'w') as stdout, \
          open(stderr, 'w') as stderr:
+        cd = test_spec['cd']
+        os.makedirs(cd, exist_ok = True)
         result = subprocess.run(cmd,
-                                cwd = test_spec['cd'],
+                                cwd = cd,
                                 stdin = subprocess.DEVNULL,
                                 stdout = stdout,
                                 stderr = stderr,
@@ -81,6 +95,10 @@ def execute_gem5_test(cmd: list, se_args: list, test_spec: dict, output_dir: str
     return execute_test(gem5_cmd, test_spec, stdout = f'{output_dir}/simout', stderr = f'{output_dir}/simerr', cmdline = f'{output_dir}/cmdline', **kwargs)
 
 def execute_verification(test_spec: dict, output_dir: str, **kwargs) -> int:
+    if len(test_spec['verify_commands']) == 0:
+        print('CANNOT VERIFY: ', output_dir, file = sys.stderr)
+        exit(1)
+        
     for i, verify_command in enumerate(test_spec['verify_commands']):
         returncode = execute_test(verify_command, test_spec, f'{output_dir}/verout-{i}', f'{output_dir}/vererr-{i}',
                                   cmdline = f'{output_dir}/vercmds',
@@ -98,6 +116,7 @@ def copy_assets(test_spec):
             shutil.copytree(copy['from'], copy['to'])
         else:
             shutil.copyfile(copy['from'], copy['to'])
+            shutil.copymode(copy['from'], copy['to'])            
 
 def parse_checkpoint_args(checkpoint_dir):
     checkpoint_name = os.path.basename(checkpoint_dir)
@@ -110,7 +129,7 @@ def parse_checkpoint_args(checkpoint_dir):
     return types.SimpleNamespace(**args)
 
 
-def expand_test_spec(test_spec: dict):
+def expand_test_spec(exe: str, test_spec: dict):
     # Expand shorthands.
     if 'compare' in test_spec:
         assert 'verify_commands' not in test_spec
@@ -148,6 +167,25 @@ def expand_test_spec(test_spec: dict):
                 "to": f"%T/{cp}"
             }
 
+    if 'exe' in test_spec:
+        exe = test_spec['exe']
+        del test_spec['exe']
+    test_spec['cmd'] = [exe, *test_spec['args']]
+    del test_spec['args']
+
+    if 'cpu' not in test_spec:
+        test_spec['cpu'] = 'X86KvmCPU'
+
+    if 'memsize' not in test_spec:
+        # test_spec['memsize'] = '512MB'
+        test_spec['memsize'] = '512MB'
+
+    if 'interval' not in test_spec:
+        test_spec['interval'] = 10000000 # 10M
+
+    if 'bbvcpu' not in test_spec:
+        test_spec['bbvcpu'] = 'X86NonCachingSimpleCPU'
+
 
 def find_executable(name, base):
     for root, dirs, files in os.walk(base):
@@ -180,6 +218,7 @@ def perform_test_substitutions(d, bench_name, test_name, input_dir, output_dir, 
         d = d.replace('%R', input_dir)
         d = d.replace('%T', output_dir)
         d = d.replace('%n', test_name)
+        d = d.replace('%N', bench_name)
         d = d.replace('%b', f'{test_suite}/tools')
         d = d.replace('%i', bench_name.split('.')[0])
         assert '%' not in d

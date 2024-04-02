@@ -7,6 +7,7 @@
 #include <fstream>
 #include <numeric>
 #include <unordered_map>
+#include <unordered_set>
 
 #include "ShadowMemory.h"
 
@@ -16,6 +17,7 @@ std::vector<bool>::reference operator&=(std::vector<bool>::reference lhs, std::v
 
 static KNOB<std::string> LogFile(KNOB_MODE_WRITEONCE, "pintool", "l", "", "log file");
 static KNOB<unsigned> Verbose(KNOB_MODE_WRITEONCE, "pintool", "v", "0", "verbose");
+static KNOB<std::string> DotFile(KNOB_MODE_WRITEONCE, "pintool", "cg", "", "callgraph dot file");
 
 static unsigned verbose() {
   return Verbose.Value();
@@ -33,19 +35,15 @@ static std::ostream &log() {
 static constexpr size_t kAlignmentBits = 4;
 static constexpr size_t kAlignment = 1 << kAlignmentBits;
 
-static void get_backtrace(const CONTEXT *ctx, std::vector<void *> &bt) {
+static void get_backtrace(const CONTEXT *ctx, std::vector<void *> &bt, std::unordered_map<ADDRINT, std::unordered_set<ADDRINT>> &callgraph) {
   PIN_LockClient();
   bt.resize(16);
   while (PIN_Backtrace(ctx, bt.data(), bt.size()) == bt.size())
     bt.resize(bt.size() * 2);
   PIN_UnlockClient();
-}
-
-static void dump_backtrace(std::ostream &os, const CONTEXT *ctx) {
-  std::vector<void *> bt;
-  get_backtrace(ctx, bt);
-  for (void *p : bt)
-    os << "\t" << p << "\n";
+  if (!bt.empty())
+    for (auto it1 = bt.begin(), it2 = std::next(it1); it2 != bt.end(); ++it1, ++it2)
+      callgraph[(ADDRINT) *it1].insert((ADDRINT) *it2);
 }
 
 class CallSite {
@@ -57,6 +55,8 @@ public:
     assert(alloc_size > 0);
     if (common_size == 0) {
       common_size = alloc_size;
+      min_size = alloc_size;
+      max_size = alloc_size;
       taint.resize(common_size, true);
       return;
     }
@@ -64,6 +64,8 @@ public:
     const size_t old_size = this->common_size;
     const size_t new_size = std::gcd(old_size, alloc_size);
     this->common_size = new_size;
+    this->min_size = std::min(this->min_size, alloc_size);
+    this->max_size = std::max(this->max_size, alloc_size);
     assert(new_size <= old_size);
     
     for (size_t i = new_size; i < old_size; ++i)
@@ -82,18 +84,23 @@ public:
   }
 
   size_t getCommonSize() const { return common_size; }
+  size_t getMinSize() const { return min_size; }
+  size_t getMaxSize() const { return max_size; }
   size_t getNumAllocs() const { return num_allocs; }
   size_t getAllocTotal() const { return alloc_total; }
   const std::vector<bool> &getTaint() const { return taint; }
 
 private:
   size_t common_size = 0;
+  size_t min_size = 0;
+  size_t max_size = 0;
   std::vector<bool> taint;
   size_t num_allocs = 0;
   size_t alloc_total = 0;
 };
 
 static std::vector<void *> backtrace;
+static std::unordered_map<ADDRINT, std::unordered_set<ADDRINT>> callgraph;
 static std::unordered_map<ADDRINT, CallSite> callsites;
 
 class Allocation {
@@ -193,7 +200,7 @@ static void Handle_malloc_before(ADDRINT size, const CONTEXT *ctx) {
   arg_malloc_size = size;
   if (verbose())
     log() << "malloc(" << size << ") = ";
-  get_backtrace(ctx, backtrace);
+  get_backtrace(ctx, backtrace, callgraph);
 }
 static void Handle_malloc_after(ADDRINT base) {
   if (verbose())
@@ -209,7 +216,7 @@ static void Handle_calloc_before(ADDRINT nmemb, ADDRINT size, const CONTEXT *ctx
   arg_calloc_size = size;
   if (verbose())
     log() << "calloc(" << nmemb << ", " << size << ") = ";
-  get_backtrace(ctx, backtrace);
+  get_backtrace(ctx, backtrace, callgraph);
 }
 
 static void Handle_calloc_after(ADDRINT base) {
@@ -226,7 +233,7 @@ static void Handle_realloc_before(ADDRINT ptr, ADDRINT size, const CONTEXT *ctx)
   arg_realloc_newsize = size;
   if (verbose())
     log() << "realloc(" << (void *) ptr << ", " << size << ") = ";
-  get_backtrace(ctx, backtrace);
+  get_backtrace(ctx, backtrace, callgraph);
 }
 
 static void Handle_realloc_after(ADDRINT newbase) {
@@ -250,7 +257,7 @@ static void Handle_reallocarray_before(ADDRINT ptr, ADDRINT nmemb, ADDRINT size,
   arg_reallocarray_size = size;
   if (verbose())
     log() << "reallocarray(" << (void *) ptr << ", " << nmemb << ", " << size << ") = ";
-  get_backtrace(ctx, backtrace);
+  get_backtrace(ctx, backtrace, callgraph);
 }
 
 static void Handle_reallocarray_after(ADDRINT newbase, const CONTEXT *ctx) {
@@ -424,15 +431,27 @@ static void usage(std::ostream &os) {
 
 static void Fini(int32_t code, void *) {
   // Classify callsites.
+  log() << "inst alloc_count alloc_bytes gcd_size min_size max_size taint\n";
   for (const auto &[inst, callsite] : callsites) {
-#if 0
-    if (callsite.getSize() == 1)
-      continue;
-#endif
-    log() << (void *) inst << " " << callsite.getNumAllocs() << " " << callsite.getAllocTotal() << " ";
+    log() << (void *) inst << " " << callsite.getNumAllocs() << " " << callsite.getAllocTotal() << " " << callsite.getCommonSize() << " " << callsite.getMinSize() << " " << callsite.getMaxSize() << " ";
     for (bool b : callsite.getTaint())
       log() << b;
     log() << "\n";
+  }
+
+  if (!DotFile.Value().empty()) {
+    std::ofstream os(DotFile.Value());
+#if 0
+    os << "digraph {\n";
+    for (const auto &[u, vs] : callgraph)
+      for (const auto &v : vs)
+	os << "node" << (void *) u << " -> node" << (void *) v << ";\n";
+    os << "}\n";
+#else
+    for (const auto &[u, vs] : callgraph)
+      for (const auto &v : vs)
+	os << (void *) u << " " << (void *) v << "\n";
+#endif
   }
   
   

@@ -9,6 +9,6 @@ for line in sys.stdin:
     ref = float(tokens[1])
     for exp_s in tokens[1:]:
         exp = float(exp_s)
-        output.append(f'{ref / exp : .4}')
+        output.append(f'{ref / exp : .9}')
     print(*output)
 

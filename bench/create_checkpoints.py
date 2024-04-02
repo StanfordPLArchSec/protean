@@ -9,10 +9,7 @@ import signal
 import copy
 import glob
 import types
-import colorama
-
-DONE = f'{colorama.Fore.GREEN}DONE{colorama.Style.RESET_ALL}'
-ERROR = f'{colorama.Fore.RED}ERROR{colorama.Style.RESET_ALL}'
+import gzip
 
 import shared
 from shared import *
@@ -29,6 +26,9 @@ parser.add_argument('--outdir', required = True)
 parser.add_argument('--llsct', required = True)
 parser.add_argument('--jobs', '-j', type = int, default = multiprocessing.cpu_count() + 2)
 parser.add_argument('--warmup', type = int, default = 10000)
+parser.add_argument('--gem5', required = True)
+parser.add_argument('--se', required = True)
+parser.add_argument('extra_se_args', nargs = '*')
 args = parser.parse_args()
 
 # Make paths absolute
@@ -38,12 +38,11 @@ args.test_suite = os.path.abspath(args.test_suite)
 args.outdir = os.path.abspath(args.outdir)
 
 # Tool directories
-gem5_dir = f'{args.llsct}/gem5'
-gem5_exe = f'{gem5_dir}/build/X86/gem5.fast'
-gem5_se_py = f'{gem5_dir}/configs/deprecated/example/se.py'
-simpoint_exe = f'{args.llsct}/simpoint/bin/simpoint'
-valgrind_exe = f'{args.llsct}/valgrind/install/bin/valgrind'
-checkpoint_exe = f'{args.llsct}/checkpoint/build/checkpointer'
+gem5_exe = os.path.abspath(args.gem5)
+gem5_se_py = os.path.abspath(args.se)
+simpoint_exe = os.path.abspath(f'{args.llsct}/simpoint/bin/simpoint')
+valgrind_exe = os.path.abspath(f'{args.llsct}/valgrind/install/bin/valgrind')
+checkpoint_exe = os.path.abspath(f'{args.llsct}/checkpoint/build/checkpointer')
 
 os.environ['TARGET_ISA'] = 'X86'
 
@@ -69,7 +68,8 @@ def execute_gem5_test(cmd: list, se_args: list, test_spec: dict, output_dir: str
         f'--errout={output_dir}/stderr',
         f'--cmd={exe}',
         f'--options={argstr}',
-        *se_args
+        *se_args,
+        *args.extra_se_args,
     ]
     return execute_test(gem5_cmd, test_spec, stdout = f'{output_dir}/simout', stderr = f'{output_dir}/simerr', cmdline = f'{output_dir}/cmdline', **kwargs)
 
@@ -138,6 +138,7 @@ def run_benchmark_test_bbv(bench_exe: str, test_name: str, test_spec: dict, inpu
     test_spec = perform_test_substitutions(test_spec, bench_name, test_name, input_dir, output_dir, test_suite = args.test_suite)
     # cpu = test_spec['cpu']
     cpu = test_spec['bbvcpu']
+    cpu = 'valgrind'
     memsize = test_spec['memsize']
     interval = test_spec['interval']
 
@@ -147,13 +148,14 @@ def run_benchmark_test_bbv(bench_exe: str, test_name: str, test_spec: dict, inpu
             '--tool=exp-bbv',
             f'--bb-out-file={output_dir}/bbv.out',
             f'--pc-out-file={output_dir}/pc.out',
-            f'--interval-size={args.interval}',
+            f'--interval-size={interval}',
             f'--log-file={output_dir}/valout',
             '--', *test_spec['cmd'],
         ]
         returncode = execute_test(cmd, test_spec, stdout = f'{output_dir}/stdout',
                                   stderr = f'{output_dir}/stderr', cmdline = f'{output_dir}/cmdline')
-        with gzip.open(f'{output_dir}/bbv.out', 'r') as f_in, \
+        os.makedirs(f'{output_dir}/m5out', exist_ok = True)
+        with open(f'{output_dir}/bbv.out', 'rb') as f_in, \
              gzip.open(f'{output_dir}/m5out/simpoint.bb.gz', 'wb') as f_out:
             shutil.copyfileobj(f_in, f_out)
     else:
@@ -285,7 +287,10 @@ def run_benchmark(bench_exe: str, bench_tests: list, input_dir: str, output_dir:
 
     jobs = []
     for test_name, test_spec in bench_tests.items():
-        test_input_dir = f'{input_dir}/run_test'
+        # find unique input dir
+        test_input_dirs = glob.glob(f'{input_dir}/run_*')
+        assert len(test_input_dirs) == 1
+        test_input_dir = test_input_dirs[0]
         test_output_dir = f'{output_dir}/{test_name}'
         job = multiprocessing.Process(target = run_benchmark_test, args = (bench_exe, test_name, test_spec, test_input_dir, test_output_dir))
         job.start()

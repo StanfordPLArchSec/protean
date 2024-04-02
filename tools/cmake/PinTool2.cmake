@@ -1,7 +1,7 @@
 set(PIN_ROOT ${CMAKE_SOURCE_DIR}/../pin CACHE PATH "Path to Intel Pin installation")
 
 function(add_pin_tool name)
-  add_library(${name} MODULE ${ARGN})
+  add_library(${name} SHARED ${ARGN})
   target_compile_options(${name} PRIVATE
     # -Wall
     # -Werror
