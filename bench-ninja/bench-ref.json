@@ -58,7 +58,7 @@
     },
     "657.xz_s": {
 	"type": "INT",
-	"mem": "64GB",
+	"mem": "48GB",
 	"args": "cpu2006docs.tar.xz 6643 055ce243071129412e9dd0b3b69a21654033a9b723d874b2015c774fac1553d9713be561ca86f74e4f16f22e664fc17a79f30caa5ad2c04fbc447549c2810fae 1036078272 1111795472 4 > cpu2006docs.tar-6643-4.out",
 	"verify": "true"
     },
@@ -83,10 +83,10 @@
 	"verify": "%b/fpcmp-target -a 0.0000001 -i compare/lbm.out lbm.out"
     },
     "621.wrf_s": {
-	"skip": 1,
 	"type": "FP",
 	"mem": "1GB",
 	"args": "",
+	"outputs": ["wrfout_d01_2000-01-24_14_00_00"],
 	"verify": "true"
     },
     "627.cam4_s": {
@@ -128,8 +128,8 @@
     },
     "654.roms_s": {
 	"type": "FP",
-	"mem": "1GB",
-	"ss": "16MB",
+	"mem": "16GB",
+	"ss": "1GB",
 	"args": "< ocean_benchmark3.in.x > ocean_benchmark3.log",
 	"verify": "%b/fpcmp-target -a 1.0e-7 -r 1.0e-7 -i compare/ocean_benchmark3.log ocean_benchmark3.log"
     }
