@@ -133,7 +133,7 @@
 	"args": "< ocean_benchmark3.in.x > ocean_benchmark3.log",
 	"verify": "%b/fpcmp-target -a 1.0e-7 -r 1.0e-7 -i compare/ocean_benchmark3.log ocean_benchmark3.log"
     },
-    "648.exchange_s": {
+    "648.exchange2_s": {
 	"type": "INT",
 	"mem": "1GB",
 	"args": "6",
