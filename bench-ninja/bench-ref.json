@@ -85,12 +85,12 @@
     "621.wrf_s": {
 	"type": "FP",
 	"mem": "1GB",
+	"ss": "1GB",
 	"args": "",
 	"outputs": ["wrfout_d01_2000-01-24_14_00_00"],
 	"verify": "true"
     },
     "627.cam4_s": {
-	"skip": 1,
 	"type": "FP",
 	"mem": "1GB",
 	"ss": "1GB",
@@ -98,11 +98,12 @@
 	"outputs": ["cam4_validate.txt"],
 	"verify": "true"
     },
-    "628.pop_s": {
+    "628.pop2_s": {
 	"skip": 1,
 	"type": "FP",
 	"mem": "1GB",
 	"args": "",
+	"outputs": ["ocn.log"],
 	"verify": "%b/fpcmp-target -a 0.03 -r 0.03 -i compare/ocn.log ocn.log"
     },
     "638.imagick_s": {
@@ -113,7 +114,6 @@
 	"verify": "true"
     },
     "644.nab_s": {
-	"skip": 1,
 	"type": "FP",
 	"mem": "1GB",
 	"args": "3j1n 20140317 220 > 3j1n.out",
@@ -132,5 +132,12 @@
 	"ss": "1GB",
 	"args": "< ocean_benchmark3.in.x > ocean_benchmark3.log",
 	"verify": "%b/fpcmp-target -a 1.0e-7 -r 1.0e-7 -i compare/ocean_benchmark3.log ocean_benchmark3.log"
+    },
+    "648.exchange_s": {
+	"type": "INT",
+	"mem": "1GB",
+	"args": "6",
+	"outputs": ["s.txt"],
+	"verify": "%b/fpcmp-target -i compare/s.txt s.txt"
     }
 }
