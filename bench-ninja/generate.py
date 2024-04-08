@@ -370,7 +370,7 @@ for sw_name, sw_config in config.sw.items():
         sim_name = config.vars.checkpoint_sim
         sim_config = config.sim[sim_name]
         gem5_exe = os.path.join('sim', sim_name, sim_config.target)
-        se_py = os.path.join(sim_config.src, sim_config.script)
+        se_py = os.path.join(sim_config.src, sim_config.script_kvm)
         sim_run_args = ' '.join(bench_spec.litargs)        
         verify_path = os.path.abspath(os.path.join('sw', sw_name, 'test-suite', 'tools'))
         verify_rawcmds = ' && '.join(bench_spec.verify)
@@ -682,7 +682,7 @@ for exp_name, exp_config in config.exp.items():
     sim_name = exp_config.sim
     sim_config = config.sim[sim_name]
     gem5_exe = os.path.join('sim', sim_name, sim_config.target)
-    se_py = os.path.join(sim_config.src, sim_config.script)
+    se_py = os.path.join(sim_config.src, sim_config.script_o3)
 
     for bench_name, bench_spec in benchspec.items():
         bench_dir = os.path.join('sw', sw_name, 'test-suite', 'External', 'SPEC', f'C{bench_spec.type}2017speed', bench_name)
@@ -721,11 +721,6 @@ for exp_name, exp_config in config.exp.items():
                 '--cpu-type=X86O3CPU',
                 f'--mem-size={get_mem(bench_name)}',
                 f'--max-stack-size={get_ss(bench_name)}',
-                '--caches',
-                '--l1d_size=32kB', '--l1d_assoc=8',
-                '--l1i_size=32kB', '--l1i_assoc=8',
-                '--l2_size=256kB', '--l2_assoc=16',
-                '--l3_size=2mB', '--l3_assoc=16',
                 f'--checkpoint-dir={os.path.abspath(cpt_dir)}',
                 '--restore-simpoint-checkpoint',
                 f'--checkpoint-restore={cpt_idx + 1}',
