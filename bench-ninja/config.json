@@ -4,12 +4,12 @@
 	"pin": "../pin/pin",
 	"pinpoints": "../tools/build/libbbtrace.so",
 	"valgrind": "../valgrind/install/bin/valgrind",
-	"interval": 10000000,
+	"interval": 50000000,
 	"simpoint": "../simpoint/bin/simpoint",
 	"num_simpoints": 10,
 	"memsize": "8GB",
 	"ss": "8MB",
-	"warmup": 50000000,
+	"warmup": 10000000,
 	"bbv-impl": "pin",
 	"cfitool": "../tools/build/libCFI.so"
     },
@@ -132,7 +132,8 @@
     "sim": {
 	"_default": {
 	    "target": "build/X86/gem5.opt",
-	    "script": "configs/deprecated/example/se.py",
+	    "script_kvm": "configs/deprecated/example/se.py",
+	    "script_o3": "configs/deprecated/example/se.py",
 	    "sconsopts": ["--ignore-style", "-j25"]
 	},
 	
@@ -159,7 +160,12 @@
     "hwmode": {
 	"_default": {
 	    "gem5_opts": [],
-	    "script_opts": ["--ruby"]
+	    "script_opts": [
+		"--ruby",
+		"--umodel=alk-p",
+		"--l1d_size=48kB",
+		"--l1d_assoc=12"
+	    ]
 	},
 
 	"base": {
