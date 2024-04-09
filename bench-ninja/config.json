@@ -243,58 +243,31 @@
 	"spt-spectre": {
 	    "inherit": "spt",
 	    "+script_opts": ["--speculation-model=spectre"]
+	},
+	"spt-declmem": {
+	    "inherit": "spt",
+	    "+script_opts": ["--enable-shadow-mem"]
 	}
     },
 
     "exp": {
-	"unsafe-baseline": {"sw": "llsct", "sim": "base", "hwmode": "base"},
-	"unsafe-baseline-lto": {"sw": "llsct-lto", "sim": "base", "hwmode": "base"},
-	"llsct": {"sw": "llsct", "sim": "llsct", "hwmode": "llsct-declassify-shadowmem"},
-	"llsct-lto": {"inherit": "llsct", "sw": "llsct-lto"},
-	"llsct-lto-unsafe": {"inherit": "llsct-lto", "hwmode": "base"},
-	"llsct-cache": {"sw": "llsct", "sim": "llsct", "hwmode": "llsct-declassify-cache"},
-	"llsct-lto-cache": {"sw": "llsct-lto", "sim": "llsct", "hwmode": "llsct-declassify-cache"},
-	"llsct-lto-debug": {"sw": "llsct-lto-debug", "sim": "llsct", "hwmode": "llsct-declassify-shadowmem"},
-	"llsct-cfi": {"sw": "llsct", "sim": "llsct", "hwmode": "llsct"},
-	"llsct-pipeview": {"sw": "llsct", "sim": "llsct", "hwmode": "llsct-pipeview"},
-	"llsct-arch": {"sw": "llsct", "sim": "llsct", "hwmode": "llsct-arch"},
-	"llsct-spectre": {"sw": "llsct", "sim": "llsct", "hwmode": "llsct-spectre"},
-
 	"unsafe-ct":  {"sw": "llsct-ct",   "sim": "base",  "hwmode": "base"},
 	"unsafe-sbox":{"sw": "llsct-sbox", "sim": "base",  "hwmode": "base"},
 
-	"llsct-ct-futuristic":   {"sw": "llsct-ct",   "sim": "llsct", "hwmode": "llsct"},
-	"llsct-ct-futuristic-nodecl": {"sw": "llsct-ct", "sim": "llsct", "hwmode": "llsct-nodecl"},
-	"llsct-sbox-futuristic-nodecl": {"sw": "llsct-sbox", "sim": "llsct", "hwmode": "llsct-nodecl"},
-	"llsct-ct-futuristic-mem-cache": {"sw": "llsct-ct", "sim": "llsct", "hwmode": "llsct-declassify-cache"},
-	"llsct-ct-futuristic-none": {"sw": "llsct-ct", "sim": "llsct", "hwmode": "base"},
-	"llsct-ct-futuristic-mem-shadowmem": {"sw": "llsct-ct", "sim": "llsct", "hwmode": "llsct-declassify-shadowmem"},
-	"llsct-ct-futuristic-mem-shadowl1": {"sw": "llsct-ct", "sim": "llsct", "hwmode": "llsct-declassify-shadowl1"},
-	"llsct-ct-futuristic-mem-shadowl1+pattern": {"sw": "llsct-ct", "sim": "llsct", "hwmode": "llsct-declassify-shadowl1+pattern"},
-	"llsct-ct-spectre":   {"sw": "llsct-ct",   "sim": "llsct", "hwmode": "llsct-spectre"},
+	"tpe-ct-mem-decll1": {"sw": "llsct-ct", "sim": "llsct", "hwmode": "llsct-declassify-shadowl1"},
+	"tpe-ct-mem-declmem": {"sw": "llsct-ct", "sim": "llsct", "hwmode": "llsct-declassify-shadowmem"},
+	"tpe-ct-all-declmem": {"sw": "llsct-ct", "sim": "llsct", "hwmode": "llsct-shadowmem"},
+	"tpe-ct-all-decll1": {"sw": "llsct-ct", "sim": "llsct", "hwmode": "llsct-shadowl1"},
+	"tpe-ct-all-declnone": {"sw": "llsct-ct", "sim": "llsct", "hwmode": "llsct-nodecl"},
 
-	"llsct-ct-futuristic-shadowmem": {"sw": "llsct-ct", "sim": "llsct", "hwmode": "llsct-shadowmem"},
-	"llsct-ct-futuristic-shadowl1": {"sw": "llsct-ct", "sim": "llsct", "hwmode": "llsct-shadowl1"},
+	"tpe-sbox-mem-decll1": {"sw": "llsct-sbox", "sim": "llsct", "hwmode": "llsct-declassify-shadowl1"},
+	"tpe-sbox-mem-declmem": {"sw": "llsct-sbox", "sim": "llsct", "hwmode": "llsct-declassify-shadowmem"},
+	"tpe-sbox-all-declmem": {"sw": "llsct-sbox", "sim": "llsct", "hwmode": "llsct-shadowmem"},
+	"tpe-sbox-all-decll1": {"sw": "llsct-sbox", "sim": "llsct", "hwmode": "llsct-shadowl1"},
+	"tpe-sbox-all-declnone": {"sw": "llsct-sbox", "sim": "llsct", "hwmode": "llsct-nodecl"},
 
-	"llsct-sbox-futuristic": {"sw": "llsct-sbox", "sim": "llsct", "hwmode": "llsct"},
-	"llsct-sbox-futuristic-mem-cache": {"sw": "llsct-sbox", "sim": "llsct", "hwmode": "llsct-declassify-cache"},
-	"llsct-sbox-futuristic-none": {"sw": "llsct-sbox", "sim": "llsct", "hwmode": "base"},
-	"llsct-sbox-futuristic-mem-shadowmem": {"sw": "llsct-sbox", "sim": "llsct", "hwmode": "llsct-declassify-shadowmem"},
-	"llsct-sbox-futuristic-mem-shadowl1": {"sw": "llsct-sbox", "sim": "llsct", "hwmode": "llsct-declassify-shadowl1"},
-	"llsct-sbox-spectre": {"sw": "llsct-sbox", "sim": "llsct", "hwmode": "llsct-spectre"},
-
-	"llsct-sbox-futuristic-shadowmem": {"sw": "llsct-sbox", "sim": "llsct", "hwmode": "llsct-shadowmem"},
-	"llsct-sbox-futuristic-shadowl1": {"sw": "llsct-sbox", "sim": "llsct", "hwmode": "llsct-shadowl1"},
-	
-	"spt-ct-futuristic": {"sw": "llsct-ct", "sim": "spt", "hwmode": "spt"},
-	"spt-ct-spectre": {"sw": "llsct-ct", "sim": "spt", "hwmode": "spt-spectre"},
-
-	"stt-sbox-futuristic": {"sw": "llsct-sbox", "sim": "stt", "hwmode": "stt"},
-	"stt-sbox-spectre": {"sw": "llsct-sbox", "sim": "stt", "hwmode": "stt-spectre"},
-
-
-	"unsafe-ct-memalign": {"sw": "llsct-ct-align", "sim": "base", "hwmode": "base"},
-	"llsct-ct-futuristic-memalign-shadowl1+pattern": {"sw": "llsct-ct-align", "sim": "llsct", "hwmode": "llsct-declassify-shadowl1+pattern"}
-	
+	"spt-ct-decll1": {"sw": "llsct-ct", "sim": "spt", "hwmode": "spt"},
+	"spt-ct-declmem": {"sw": "llsct-ct", "sim": "spt", "hwmode": "spt-declmem"},
+	"stt-sbox": {"sw": "llsct-sbox", "sim": "stt", "hwmode": "stt"}
     }
 }
