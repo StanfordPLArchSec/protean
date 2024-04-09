@@ -715,6 +715,7 @@ for exp_name, exp_config in config.exp.items():
                 f'cd {subdir} && rm -rf m5out &&',
                 os.path.abspath(gem5_exe),
                 *hw_config.gem5_opts,
+                '-r', '-e',
                 se_py,
                 f'--cmd={os.path.abspath(bench_exe)}',
                 f'--options="{sim_run_args}"',
@@ -725,6 +726,8 @@ for exp_name, exp_config in config.exp.items():
                 '--restore-simpoint-checkpoint',
                 f'--checkpoint-restore={cpt_idx + 1}',
                 *hw_config.script_opts,
+                '--errout=stderr.txt',
+                '--output=stdout.txt',
                 f'; fi && touch run.stamp'
             ]
 
