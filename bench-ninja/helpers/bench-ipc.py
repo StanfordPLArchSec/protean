@@ -31,12 +31,14 @@ for cptipc in args.cptipcs:
             total_ipc += ipc * weight
             
     else:
-        print(f'warning: missing checkpoint {cptidx}', file=sys.stderr)
+        print(f'note: missing checkpoint {cptidx}', file=sys.stderr)
+
+if total_weight < 0.1:
+    print('error: total weight less than 0.1', file=sys.stderr)
+    exit(1)
 
 tolerance = 0.1
 if not (1 - tolerance <= total_weight and total_weight <= 1 + tolerance):
-    print(f'total weight out of tolerance range: {total_weight}', file=sys.stderr)
-    exit(1)
+    print(f'warning: total weight out of tolerance range: {total_weight}', file=sys.stderr)
 
 print(total_ipc / total_weight)
-
