@@ -162,8 +162,7 @@
 	    "gem5_opts": [],
 	    "script_opts": [
 		"--ruby",
-		"--enable-prefetch",
-		"--pcore"
+		"--enable-prefetch"
 	    ]
 	},
 
@@ -268,6 +267,7 @@
 
 	"spt-ct-decll1": {"sw": "llsct-ct", "sim": "spt", "hwmode": "spt"},
 	"spt-ct-declmem": {"sw": "llsct-ct", "sim": "spt", "hwmode": "spt-declmem"},
+
 	"stt-sbox": {"sw": "llsct-sbox", "sim": "stt", "hwmode": "stt"}
     }
 }
