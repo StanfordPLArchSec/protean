@@ -7,7 +7,7 @@
     },
     "602.gcc_s": {
 	"type": "INT",
-	"mem": "8GB",
+	"mem": "16GB",
 	"args": "gcc-pp.c -O5 -fipa-pta -o gcc-pp.opts-O5_-fipa-pta.s",
 	"outputs": ["gcc-pp.opts-O5_-fipa-pta.s"],
 	"verify": "%b/fpcmp-target -i compare/gcc-pp.opts-O5_-fipa-pta.s gcc-pp.opts-O5_-fipa-pta.s"
