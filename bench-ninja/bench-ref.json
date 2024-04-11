@@ -83,6 +83,7 @@
 	"verify": "%b/fpcmp-target -a 0.0000001 -i compare/lbm.out lbm.out"
     },
     "621.wrf_s": {
+	"skip": 1,
 	"type": "FP",
 	"mem": "1GB",
 	"ss": "1GB",
@@ -91,8 +92,9 @@
 	"verify": "true"
     },
     "627.cam4_s": {
+	"skip": 1,
 	"type": "FP",
-	"mem": "1GB",
+	"mem": "16GB",
 	"ss": "1GB",
 	"args": "",
 	"outputs": ["cam4_validate.txt"],
@@ -127,6 +129,7 @@
 	"verify": "%b/fpcmp-target -a 1.0e-27 -r 1.0e-10 -i compare/pscyee.out pscyee.out"
     },
     "654.roms_s": {
+	"skip": 1,
 	"type": "FP",
 	"mem": "16GB",
 	"ss": "1GB",

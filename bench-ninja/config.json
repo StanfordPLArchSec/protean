@@ -148,12 +148,12 @@
 	"spt": {
 	    "inherit": "_default",
 	    "src": "../spt",
-	    "target": "build/X86/gem5.fast"
+	    "target": "build/X86_MESI_Three_Level/gem5.fast"
 	},
 	"stt": {
 	    "inherit": "_default",
 	    "src": "../stt",
-	    "target": "build/X86/gem5.fast"
+	    "target": "build/X86_MESI_Three_Level/gem5.fast"
 	}
     },
 
@@ -245,7 +245,11 @@
 	},
 	"spt-declmem": {
 	    "inherit": "spt",
-	    "+script_opts": ["--enable-shadow-mem"]
+	    "+script_opts": ["--decl-impl=DeclMem"]
+	},
+	"spt-declnone": {
+	    "inherit": "spt",
+	    "+script_opts": ["--decl-impl=DeclNone"]
 	}
     },
 
@@ -267,6 +271,7 @@
 
 	"spt-ct-decll1": {"sw": "llsct-ct", "sim": "spt", "hwmode": "spt"},
 	"spt-ct-declmem": {"sw": "llsct-ct", "sim": "spt", "hwmode": "spt-declmem"},
+	"spt-ct-declnone": {"sw": "llsct-ct", "sim": "spt", "hwmode": "spt-declnone"},
 
 	"stt-sbox": {"sw": "llsct-sbox", "sim": "stt", "hwmode": "stt"}
     }

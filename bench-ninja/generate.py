@@ -425,6 +425,7 @@ for sw_name, sw_config in config.sw.items():
         assert len(kvm_outputs) >= 1
         kvm_run_cmd = [
             'cd', kvm_subdir, '&&',
+            'taskset', '--cpu-list', '0-15', # To avoid weird KVM issues.
             os.path.abspath(gem5_exe),
             '-r', '-e',
             # '--debug-flag=KvmRun,Kvm',
@@ -576,6 +577,7 @@ for sw_name, sw_config in config.sw.items():
         cpt_run_cmd = [
             'cd', cpt_subdir, '&&',
             'rm -rf m5out &&',
+            'taskset', '--cpu-list', '0-15',
             os.path.abspath(gem5_exe),
             # "--debug-flag=KvmRun,Kvm",
             '-r', '-e', # redirect to simout and simerr
@@ -842,11 +844,19 @@ for core_type in ['pcore', 'ecore']:
             inputs = exp_all,
         )
 
+# Make phony exp/{pcore,ecore}/all target
+for core_type in ['pcore', 'ecore']:
+    ninja.build(
+        outputs = os.path.join('exp', core_type, 'all'),
+        rule = 'phony',
+        inputs = [os.path.join('exp', core_type, exp_name, 'all') for exp_name in config.exp]
+    )
+
 # Make phony 'exp/all' target
 ninja.build(
     outputs = os.path.join('exp', 'all'),
     rule = 'phony',
-    inputs = [os.path.join('exp', exp_name, 'all') for exp_name in config.exp]
+    inputs = ['exp/pcore/all', 'exp/ecore/all']
 )    
     
     
