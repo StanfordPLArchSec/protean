@@ -12,6 +12,9 @@ parser = argparse.ArgumentParser()
 parser.add_argument('config', help='Path to JSON configuration file')
 parser.add_argument('benchspec', help='Path to benchmark specifications')
 parser.add_argument('--run-type', required=True, choices=['ref', 'train'])
+parser.add_argument('--sim-depend', required=True, choices=[0,1], type=int)
+parser.add_argument('--sw-depend', required=True, choices=[0,1], type=int)
+parser.add_argument('--cpt-depend', required=True, choices=[0,1], type=int)
 args = parser.parse_args()
 
 with open(args.config) as f:
@@ -445,16 +448,18 @@ for sw_name, sw_config in config.sw.items():
             kvm_run_cmd.append(f'--output={os.path.abspath(os.path.join(kvm_subdir, bench_spec.stdout))}')
         else:
             kvm_run_cmd.append(f'--output=stdout')
+        inputs = [
+            os.path.join(kvm_subdir, 'copy.stamp'),
+            os.path.join(host_subdir, 'verify.stamp'),
+        ]
+        if args.sw_depend:
+            inputs.append(exe)
+        if args.sim_depend:
+            inputs.extend([gem5_exe, se_py])
         ninja.build(
             outputs = kvm_outputs,
             rule = 'stamped-custom-command',
-            inputs = [
-                exe,
-                os.path.join(kvm_subdir, 'copy.stamp'),
-                os.path.join(host_subdir, 'verify.stamp'),
-                gem5_exe,
-                se_py
-            ],
+            inputs = inputs,
             variables = {
                 'stamp': 'run.stamp',
                 'cmd': ' '.join(kvm_run_cmd),
@@ -600,18 +605,21 @@ for sw_name, sw_config in config.sw.items():
             cpt_run_cmd.append(f'--output=stdout')
         
         # cpt_run_cmd.append(f' && expected_simpoints="$$(wc -l < {os.path.abspath(spt_simpoints)})" actual_simpoints="$$(echo {os.path.abspath(cpt_subdir)}/m5out/cpt.simpoint_* | wc -w)" && if [ "$$expected_simpoints" -ne "$$actual_simpoints" ]; then echo "unexpected number of checkpoints (expected $$expected_simpoints, got $$actual_simpoints)"; exit 1; fi')
+        inputs = [
+            bbv_verify_stamp,
+            os.path.join('cpt', sw_name, bench_name, 'cpt', 'copy.stamp'),
+            *spt_outputs,
+            kvm_verify_stamp,
+        ]
+        if args.sw_depend:
+            inputs.append(exe)
+        if args.sim_depend:
+            inputs.extend([gem5_exe, se_py])
+
         ninja.build(
             outputs = cpt_outputs,
             rule = 'stamped-custom-command',
-            inputs = [
-                exe,
-                bbv_verify_stamp,
-                os.path.join('cpt', sw_name, bench_name, 'cpt', 'copy.stamp'),
-                *spt_outputs,
-                kvm_verify_stamp,
-                gem5_exe,
-                se_py
-            ],
+            inputs = inputs,
             variables = {
                 'stamp': 'run.stamp',
                 'cmd': ' '.join(cpt_run_cmd),
@@ -699,10 +707,13 @@ for core_type in ['pcore', 'ecore']:
                 copy_stamp = os.path.join(subdir, 'copy.stamp')
 
                 # Copy resource dir
+                inputs = []
+                if args.sw_depend:
+                    inputs.append(bench_exe)
                 ninja.build(
                     outputs = copy_stamp,
                     rule = 'copy-resource-dir',
-                    inputs = bench_exe,
+                    inputs = inputs,
                     variables = {
                         'src': rsrc_dir,
                         'dst': subdir,
@@ -714,7 +725,7 @@ for core_type in ['pcore', 'ecore']:
                 # Resume from checkpoint
                 run_stamp = os.path.join(subdir, 'run.stamp')
                 exp_run_cmd = [
-                    f'if [ -d {cpt_dir}/cpt.simpoint_{cpt_idx+1:02}_* ]; then '
+                    f'if [ -d {cpt_dir}/cpt.simpoint_{cpt_idx:02}_* ]; then '
                     f'cd {subdir} && rm -rf m5out &&',
                     os.path.abspath(gem5_exe),
                     *hw_config.gem5_opts,
@@ -735,16 +746,20 @@ for core_type in ['pcore', 'ecore']:
                     f'; fi && touch run.stamp'
                 ]
 
+
+                inputs = [
+                    copy_stamp,
+                ]
+                if args.cpt_depend:
+                    inputs.append(os.path.join(cpt_dir, '..', 'run.stamp'))
+                if args.sw_depend:
+                    inputs.append(bench_exe)
+                if args.sim_depend:
+                    inputs.extend([gem5_exe, se_py])
                 ninja.build(
                     outputs = run_stamp,
                     rule = 'custom-command',
-                    inputs = [
-                        gem5_exe,
-                        se_py,
-                        bench_exe,
-                        copy_stamp,
-                        os.path.join(cpt_dir, '..', 'run.stamp'),
-                    ],
+                    inputs = inputs,
                     variables = {
                         'cmd': ' '.join(exp_run_cmd),
                         'id': f'exp->{exp_name}->{bench_name}->{cpt_idx}',

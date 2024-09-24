@@ -250,6 +250,11 @@
 	"spt-declnone": {
 	    "inherit": "spt",
 	    "+script_opts": ["--decl-impl=DeclNone"]
+	},
+
+	"tpe-spectre": {
+	    "inherit": "llsct-shadowl1",
+	    "+script_opts": ["--llsct-speculation-model=spectre"]
 	}
     },
 
@@ -273,6 +278,11 @@
 	"spt-ct-declmem": {"sw": "llsct-ct", "sim": "spt", "hwmode": "spt-declmem"},
 	"spt-ct-declnone": {"sw": "llsct-ct", "sim": "spt", "hwmode": "spt-declnone"},
 
-	"stt-sbox": {"sw": "llsct-sbox", "sim": "stt", "hwmode": "stt"}
+	"stt-sbox": {"sw": "llsct-sbox", "sim": "stt", "hwmode": "stt"},
+
+	"stt-sbox-spectre": {"sw": "llsct-sbox", "sim": "stt", "hwmode": "stt-spectre"},
+	"spt-ct-spectre": {"sw": "llsct-ct", "sim": "spt", "hwmode": "spt-spectre"},
+	"tpe-sbox-spectre": {"sw": "llsct-sbox", "sim": "llsct", "hwmode": "tpe-spectre"},
+	"tpe-ct-spectre": {"sw": "llsct-ct", "sim": "llsct", "hwmode": "tpe-spectre"}
     }
 }
