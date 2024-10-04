@@ -1,288 +1,141 @@
 {
     "vars": {
-	"checkpoint-sim": "base",
-	"pin": "../pin/pin",
-	"pinpoints": "../tools/build/libbbtrace.so",
-	"valgrind": "../valgrind/install/bin/valgrind",
-	"interval": 50000000,
-	"simpoint": "../simpoint/bin/simpoint",
-	"num_simpoints": 10,
-	"memsize": "8GB",
-	"ss": "8MB",
-	"warmup": 10000000,
-	"bbv-impl": "pin",
-	"cfitool": "../tools/build/libCFI.so"
+	    "checkpoint-sim": "base",
+	    "pin": "../pin/pin",
+	    "pinpoints": "../tools/build/libbbtrace.so",
+	    "valgrind": "../valgrind/install/bin/valgrind",
+	    "interval": 50000000,
+	    "simpoint": "../simpoint/bin/simpoint",
+	    "num_simpoints": 10,
+	    "memsize": "8GB",
+	    "ss": "8MB",
+	    "warmup": 10000000,
+	    "bbv-impl": "pin",
+	    "cfitool": "../tools/build/libCFI.so"
     },
     
     "sw": {
-	"_default": {
-	    "spec2017": "../cpu2017",
-	    "test-suite": "../test-suite",
-	    "llvm": "../llvm",
-	    "cc": "../llvm/build/bin/clang",
-	    "cxx": "../llvm/build/bin/clang++",
-	    "fc": "../llvm/build/bin/flang-new",
-	    "cmake_build_type": "Release",
-	    "cflags": ["-fcf-protection=none", "-mno-avx"],
-	    "fflags": ["-O3"],
-	    "ldflags": ["-static", "-fuse-ld=lld", "-Wl,--allow-multiple-definition", "-L/home/nmosier/llsct2/llvm/build/lib"],
-	    "libc_cflags": [],
-	    "libcxx_cflags": [],
-	    "deps": []
-	},
-	"_lto": {
-	    "inherit": "_default",
-	    "+cflags": ["-flto"],
-	    "+ldflags": ["-flto"],
-	    "+deps": ["../llvm/build/bin/ld.lld"]
-	},
+	    "_default": {
+	        "spec2017": "../cpu2017",
+	        "test-suite": "../test-suite",
+	        "llvm": "../llvm",
+	        "cc": "../llvm/build/bin/clang",
+	        "cxx": "../llvm/build/bin/clang++",
+	        "fc": "../llvm/build/bin/flang-new",
+	        "cmake_build_type": "Release",
+	        "cflags": ["-O3", "-mno-avx"],
+	        "fflags": ["-O3", "-mno-avx"],
+	        "ldflags": ["-static", "-fuse-ld=lld", "-Wl,--allow-multiple-definition", "-L/home/nmosier/llsct2/llvm/build/lib"],
+	        "libc_cflags": [],
+	        "libcxx_cflags": [],
+	        "deps": []
+	    },
 
-	"base": {
-	    "inherit": "_default"
-	},
-	"base-lto": {
-	    "inherit": "_lto"
-	},
+	    "base": {
+	        "inherit": "_default"
+	    },
 
-	"_llsct": {
-	    "inherit": "_default",
-	    "+cflags": [
-		"-mllvm", "-llsct",
-		"-mllvm", "-llsct-declassify",
-		"-mllvm", "-llsct-cfi"
-	    ],
-	    "+fflags": [
-		"-mllvm", "-llsct",
-		"-mllvm", "-llsct-declassify",
-		"-mllvm", "-llsct-cfi"
-	    ],
-	    "+libc_cflags": ["-mllvm", "-tpe-ncsrs=0"],
-	    "+libcxx_cflags": ["-mllvm", "-tpe-ncsrs=0"]
-	},
-	"llsct": {
-	    "inherit": "_default",
-	    "cflags": ["-DontUseThisSwMode"]
-	},
-	"_llsct-lto": {
-	    "inherit": "_lto",
-	    "+ldflags": [
-		"-Wl,--load-pass-plugin=/home/nmosier/llsct2/passes/build/libDeclassifyPass.so",
-		"-Wl,-mllvm,-llsct,-mllvm,-llsct-declassify,-mllvm,-llsct-cfi"
-	    ],
-	    "+deps": ["../passes/build/libDeclassifyPass.so"]
-	},
-	"llsct-lto": {
-	    "inherit": "_default",
-	    "cflags": ["-DontUsethisSwMode"]
-	},
-	"llsct-lto-debug": {
-	    "inherit": "llsct-lto",
-	    "+ldflags": ["-Wl,--load-pass-plugin=/home/nmosier/llsct2/passes/build/libDebugIR.so"],
-	    "+deps": ["../passes/build/libDebugIR.so"]
-	},
+	    "_ptex": {
+	        "inherit": "_default",
+	        "+cflags": ["-mllvm", "-x86-ptex"],
+	        "+fflags": ["-mllvm", "-x86-ptex"]
+	    },
 
-	"llsct-ct": {
-	    "inherit": "_llsct",
-	    "+cflags": ["-mllvm", "-tpe-privacy-policy=ct"],
-	    "+fflags": ["-mllvm", "-tpe-privacy-policy=ct"]
-	},
-	"llsct-sbox": {
-	    "inherit": "_llsct",
-	    "+cflags": ["-mllvm", "-tpe-privacy-policy=sandbox"],
-	    "+fflags": ["-mllvm", "-tpe-privacy-policy=sandbox"]
-	},
+	    "ptex-rel": {"inherit": "_ptex"},
 
-	"llsct-lto-ct": {
-	    "inherit": "_llsct-lto",
-	    "+ldflags": ["-Wl,-mllvm,-tpe-privacy-policy=ct"]
-	},
-	"llsct-lto-sbox": {
-	    "inherit": "_llsct-lto",
-	    "+ldflags": ["-Wl,-mllvm,-tpe-privacy-policy=sandbox"]
-	},
+	    "ptex-rel-stores": {
+	        "inherit": "ptex-rel",
+	        "+cflags": ["-mllvm", "-x86-ptex-stores"],
+	        "+fflags": ["-mllvm", "-x86-ptex-stores"]
+	    },
 
-	"llsct-ct-none": {
-	    "inherit": "llsct-ct",
-	    "+cflags": ["-mllvm", "-tpe-privr=0", "-mllvm", "-tpe-privm=0", "-mllvm", "-tpe-ncsrs=0"]
-	},
-	"llsct-ct-ncsrs": {
-	    "inherit": "llsct-ct",
-	    "+cflags": ["-mllvm", "-tpe-privr=0", "-mllvm", "-tpe-privm=0"]
-	},
-	"llsct-ct-ncsrs+privm": {
-	    "inherit": "llsct-ct",
-	    "+cflags": ["-mllvm", "-tpe-privr=0"]
-	},
+	    "annotate-pointer-loads": {
+	        "inherit": "base",
+	        "+cflags": ["-mllvm", "-x86-annotate-pointers", "-mllvm", "-x86-annotate-pointers-all"],
+	        "+fflags": ["-mllvm", "-x86-annotate-pointers", "-mllvm", "-x86-annotate-pointers-all"]
+	    },
 
-	"llsct-sbox-none": {
-	    "inherit": "llsct-sbox",
-	    "+cflags": ["-mllvm", "-tpe-privr=0"]
-	},
-	"llsct-ct-simple": {
-	    "inherit": "llsct-ct",
-	    "+cflags": ["-mllvm", "-tpe-args=0"]
-	},
+        "ptex-rel-debug": {
+            "inherit": "ptex-rel",
+            "cc": "../llvm/build-debug/bin/clang",
+            "cxx": "../llvm/build-debug/bin/clang++",
+            "fc": "../llvm/build-debug/bin/flang-new"
+        },
 
-	"llsct-ct-align": {
-	    "inherit": "llsct-ct",
-	    "+ldflags": ["-Wl,--wrap=malloc", "-Wl,--whole-archive", "/home/nmosier/llsct2/tools/build/libalign_runtime.a", "-Wl,--no-whole-archive"]
-	}
+        "ptex-rel-debug-future": {
+            "inherit": "ptex-rel-debug",
+            "+cflags": ["-mllvm", "-x86-privty-future-only", "-mllvm", "-global-isel", "-mllvm", "-global-isel-abort=0"],
+            "+fflags": ["-mllvm", "-x86-privty-future-only", "-mllvm", "-global-isel", "-mllvm", "-global-isel-abort=0"],
+            "+libc_cflags": ["-mllvm", "-global-isel=0"],
+            "+libcxx_cflags": ["-mllvm", "-global-isel=0"]
+        },
+
+        "ptex-rel-debug-future-dump": {
+            "inherit": "ptex-rel-debug-future",
+            "+cflags": ["-mllvm", "-x86-privty-dump", "-mllvm", "-x86-privty-dump-filter=S_regmatch"]
+        }
     },
 
     "sim": {
-	"_default": {
-	    "target": "build/X86_MESI_Three_Level/gem5.fast",
-	    "script_kvm": "configs/deprecated/example/se.py",
-	    "script_o3": "configs/AlderLake/se.py",
-	    "sconsopts": ["--ignore-style", "-j25"]
-	},
-	
-	"base": {
-	    "inherit": "_default",
-	    "src": "../gem5-spec2017"
-	},
-	"llsct": {
-	    "inherit": "_default",
-	    "src": "../gem5"
-	},
-	"spt": {
-	    "inherit": "_default",
-	    "src": "../spt",
-	    "target": "build/X86_MESI_Three_Level/gem5.fast"
-	},
-	"stt": {
-	    "inherit": "_default",
-	    "src": "../stt",
-	    "target": "build/X86_MESI_Three_Level/gem5.fast"
-	}
+	    "_default": {
+	        "target": "build/X86_MESI_Three_Level/gem5.opt",
+	        "script_kvm": "configs/deprecated/example/se.py",
+	        "script_o3": "configs/AlderLake/se.py",
+	        "sconsopts": ["--ignore-style", "-j25"]
+	    },
+	    
+	    "base": {
+	        "inherit": "_default",
+	        "src": "../gem5/base"
+	    },
+	    "tpe": {
+	        "inherit": "_default",
+	        "src": "../gem5/tpe"
+	    },
+	    "spt": {
+	        "inherit": "_default",
+	        "src": "../gem5/spt"
+	    },
+	    "stt": {
+	        "inherit": "_default",
+	        "src": "../gem5/stt"
+	    }
     },
 
     "hwmode": {
-	"_default": {
-	    "gem5_opts": [],
-	    "script_opts": [
-		"--ruby",
-		"--enable-prefetch"
-	    ]
-	},
+	    "_default": {
+            "gem5_opts": ["--debug-file=dbgout.txt.gz"],
+	        "script_opts": ["--ruby", "--enable-prefetch"]
+	    },
 
-	"base": {
-	    "inherit": "_default"
-	},
-	"llsct-declassify-shadowmem": {
-	    "inherit": "_default",
-	    "+script_opts": [
-		"--tpe-mem=1",
-		"--llsct-declassify-impl=shadowmem"
-	    ]
-	},
-	"llsct-declassify-shadowl1": {
-	    "inherit": "_default",
-	    "+script_opts": [
-		"--tpe-mem=1",
-		"--llsct-declassify-impl=shadowl1"
-	    ]
-	},
-	"llsct-declassify-cache": {
-	    "inherit": "_default",
-	    "+script_opts": [
-		"--tpe-mem=1",
-		"--llsct-declassify-impl=cache",
-		"--llsct-declassify-lines=1024"
-	    ]
-	},
-	"llsct-declassify-shadowl1+pattern": {
-	    "inherit": "_default",
-	    "+script_opts": [
-		"--tpe-mem=1",
-		"--llsct-declassify-impl=shadowl1+pattern"
-	    ]
-	},
+	    "base": {
+	        "inherit": "_default"
+	    },
 
-	"llsct": {
-	    "inherit": "llsct-declassify-cache",
-	    "+script_opts": ["--tpe-reg=1"]
-	},
-	"llsct-shadowmem": {
-	    "inherit": "llsct-declassify-shadowmem",
-	    "+script_opts": ["--tpe-reg=1"]
-	},
-	"llsct-shadowl1": {
-	    "inherit": "llsct-declassify-shadowl1",
-	    "+script_opts": ["--tpe-reg=1"]
-	},
-	"llsct-nodecl": {
-	    "inherit": "_default",
-	    "+script_opts": ["--tpe-reg=1", "--tpe-mem=1", "--llsct-declassify-impl=none"]
-	},
-	"llsct-pipeview": {
-	    "inherit": "llsct",
-	    "+gem5_opts": ["--debug-flags=O3PipeView,O3PipeViewLLSCT,LLSCT", "--debug-file=dbgout.gz"]
-	},
-	"spt": {
-	    "inherit": "_default",
-	    "+script_opts": ["--enableSPT=1", "--moreTransmitInsts=2"]
-	},
-	"stt": {
-	    "inherit": "_default",
-	    "+script_opts": ["--STT=1"]
-	},
-	"llsct-arch": {
-	    "inherit": "llsct",
-	    "+script_opts": ["--llsct-threat-model=arch"]
-	},
-	"llsct-spectre": {
-	    "inherit": "llsct",
-	    "+script_opts": ["--llsct-speculation-model=spectre"]
-	},
-	"stt-spectre": {
-	    "inherit": "stt",
-	    "+script_opts": ["--speculation-model=spectre"]
-	},
-	"spt-spectre": {
-	    "inherit": "spt",
-	    "+script_opts": ["--speculation-model=spectre"]
-	},
-	"spt-declmem": {
-	    "inherit": "spt",
-	    "+script_opts": ["--decl-impl=DeclMem"]
-	},
-	"spt-declnone": {
-	    "inherit": "spt",
-	    "+script_opts": ["--decl-impl=DeclNone"]
-	},
+	    "tpe": {
+	        "inherit": "_default",
+	        "+script_opts": ["--tpe-reg", "--tpe-mem", "--tpe-xmit"],
+	        "+gem5_opts": ["--debug-flag=TPE"]
+	    },
 
-	"tpe-spectre": {
-	    "inherit": "llsct-shadowl1",
-	    "+script_opts": ["--llsct-speculation-model=spectre"]
-	}
+	    "spt": {
+	        "inherit": "_default",
+	        "+script_opts": ["--enableSPT=1", "--moreTransmitInsts=2"]
+	    },
+
+	    "stt": {
+	        "inherit": "_default",
+	        "+script_opts": ["--STT=1"]
+	    }
     },
 
     "exp": {
-	"unsafe-ct":  {"sw": "llsct-ct",   "sim": "base",  "hwmode": "base"},
-	"unsafe-sbox":{"sw": "llsct-sbox", "sim": "base",  "hwmode": "base"},
+	    "unsafe-rel": {"sw": "ptex-rel", "sim": "base", "hwmode": "base"},
+	    "tpe-rel": {"sw": "ptex-rel", "sim": "tpe", "hwmode": "tpe"},
+	    "spt-rel": {"sw": "ptex-rel", "sim": "spt", "hwmode": "spt"},
+	    "spt-pointer-loads": {"sw": "annotate-pointer-loads", "sim": "spt", "hwmode": "spt"},
 
-	"tpe-ct-mem-decll1": {"sw": "llsct-ct", "sim": "llsct", "hwmode": "llsct-declassify-shadowl1"},
-	"tpe-ct-mem-declmem": {"sw": "llsct-ct", "sim": "llsct", "hwmode": "llsct-declassify-shadowmem"},
-	"tpe-ct-all-declmem": {"sw": "llsct-ct", "sim": "llsct", "hwmode": "llsct-shadowmem"},
-	"tpe-ct-all-decll1": {"sw": "llsct-ct", "sim": "llsct", "hwmode": "llsct-shadowl1"},
-	"tpe-ct-all-declnone": {"sw": "llsct-ct", "sim": "llsct", "hwmode": "llsct-nodecl"},
-
-	"tpe-sbox-mem-decll1": {"sw": "llsct-sbox", "sim": "llsct", "hwmode": "llsct-declassify-shadowl1"},
-	"tpe-sbox-mem-declmem": {"sw": "llsct-sbox", "sim": "llsct", "hwmode": "llsct-declassify-shadowmem"},
-	"tpe-sbox-all-declmem": {"sw": "llsct-sbox", "sim": "llsct", "hwmode": "llsct-shadowmem"},
-	"tpe-sbox-all-decll1": {"sw": "llsct-sbox", "sim": "llsct", "hwmode": "llsct-shadowl1"},
-	"tpe-sbox-all-declnone": {"sw": "llsct-sbox", "sim": "llsct", "hwmode": "llsct-nodecl"},
-
-	"spt-ct-decll1": {"sw": "llsct-ct", "sim": "spt", "hwmode": "spt"},
-	"spt-ct-declmem": {"sw": "llsct-ct", "sim": "spt", "hwmode": "spt-declmem"},
-	"spt-ct-declnone": {"sw": "llsct-ct", "sim": "spt", "hwmode": "spt-declnone"},
-
-	"stt-sbox": {"sw": "llsct-sbox", "sim": "stt", "hwmode": "stt"},
-
-	"stt-sbox-spectre": {"sw": "llsct-sbox", "sim": "stt", "hwmode": "stt-spectre"},
-	"spt-ct-spectre": {"sw": "llsct-ct", "sim": "spt", "hwmode": "spt-spectre"},
-	"tpe-sbox-spectre": {"sw": "llsct-sbox", "sim": "llsct", "hwmode": "tpe-spectre"},
-	"tpe-ct-spectre": {"sw": "llsct-ct", "sim": "llsct", "hwmode": "tpe-spectre"}
+        "unsafe-rel-future": {"sw": "ptex-rel-debug-future", "sim": "base", "hwmode": "base"},
+        "tpe-rel-future": {"sw": "ptex-rel-debug-future", "sim": "tpe", "hwmode": "tpe"}
     }
 }

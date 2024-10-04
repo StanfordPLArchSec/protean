@@ -346,6 +346,11 @@ for sim_name, sim_config in config.sim.items():
         variables = variables,
     )
 
+    ninja.build(
+        outputs = os.path.join(dir, 'all'),
+        rule = 'phony',
+        inputs = exe,
+    )
 
 # cpt builds
 for sw_name, sw_config in config.sw.items():
@@ -681,6 +686,15 @@ for sw_name, sw_config in config.sw.items():
         #         },
         #     )
 
+        ## bench all
+        cpt_subdir = os.path.join('cpt', sw_name, bench_name, 'cpt')
+        ninja.build(
+            outputs = os.path.join('cpt', sw_name, bench_name, 'all'),
+            rule = 'phony',
+            inputs = cpt_verify_stamp,
+        )
+            
+
 
 # run experiments
 for core_type in ['pcore', 'ecore']:
@@ -774,22 +788,6 @@ for core_type in ['pcore', 'ecore']:
                     rule = 'generate-leaf-ipc',
                     inputs = run_stamp,
                     variables = {'stats': os.path.join(subdir, 'm5out', 'stats.txt') },
-                )
-
-                # Generate miss-rate.txt
-                ninja.build(
-                    outputs = os.path.join(subdir, 'miss-rate.txt'),
-                    rule = 'generate-leaf-miss-rate',
-                    inputs = run_stamp,
-                    variables = {'stats': os.path.join(subdir, 'm5out', 'stats.txt')},
-                )
-
-                # Generate miss-penalty.txt
-                ninja.build(
-                    outputs = os.path.join(subdir, 'miss-penalty.txt'),
-                    rule = 'generate-leaf-miss-penalty',
-                    inputs = run_stamp,
-                    variables = {'stats': os.path.join(subdir, 'm5out', 'stats.txt')}
                 )
 
 
