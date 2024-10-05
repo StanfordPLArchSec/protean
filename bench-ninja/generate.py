@@ -113,20 +113,13 @@ ninja.rule(
     description = '($id) Generating ipc.txt',
 )
 
-## generate-leaf-miss-rate
+## generate-leaf-weight
 ninja.rule(
-    name = 'generate-leaf-miss-rate',
-    command = 'if [ -f $stats ]; then grep -F -e system.switch_cpus.decltab0.hits -e system.switch_cpus.decltab0.misses $stats | tail -2 | awk \'/hits/{hits=$$2}/misses/{misses=$$2}END{if (hits + misses > 0) { print misses/(hits+misses)*100 } else { print "0.0" } }\'; else echo 0.0; fi > $out',
-    description = '($id) Generating miss-rate.txt',
+    name = 'generate-leaf-weight',
+    command = 'if [ $$(wc -l $weights) -gt $cpt ]; then head -$$(($cpt + 1)) | tail -1; else echo 0.0 > $out',
+    description = '($id) Generating weight.txt',
 )
-
-## generate-leaf-miss-penalty
-ninja.rule(
-    name = 'generate-leaf-miss-penalty',
-    command = 'if [ -f $stats ]; then grep -F -e system.switch_cpus.lsq0.delayedWritebackTicks -e system.switch_cpus.lsq0.delayedWritebackCount $stats | tail -2 | awk \'/system.switch_cpus.lsq0.delayedWritebackTicks/{ticks=$$2}/system.switch_cpus.lsq0.delayedWritebackCount/{count=$$2}END{if (count > 0) print ticks/count; else print 0.0}\'; else echo 0.0; fi > $out',
-    description = '($id) Generating miss-penalty.txt'
-)
-    
+        
 
 # Define builds
 
@@ -790,6 +783,17 @@ for core_type in ['pcore', 'ecore']:
                     variables = {'stats': os.path.join(subdir, 'm5out', 'stats.txt') },
                 )
 
+                # Generate weight.txt
+                ninja.build(
+                    outputs = os.path.join(subdir, 'weight.txt'),
+                    rule = 'generate-leaf-weight',
+                    inputs = run_stamp,
+                    variables = {
+                        'cpt': str(cpt_idx),
+                        'weights': os.path.join('cpt', sw_name, bench_name, 'spt', 'weights.out'),
+                        'id': f'exp->{exp_name}->{bench_name}->{cpt_idx}',
+                    },
+                )
 
             # Generate ipc.txt for benchmark
             generate_bench_ipc_py = os.path.join(os.path.dirname(__file__), 'helpers', 'bench-ipc.py')
@@ -807,42 +811,6 @@ for core_type in ['pcore', 'ecore']:
                     'cmd': ' '.join(generate_bench_ipc_cmd),
                     'id': f'exp->{exp_name}->{bench_name}->ipc',
                     'desc': 'Generating benchmark ipc.txt',
-                },
-            )
-
-            # Generate miss-rate.txt for benchmark
-            generate_bench_miss_rate_inputs = [os.path.join('exp', core_type, exp_name, bench_name, str(cpt_idx), 'miss-rate.txt') for cpt_idx in range(config.vars.num_simpoints)]
-            generate_bench_miss_rate_output = os.path.join('exp', core_type, exp_name, bench_name, 'miss-rate.txt')
-            generate_bench_miss_rate_cmd = ['python3', generate_bench_ipc_py, cpt_dir, *generate_bench_miss_rate_inputs, '>', generate_bench_miss_rate_output]
-            ninja.build(
-                outputs = generate_bench_miss_rate_output,
-                rule = 'custom-command',
-                inputs = [
-                    *generate_bench_miss_rate_inputs,
-                    generate_bench_ipc_py,
-                ],
-                variables = {
-                    'cmd': ' '.join(generate_bench_miss_rate_cmd),
-                    'id': f'exp->{exp_name}->{bench_name}->ipc',
-                    'desc': 'Generating benchmark miss-rate.txt',
-                },
-            )
-
-            # Generate miss-penalty.txt for benchmark
-            generate_bench_miss_penalty_inputs = [os.path.join('exp', core_type, exp_name, bench_name, str(cpt_idx), 'miss-penalty.txt') for cpt_idx in range(config.vars.num_simpoints)]
-            generate_bench_miss_penalty_output = os.path.join('exp', core_type, exp_name, bench_name, 'miss-penalty.txt')
-            generate_bench_miss_penalty_cmd = ['python3', generate_bench_ipc_py, cpt_dir, *generate_bench_miss_penalty_inputs, '>', generate_bench_miss_penalty_output]
-            ninja.build(
-                outputs = generate_bench_miss_penalty_output,
-                rule = 'custom-command',
-                inputs = [
-                    *generate_bench_miss_penalty_inputs,
-                    generate_bench_ipc_py,
-                ],
-                variables = {
-                    'cmd': ' '.join(generate_bench_miss_penalty_cmd),
-                    'id': f'exp->{exp_name}->{bench_name}->miss-penalty',
-                    'desc': 'Generating benchmark miss-penalty.txt',
                 },
             )
 
