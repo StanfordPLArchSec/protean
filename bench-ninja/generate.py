@@ -388,7 +388,7 @@ for sw_name, sw_config in config.sw.items():
         host_run_cmd = f'cd {host_subdir} && {os.path.abspath(exe)} {host_run_args} 2> stderr'
         if not bench_spec.stdout:
             host_run_cmd += ' > stdout'
-        
+
         ninja.build(
             outputs = host_outputs,
             rule = 'custom-command',
@@ -691,139 +691,144 @@ for sw_name, sw_config in config.sw.items():
 
 # run experiments
 for core_type in ['pcore', 'ecore']:
-    for exp_name, exp_config in config.exp.items():
-        exp_dir = os.path.join('exp', core_type, exp_name)
-        sw_name = exp_config.sw
-        sw_config = config.sw[sw_name]
-        hw_name = exp_config.hwmode
-        hw_config = config.hwmode[hw_name]
-        sim_name = exp_config.sim
-        sim_config = config.sim[sim_name]
-        gem5_exe = os.path.join('sim', sim_name, sim_config.target)
-        se_py = os.path.join(sim_config.src, sim_config.script_o3)
+    for bench_type in ['int', 'fp']:
+        for exp_name, exp_config in config.exp.items():
+            exp_dir = os.path.join('exp', core_type, bench_type, exp_name)
+            sw_name = exp_config.sw
+            sw_config = config.sw[sw_name]
+            hw_name = exp_config.hwmode
+            hw_config = config.hwmode[hw_name]
+            sim_name = exp_config.sim
+            sim_config = config.sim[sim_name]
+            gem5_exe = os.path.join('sim', sim_name, sim_config.target)
+            se_py = os.path.join(sim_config.src, sim_config.script_o3)
 
-        for bench_name, bench_spec in benchspec.items():
-            bench_dir = os.path.join('sw', sw_name, 'test-suite', 'External', 'SPEC', f'C{bench_spec.type}2017speed', bench_name)
-            bench_exe = os.path.join(bench_dir, bench_name)
-            rsrc_dir = os.path.join(bench_dir, f'run_{args.run_type}')
-            cpt_dir = os.path.join('cpt', sw_name, bench_name, 'cpt', 'm5out')
-            sim_run_args = ' '.join(bench_spec.litargs)
+            for bench_name, bench_spec in benchspec.items():
+                if bench_spec.type.lower() != bench_type:
+                    continue
+                bench_dir = os.path.join('sw', sw_name, 'test-suite', 'External', 'SPEC', f'C{bench_spec.type}2017speed', bench_name)
+                bench_exe = os.path.join(bench_dir, bench_name)
+                rsrc_dir = os.path.join(bench_dir, f'run_{args.run_type}')
+                cpt_dir = os.path.join('cpt', sw_name, bench_name, 'cpt', 'm5out')
+                sim_run_args = ' '.join(bench_spec.litargs)
 
-            for cpt_idx in range(config.vars.num_simpoints):
-                subdir = os.path.join(exp_dir, bench_name, str(cpt_idx))
-                copy_stamp = os.path.join(subdir, 'copy.stamp')
+                for cpt_idx in range(config.vars.num_simpoints):
+                    subdir = os.path.join(exp_dir, bench_name, str(cpt_idx))
+                    copy_stamp = os.path.join(subdir, 'copy.stamp')
 
-                # Copy resource dir
-                inputs = []
-                if args.sw_depend:
-                    inputs.append(bench_exe)
+                    # Copy resource dir
+                    inputs = []
+                    if args.sw_depend:
+                        inputs.append(bench_exe)
+                    ninja.build(
+                        outputs = copy_stamp,
+                        rule = 'copy-resource-dir',
+                        inputs = inputs,
+                        variables = {
+                            'src': rsrc_dir,
+                            'dst': subdir,
+                            'stamp': copy_stamp,
+                            'id': f'exp->{exp_name}->copy',
+                        },
+                    )
+
+                    # Resume from checkpoint
+                    run_stamp = os.path.join(subdir, 'run.stamp')
+                    exp_run_cmd = [
+                        f'if [ -d {cpt_dir}/cpt.simpoint_{cpt_idx:02}_* ]; then '
+                        f'cd {subdir} && rm -rf m5out &&',
+                        os.path.abspath(gem5_exe),
+                        *hw_config.gem5_opts,
+                        '-r', '-e',
+                        se_py,
+                        f'--cmd={os.path.abspath(bench_exe)}',
+                        f'--options="{sim_run_args}"',
+                        '--cpu-type=X86O3CPU',
+                        f'--mem-size={get_mem(bench_name)}',
+                        f'--max-stack-size={get_ss(bench_name)}',
+                        f'--checkpoint-dir={os.path.abspath(cpt_dir)}',
+                        '--restore-simpoint-checkpoint',
+                        f'--checkpoint-restore={cpt_idx + 1}',
+                        *hw_config.script_opts,
+                        '--errout=stderr.txt',
+                        '--output=stdout.txt',
+                        f'--{core_type}',
+                        f'; fi && touch run.stamp'
+                    ]
+
+
+                    inputs = [
+                        copy_stamp,
+                    ]
+                    if args.cpt_depend:
+                        inputs.append(os.path.join(cpt_dir, '..', 'run.stamp'))
+                    if args.sw_depend:
+                        inputs.append(bench_exe)
+                    if args.sim_depend:
+                        inputs.extend([gem5_exe, se_py])
+                    ninja.build(
+                        outputs = run_stamp,
+                        rule = 'custom-command',
+                        inputs = inputs,
+                        variables = {
+                            'cmd': ' '.join(exp_run_cmd),
+                            'id': f'exp->{exp_name}->{bench_name}->{cpt_idx}',
+                            'desc': 'Resume from checkpoints',
+                            'pool': 'mem', 'weight': get_mem(bench_name),
+                        },
+                    )
+
+                    # Generate ipc.txt
+                    ninja.build(
+                        outputs = os.path.join(subdir, 'ipc.txt'),
+                        rule = 'generate-leaf-ipc',
+                        inputs = run_stamp,
+                        variables = {'stats': os.path.join(subdir, 'm5out', 'stats.txt') },
+                    )
+
+                    # Generate weight.txt
+                    ninja.build(
+                        outputs = os.path.join(subdir, 'weight.txt'),
+                        rule = 'generate-leaf-weight',
+                        inputs = run_stamp,
+                        variables = {
+                            'cpt': str(cpt_idx),
+                            'weights': os.path.join('cpt', sw_name, bench_name, 'spt', 'weights.out'),
+                            'id': f'exp->{exp_name}->{bench_name}->{cpt_idx}',
+                        },
+                    )
+
+                # Generate ipc.txt for benchmark
+                generate_bench_ipc_py = os.path.join(os.path.dirname(__file__), 'helpers', 'bench-ipc.py')
+                generate_bench_ipc_inputs = [os.path.join(exp_dir, bench_name, str(cpt_idx), 'ipc.txt') for cpt_idx in range(config.vars.num_simpoints)]
+                generate_bench_ipc_output = os.path.join(exp_dir, bench_name, 'ipc.txt')
+                generate_bench_ipc_cmd = ['python3', generate_bench_ipc_py, cpt_dir, *generate_bench_ipc_inputs, '>', generate_bench_ipc_output]
                 ninja.build(
-                    outputs = copy_stamp,
-                    rule = 'copy-resource-dir',
-                    inputs = inputs,
-                    variables = {
-                        'src': rsrc_dir,
-                        'dst': subdir,
-                        'stamp': copy_stamp,
-                        'id': f'exp->{exp_name}->copy',
-                    },
-                )
-
-                # Resume from checkpoint
-                run_stamp = os.path.join(subdir, 'run.stamp')
-                exp_run_cmd = [
-                    f'if [ -d {cpt_dir}/cpt.simpoint_{cpt_idx:02}_* ]; then '
-                    f'cd {subdir} && rm -rf m5out &&',
-                    os.path.abspath(gem5_exe),
-                    *hw_config.gem5_opts,
-                    '-r', '-e',
-                    se_py,
-                    f'--cmd={os.path.abspath(bench_exe)}',
-                    f'--options="{sim_run_args}"',
-                    '--cpu-type=X86O3CPU',
-                    f'--mem-size={get_mem(bench_name)}',
-                    f'--max-stack-size={get_ss(bench_name)}',
-                    f'--checkpoint-dir={os.path.abspath(cpt_dir)}',
-                    '--restore-simpoint-checkpoint',
-                    f'--checkpoint-restore={cpt_idx + 1}',
-                    *hw_config.script_opts,
-                    '--errout=stderr.txt',
-                    '--output=stdout.txt',
-                    f'--{core_type}',
-                    f'; fi && touch run.stamp'
-                ]
-
-
-                inputs = [
-                    copy_stamp,
-                ]
-                if args.cpt_depend:
-                    inputs.append(os.path.join(cpt_dir, '..', 'run.stamp'))
-                if args.sw_depend:
-                    inputs.append(bench_exe)
-                if args.sim_depend:
-                    inputs.extend([gem5_exe, se_py])
-                ninja.build(
-                    outputs = run_stamp,
+                    outputs = generate_bench_ipc_output,
                     rule = 'custom-command',
-                    inputs = inputs,
+                    inputs = [
+                        *generate_bench_ipc_inputs,
+                        generate_bench_ipc_py,
+                    ],
                     variables = {
-                        'cmd': ' '.join(exp_run_cmd),
-                        'id': f'exp->{exp_name}->{bench_name}->{cpt_idx}',
-                        'desc': 'Resume from checkpoints',
-                        'pool': 'mem', 'weight': get_mem(bench_name),
+                        'cmd': ' '.join(generate_bench_ipc_cmd),
+                        'id': f'exp->{exp_name}->{bench_name}->ipc',
+                        'desc': 'Generating benchmark ipc.txt',
                     },
                 )
 
-                # Generate ipc.txt
-                ninja.build(
-                    outputs = os.path.join(subdir, 'ipc.txt'),
-                    rule = 'generate-leaf-ipc',
-                    inputs = run_stamp,
-                    variables = {'stats': os.path.join(subdir, 'm5out', 'stats.txt') },
-                )
-
-                # Generate weight.txt
-                ninja.build(
-                    outputs = os.path.join(subdir, 'weight.txt'),
-                    rule = 'generate-leaf-weight',
-                    inputs = run_stamp,
-                    variables = {
-                        'cpt': str(cpt_idx),
-                        'weights': os.path.join('cpt', sw_name, bench_name, 'spt', 'weights.out'),
-                        'id': f'exp->{exp_name}->{bench_name}->{cpt_idx}',
-                    },
-                )
-
-            # Generate ipc.txt for benchmark
-            generate_bench_ipc_py = os.path.join(os.path.dirname(__file__), 'helpers', 'bench-ipc.py')
-            generate_bench_ipc_inputs = [os.path.join('exp', core_type, exp_name, bench_name, str(cpt_idx), 'ipc.txt') for cpt_idx in range(config.vars.num_simpoints)]
-            generate_bench_ipc_output = os.path.join('exp', core_type, exp_name, bench_name, 'ipc.txt')
-            generate_bench_ipc_cmd = ['python3', generate_bench_ipc_py, cpt_dir, *generate_bench_ipc_inputs, '>', generate_bench_ipc_output]
+            # Make phony 'all' target
+            exp_all = []
+            for bench_name in benchspec:
+                if benchspec[bench_name].type.lower() != bench_type:
+                    continue
+                for filename in ['ipc.txt']:
+                    exp_all.append(os.path.join(exp_dir, bench_name, filename))
             ninja.build(
-                outputs = generate_bench_ipc_output,
-                rule = 'custom-command',
-                inputs = [
-                    *generate_bench_ipc_inputs,
-                    generate_bench_ipc_py,
-                ],
-                variables = {
-                    'cmd': ' '.join(generate_bench_ipc_cmd),
-                    'id': f'exp->{exp_name}->{bench_name}->ipc',
-                    'desc': 'Generating benchmark ipc.txt',
-                },
+                outputs = os.path.join(exp_dir, 'all'),
+                rule = 'phony',
+                inputs = exp_all,
             )
-
-        # Make phony 'all' target
-        exp_all = []
-        for bench_name in benchspec:
-            for filename in ['ipc.txt', 'miss-rate.txt', 'miss-penalty.txt']:
-                exp_all.append(os.path.join('exp', core_type, exp_name, bench_name, filename))
-        ninja.build(
-            outputs = os.path.join('exp', core_type, exp_name, 'all'),
-            rule = 'phony',
-            inputs = exp_all,
-        )
 
 # Make phony exp/{pcore,ecore}/all target
 for core_type in ['pcore', 'ecore']:
