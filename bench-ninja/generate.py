@@ -71,9 +71,10 @@ ninja.rule(
 ninja.pool('mem', 100) # for 100 GB
 
 ## copy-resource-dir
+## NOTE: We are just copying symbolic links now!!!!
 ninja.rule(
     name = 'copy-resource-dir',
-    command = 'rm -r $dst && mkdir -p $dst && rmdir $dst && cp -r $src $dst && touch $stamp',
+    command = 'rm -r $dst && mkdir -p $dst && rmdir $dst && cp -rs $$(realpath $src) $$(realpath $dst) && touch $stamp',
     description = '($id) Copy resource directory',
 )
 
@@ -98,13 +99,6 @@ ninja.rule(
     description = '($id) $desc',
     restat = True,
 )   
-
-## copy-checkpoint -- srcdir, dst, dep
-ninja.rule(
-    name = 'copy-checkpoint',
-    command = 'mkdir -p $dst/$i && if [ -d $src/$prefix* ]; then cp -r $src/$prefix* $dst/$i/; fi && touch $out',
-    description = '($id) Copy checkpoint $i',
-)
 
 ## generate-leaf-ipc
 ninja.rule(
