@@ -494,25 +494,12 @@ for sw_name, sw_config in config.sw.items():
         bbv_outputs = [bbv_file, *bbv_run_outputs]
         assert len(bbv_outputs) >= 2
         bbv_run_args = ' '.join(bench_spec.args)
-        # FIXME: Remove support for Valgrind.
-        if config.vars.bbv_impl == 'valgrind':
-            bbv_run_cmd = [
-                'cd', bbv_subdir, '&&',
-                config.vars.valgrind, '--tool=exp-bbv', '--bb-out-file=bbv.out',
-                f'--interval-size={config.vars.interval}',
-                '--log-file=valout',
-                '--quiet',
-                '--', os.path.abspath(exe), *bench_spec.args, '2>stderr',
-            ]
-        elif config.vars.bbv_impl == 'pin':
-            bbv_run_cmd = [
-                'cd', bbv_subdir, '&&',
-                config.vars.pin, '-t', config.vars.pinpoints, '-o', '>(gzip > bbv.out.gz)', '-interval-size', str(config.vars.interval),
-                '--', os.path.abspath(exe), *bench_spec.args,
-                '2>', 'stderr',
-            ]
-        else:
-            print(f'error: unrecognized bbv profiler: {config.vars.bbv_impl}', file = sys.stderr)
+        bbv_run_cmd = [
+            'cd', bbv_subdir, '&&',
+            config.vars.pin, '-t', config.vars.pinpoints, '-o', '>(gzip > bbv.out.gz)', '-interval-size', str(config.vars.interval),
+            '--', os.path.abspath(exe), *bench_spec.args,
+            '2>', 'stderr',
+        ]
         
         if not bench_spec.stdout:
             bbv_run_cmd.extend(['>', 'stdout'])
