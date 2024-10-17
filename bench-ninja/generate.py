@@ -552,16 +552,23 @@ for sw_name, sw_config in config.sw.items():
         ]
 
         ### simpoints: generate simpoints.out, weights.out
-        ninja.build(
-            outputs = [spt_simpoints, spt_weights],
-            rule = 'custom-command',
-            inputs = bbv_file,
-            variables = {
-                'cmd': ' '.join(spt_cmd),
-                'id': f'{sw_name}->{bench_name}->spt',
-                'desc': 'Compute SimPoints',
-            }
-        )
+        if 'parent' not in sw_config.__dict__:
+            ninja.build(
+                outputs = [spt_simpoints, spt_weights],
+                rule = 'custom-command',
+                inputs = bbv_file,
+                variables = {
+                    'cmd': ' '.join(spt_cmd),
+                    'id': f'{sw_name}->{bench_name}->spt',
+                    'desc': 'Compute SimPoints',
+                }
+            )
+        else:
+            # Set spt_simpoints, spt_weights to be parent's.
+            spt_subdir = os.path.join('cpt', sw_config.parent, bench_name, 'spt')
+            spt_simpoints = os.path.join(spt_subdir, 'simpoints.out')
+            spt_weights = os.path.join(spt_subdir, 'weights.out')
+            bbv_file = os.path.join('cpt', sw_config.parent, bench_name, 'bbv', 'bbv.out.gz')
 
         ## checkpoints
         cpt_subdir = os.path.join('cpt', sw_name, bench_name, 'cpt')
