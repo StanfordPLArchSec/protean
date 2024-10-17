@@ -21,8 +21,11 @@ def find_simpoint():
     for simpoint in simpoints:
         if int(simpoint.name) == args.simpoint_idx:
             return simpoint
-    print('error: failed to find requested simpoint', file = sys.stderr)
-    exit(1)
+    # print('error: failed to find requested simpoint', file = sys.stderr)
+    # exit(1)
+    with open(args.output, 'wt') as f:
+        print('{}', file = f)
+    exit(0)
 
 simpoint = find_simpoint()
 

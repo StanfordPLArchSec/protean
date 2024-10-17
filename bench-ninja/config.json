@@ -3,7 +3,7 @@
 	    "checkpoint-sim": "base",
 	    "pin": "../pin/pin",
 	    "pinpoints": "../tools/build/libbbtrace.so",
-	    "valgrind": "../valgrind/install/bin/valgrind",
+        "functoinst" : "../tools/build/libfunctoinst.so",
 	    "interval": 50000000,
 	    "simpoint": "../simpoint/bin/simpoint",
 	    "num_simpoints": 10,
@@ -37,6 +37,7 @@
 
         "ptex-dep": {
             "inherit": "_default",
+            "parent": "base",
             "llvm": "../llvm/ptex-dep",
             "cc": "../llvm/ptex-dep/build/bin/clang",
             "cxx": "../llvm/ptex-dep/build/bin/clang++",
@@ -48,6 +49,7 @@
 
         "ptex-rel": {
             "inherit": "_default",
+            "parent": "base",
             "llvm": "../llvm/ptex-rel",
             "cc": "../llvm/ptex-rel/build/bin/clang",
             "cxx": "../llvm/ptex-rel/build/bin/clang++",
@@ -97,7 +99,7 @@
     "sim": {
 	    "_default": {
 	        "target": "build/X86_MESI_Three_Level/gem5.opt",
-	        "script_kvm": "configs/deprecated/example/se.py",
+	        "script_kvm": "configs/se-kvm-cpt.py",
 	        "script_o3": "configs/AlderLake/se.py",
 	        "sconsopts": ["--ignore-style", "-j25"]
 	    },
@@ -175,6 +177,8 @@
         "spt-base-atret": {"sw": "base", "sim": "spt", "hwmode": "spt-atret"},
         "tpt-base-ctrl": {"sw": "base", "sim": "tpt", "hwmode": "tpt-ctrl"},
         "tpt-base-atret": {"sw": "base", "sim": "tpt", "hwmode": "tpt-atret"},
+        "tpe-base-ctrl": {"sw": "base", "sim": "tpe", "hwmode": "tpe-ctrl"},
+        "tpe-base-atret": {"sw": "base", "sim": "tpe", "hwmode": "tpe-atret"},
 
         "unsafe-dep": {"sw": "ptex-dep", "sim": "base", "hwmode": "base"},
         "stt-dep-atret": {"sw": "ptex-dep", "sim": "stt", "hwmode": "stt-atret"},

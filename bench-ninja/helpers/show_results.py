@@ -3,10 +3,12 @@
 import os
 import sys
 import argparse
+import json
 
 parser = argparse.ArgumentParser()
 parser.add_argument('exp', nargs='+')
-parser.add_argument('--ignore', '-i', action='append')
+parser.add_argument('--metric', default = 'ipc', choices = ['ipc', 'insts', 'cycles'])
+parser.add_argument('--ignore', '-i', action='append', default=list())
 args = parser.parse_args()
 
 # compute the bench names
@@ -25,17 +27,13 @@ benches = sorted(list(benches))
 for bench in benches:
     ipcs = list()
     for exp in args.exp:
-        path = os.path.join(exp, bench, 'ipc.txt')
+        path = os.path.join(exp, bench, 'results.json')
         if os.path.exists(path):
-            with open(os.path.join(exp, bench, 'ipc.txt')) as f:
-                tokens = f.read().split()
-                tokens = [float(token) for token in tokens]
-                if len(tokens) != 2:
-                    print(bench, exp, tokens, file=sys.stderr)
-                assert len(tokens) == 2
-                assert tokens[1] >= 0.99
-                ipc = f'{tokens[0]:.3}'
-        else:
-            ipc = '-'
-        ipcs.append(ipc)
+            with open(path) as f:
+                j = json.load(f)
+                w = j['weight']
+                assert 0.999 < w and w < 1.001
+                ipcs.append(j['stats'][args.metric])
+                continue
+        ipcs.append('-')
     print(bench, *ipcs)

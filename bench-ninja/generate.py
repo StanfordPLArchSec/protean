@@ -828,7 +828,7 @@ for core_type in ['pcore', 'ecore']:
 
                     # Generate results.json
                     results_json = os.path.join(subdir, 'results.json')
-                    generate_results_py = get_helper('generate-results.py')
+                    generate_results_py = get_helper('generate-leaf-results.py')
                     stats_txt = os.path.join(subdir, 'm5out', 'stats.txt')
                     simpoints_json = os.path.join('cpt', sw_name, bench_name, 'cpt', 'simpoints.json')
                     # TODO: Add stats.txt as dependency?
@@ -871,12 +871,26 @@ for core_type in ['pcore', 'ecore']:
                     },
                 )
 
+                generate_bench_results_py = get_helper('generate-bench-results.py')
+                leaf_result_jsons = [os.path.join(exp_dir, bench_name, str(cpt_idx), 'results.json') for cpt_idx in range(config.vars.num_simpoints)]
+                bench_result_json = os.path.join(exp_dir, bench_name, 'results.json')
+                ninja.build(
+                    outputs = [bench_result_json],
+                    rule = 'custom-command',
+                    inputs = [generate_bench_results_py, *leaf_result_jsons],
+                    variables = {
+                        'cmd': ' '.join([generate_bench_results_py, '--output', bench_result_json, *leaf_result_jsons]),
+                        'id': f'exp->{core_type}->{bench_type}->{bench_name}->results.json',
+                    },
+                )
+
             # Make phony 'all' target
             exp_all = []
             for bench_name in benchspec:
                 if benchspec[bench_name].type.lower() != bench_type:
                     continue
-                for filename in ['ipc.txt']:
+                # FIXME: Remove ipc.txt
+                for filename in ['ipc.txt', 'results.json']:
                     exp_all.append(os.path.join(exp_dir, bench_name, filename))
             ninja.build(
                 outputs = os.path.join(exp_dir, 'all'),
