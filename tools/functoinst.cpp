@@ -59,6 +59,7 @@ static void StaticTrace(TRACE trace, void *) {
 
 static void Fini(int32_t exit_code, void *) {
   out << "# function-count-at-end " << func_count_cur << std::endl;
+  out << "# inst-count " << inst_count << std::endl;
   if (func_count_tgt) {
     out << "FAILED: didn't hit all function calls" << std::endl;
     std::exit(EXIT_FAILURE);

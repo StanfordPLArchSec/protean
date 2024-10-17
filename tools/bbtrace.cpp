@@ -29,9 +29,16 @@ struct Block {
 static std::ofstream out;
 static unsigned long interval_size;
 static unsigned long inst_count = 0;
-static unsigned long func_count = 0;
+static unsigned long func_count_begin = 0;
+static unsigned long func_count_end = 0;
 static unsigned long next_block_id = 0;
 static std::map<ADDRINT, Block> blocks;
+static unsigned long num_intervals = 0;
+static unsigned long total_insts = 0;
+
+static unsigned long get_total_insts() {
+  return inst_count + total_insts;
+}
 
 static void DumpInterval() {
   out << "T";
@@ -41,8 +48,12 @@ static void DumpInterval() {
     block.reset();
   }
   out << std::endl;
-  out << "calls " << func_count << std::endl;
-  inst_count = 0;
+  out << "# func-range " << num_intervals << " " << func_count_begin << " " << func_count_end << " " << get_total_insts() << " " << std::endl;
+  func_count_begin = func_count_end;
+  total_insts += inst_count;
+  assert(inst_count >= interval_size);
+  inst_count -= interval_size;
+  ++num_intervals;
 }
 
 static void HandleBlock(Block *block) {
@@ -55,7 +66,7 @@ static void HandleBlock(Block *block) {
 }
 
 static void DynamicRoutine() {
-  ++func_count;
+  ++func_count_end;
 }
 
 static void StaticRoutine(RTN rtn, void *) {
@@ -66,20 +77,20 @@ static void StaticRoutine(RTN rtn, void *) {
 
 static void Trace(TRACE trace, void *) {
   for (BBL bbl = TRACE_BblHead(trace); BBL_Valid(bbl); bbl = BBL_Next(bbl)) {
+    assert(BBL_Original(bbl));
     const ADDRINT addr = BBL_Address(bbl);
-    auto block_it = blocks.find(addr);
-    if (block_it != blocks.end()) {
-      assert(BBL_Original(bbl)); // Don't support self-modifying code.
-      if (BBL_NumIns(bbl) == block_it->second.size)
-	continue;
-    }
-    block_it = blocks.insert_or_assign(block_it, addr, Block(++next_block_id, bbl));
-    BBL_InsertCall(bbl, IPOINT_BEFORE, (AFUNPTR) HandleBlock, IARG_ADDRINT, &block_it->second, IARG_END);
+
+    const auto it = blocks.emplace(addr, Block(++next_block_id, bbl)).first;
+    const Block &block = it->second;
+    assert(block.size == BBL_NumIns(bbl));
+
+    BBL_InsertCall(bbl, IPOINT_BEFORE, (AFUNPTR) HandleBlock, IARG_ADDRINT, &block, IARG_END);
   }
 }
 
 static void Fini(int32_t code, void *) {
-  out << "calls " << func_count << std::endl;
+  out << "# func-total " << func_count_end << std::endl;
+  out << "# total-insts " << get_total_insts() << std::endl;
   out.close();
 }
 
