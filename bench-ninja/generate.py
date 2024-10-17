@@ -116,6 +116,14 @@ ninja.rule(
     command = 'if [ $$(wc -l $weights) -gt $cpt ]; then head -$$(($cpt + 1)) | tail -1; else echo 0.0 > $out',
     description = '($id) Generating weight.txt',
 )
+
+## generate-leaf-insts
+# FIXME: Combine with generate-leaf-ipc.
+ninja.rule(
+    name = 'generate-leaf-insts',
+    command = 'if [ -s $stats ]; then grep -F system.switch_cpus.commitStats0.numInsts $stats | tail -1 | awk \'{print $$2}\'; else echo 0; fi > $out',
+    description = '($id) Generating insts.txt',
+)
         
 
 # Define builds
@@ -817,6 +825,32 @@ for core_type in ['pcore', 'ecore']:
                             'id': f'exp->{exp_name}->{bench_name}->{cpt_idx}',
                         },
                     )
+
+                    # Generate results.json
+                    results_json = os.path.join(subdir, 'results.json')
+                    generate_results_py = get_helper('generate-results.py')
+                    stats_txt = os.path.join(subdir, 'm5out', 'stats.txt')
+                    simpoints_json = os.path.join('cpt', sw_name, bench_name, 'cpt', 'simpoints.json')
+                    # TODO: Add stats.txt as dependency?
+                    results_json_cmd = [
+                        generate_results_py,
+                        '--stats', stats_txt,
+                        '--simpoints-json', simpoints_json,
+                        '--simpoint-idx', str(cpt_idx),
+                        '--output', results_json,
+                    ]
+                    ninja.build(
+                        outputs = [results_json],
+                        rule = 'custom-command',
+                        inputs = [generate_results_py, run_stamp, simpoints_json],
+                        variables = {
+                            'cmd': ' '.join(results_json_cmd),
+                            'id': f'exp->{core_type}->{bench_type}->{exp_name}->{bench_name}->{cpt_idx}->results.json',
+                            'desc': 'Generating results.json',
+                        },
+                    )
+
+                    
 
                 # Generate ipc.txt for benchmark
                 generate_bench_ipc_py = get_helper('bench-ipc.py')
