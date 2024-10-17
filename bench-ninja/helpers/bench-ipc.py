@@ -34,7 +34,7 @@ for cptipc in args.cptipcs:
             total_ipc += ipc * weight
             
     else:
-        print(f'note: missing checkpoint {cptidx}', file=sys.stderr)
+        # print(f'note: missing checkpoint {cptidx}', file=sys.stderr)
         pass
 
 if total_weight < 0.9 or total_weight > 1.1:

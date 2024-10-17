@@ -17,6 +17,8 @@ parser.add_argument('--funcs', required = True, help = '(Output, temp) Path to f
 parser.add_argument('--insts', required = True, help = '(Output, temp) Path to insts.out')
 parser.add_argument('--output', required = True, help = '(Output) JSON file describing normalized SimPoint')
 parser.add_argument('--skip-pin', action = 'store_true', help = '(Debug) skip running Pin; mainly used for script debugging')
+parser.add_argument('--interval', required = True, type = int, help = '(Input) Interval size, for sanity checking')
+parser.add_argument('--early-exit', action = 'store_true', help = '(Input) Allow early exit')
 parser.add_argument('cmd')
 parser.add_argument('args', nargs = '*')
 args = parser.parse_args()
@@ -35,8 +37,16 @@ class SimPoint:
             'interval': self.interval,
             'weight': self.weight,
             'func_range': [*self.func_range],
+            'func_count': self.func_size(),
             'inst_range': [*self.inst_range],
+            'inst_count': self.inst_count(),
         }
+
+    def func_count(self) -> int:
+        return self.func_range[1] - self.func_range[0]
+
+    def inst_count(self) -> int:
+        return self.inst_range[1] - self.inst_range[0]
 
 simpoints = dict()
 
@@ -100,6 +110,12 @@ with gzip.open(args.bbv, 'rt') as f:
 
 assert len(simpoints) > 0
 
+# Tighten the simpoints function ranges to avoid large overshoots.
+for simpoint in simpoints.values():
+    if simpoint.func_range[1] - simpoint.func_range[0] > 2:
+        func_begin, func_end = simpoint.func_range
+        simpoint.func_range = (func_begin + 1, func_end - 1)
+
 # Create list of function counts for PinTool.
 funcs = set()
 for simpoint in simpoints.values():
@@ -114,19 +130,23 @@ with open(args.funcs, 'wt') as f:
 
 # Run Pin.
 if not args.skip_pin:
-    pin_cmd = [args.pin, '-t', args.pintool, '-i', args.funcs, '-o', args.insts, '--', args.cmd, *args.args]
+    flags = []
+    if args.early_exit:
+        flags = ['-allow-early-exit', '1']
+    pin_cmd = [args.pin, '-t', args.pintool, '-i', args.funcs, '-o', args.insts, *flags, '--', args.cmd, *args.args]
     print('Running Pin command:', *pin_cmd, file = sys.stderr)
     subprocess.run(pin_cmd, check = True)
 
 # Parse instruction counts.
-insts = list()
+func_to_inst = dict()
 with open(args.insts) as f:
     for line in f:
-        insts.append(int(line.strip()))
-assert len(funcs) == len(insts)
-
-# Create map from function counts to instruction counts.
-func_to_inst = dict(zip(funcs, insts))
+        if line.startswith('#'):
+            continue
+        tokens = [int(token) for token in line.split()]
+        assert len(tokens) == 2
+        func_to_inst[tokens[0]] = tokens[1]
+assert list(funcs) == list(func_to_inst.keys())
 
 # Annotate SimPoints with instruction counts.
 for simpoint in simpoints.values():
@@ -134,6 +154,7 @@ for simpoint in simpoints.values():
     inst_begin = func_to_inst[func_begin]
     inst_end = func_to_inst[func_end]
     simpoint.inst_range = (inst_begin, inst_end)
+    assert simpoint.inst_count() <= args.interval
 
 # Output SimPoints.
 simpoints = list(simpoints.values())
@@ -141,4 +162,3 @@ simpoints.sort(key = lambda simpoint: simpoint.func_range[0])
 simpoints = [simpoint.as_dict() for simpoint in simpoints]
 with open(args.output, 'wt') as f:
     json.dump(simpoints, f)
-

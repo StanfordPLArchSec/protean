@@ -9,12 +9,12 @@ import collections
 import os
 
 parser = argparse.ArgumentParser()
-parser.add_argument('dbgout', nargs = '*')
+parser.add_argument('dbgout', nargs = '+')
 parser.add_argument('-n', '--count', type = int)
 parser.add_argument('--reg', '-r', default=True)
 parser.add_argument('--mem', '-m', default=True)
 parser.add_argument('--xmit', '-x', default=True)
-parser.add_argument('-w', '--weights', type=str)
+parser.add_argument('-w', '--weights', type=str, required=True)
 args = parser.parse_args()
 
 weight_dict = dict()
@@ -37,9 +37,10 @@ def open_dbgout(path: str):
         weight = 1
     return f, weight
 
+
 weighted_files = [open_dbgout(path) for path in args.dbgout]
 
-# 70915340918500: system.switch_cpus: TPE m-taint 0x271bdf   MOV_R_M : ld   ecx, SS:[t0 + rsp + 0x4]
+# TPE m-taint 0x3c6888
 histos = dict()
 r_histo = collections.defaultdict(int)
 m_histo = collections.defaultdict(int)
@@ -48,11 +49,11 @@ asms = dict()
 for f, w in weighted_files:
     for line in f:
         tokens = line.split()
-        if len(tokens) < 5 or tokens[2] != 'TPE':
+        if len(tokens) < 3 or tokens[0] != 'TPE':
             continue
-        tp = tokens[3]
-        inst_addr = tokens[4]
-        asms[inst_addr] = tokens[6]
+        tp = tokens[1]
+        inst_addr = tokens[2]
+        asms[inst_addr] = tokens[4]
         if args.reg and tp == 'r-taint':
             r_histo[inst_addr] += w
         if args.mem and tp == 'm-taint':
@@ -71,5 +72,4 @@ if args.count:
 for i in range(n):
     inst_addr, count, tag = sorted_histo[i]
     asm = asms[inst_addr]
-    print(count, inst_addr, tag, asm)
-    
+    print(round(count), inst_addr, tag, asm)
