@@ -28,7 +28,8 @@ struct Block {
 
 static std::ofstream out;
 static unsigned long interval_size;
-static unsigned long inst_count;
+static unsigned long inst_count = 0;
+static unsigned long func_count = 0;
 static unsigned long next_block_id = 0;
 static std::map<ADDRINT, Block> blocks;
 
@@ -40,6 +41,7 @@ static void DumpInterval() {
     block.reset();
   }
   out << std::endl;
+  out << "calls " << func_count << std::endl;
   inst_count = 0;
 }
 
@@ -52,9 +54,14 @@ static void HandleBlock(Block *block) {
   }
 }
 
-static void disassemble_block(std::ostream &os, BBL bbl) {
-  for (INS ins = BBL_InsHead(bbl); INS_Valid(ins); ins = INS_Next(ins))
-    std::cerr << "\t" << INS_Disassemble(ins) << "\n";
+static void DynamicRoutine() {
+  ++func_count;
+}
+
+static void StaticRoutine(RTN rtn, void *) {
+  RTN_Open(rtn);
+  RTN_InsertCall(rtn, IPOINT_BEFORE, (AFUNPTR) DynamicRoutine, IARG_END);
+  RTN_Close(rtn);
 }
 
 static void Trace(TRACE trace, void *) {
@@ -72,6 +79,7 @@ static void Trace(TRACE trace, void *) {
 }
 
 static void Fini(int32_t code, void *) {
+  out << "calls " << func_count << std::endl;
   out.close();
 }
 
@@ -84,6 +92,7 @@ static int32_t usage() {
 int main(int argc, char *argv[]) {
   if (PIN_Init(argc, argv))
     return usage();
+  PIN_InitSymbols();
 
   if (OutputFile.Value().empty()) {
     std::cerr << "pinpoints: -o: required\n";
@@ -97,6 +106,7 @@ int main(int argc, char *argv[]) {
   }
   interval_size = IntervalSize.Value();
 
+  RTN_AddInstrumentFunction(StaticRoutine, nullptr);
   TRACE_AddInstrumentFunction(Trace, nullptr);
   PIN_AddFiniFunction(Fini, nullptr);
   PIN_StartProgram();
