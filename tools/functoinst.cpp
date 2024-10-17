@@ -3,11 +3,13 @@
 #include <string>
 #include <vector>
 #include <iostream>
+#include <set>
 
 static const char *prog = "functoinst";
 
 static KNOB<std::string> InFile(KNOB_MODE_WRITEONCE, "pintool", "i", "", "input file containing (func count begin, func count end) pairs");
 static KNOB<std::string> OutFile(KNOB_MODE_WRITEONCE, "pintool", "o", "", "output file containing corresponding (inst count begin, inst count end) pairs");
+static KNOB<bool> EarlyExit(KNOB_MODE_WRITEONCE, "pintool", "allow-early-exit", "0", "allow early exit, once all functions have been mapped to instructions");
 
 static std::vector<uint64_t> func_counts;
 static std::vector<uint64_t>::iterator func_counts_it;
@@ -16,11 +18,17 @@ static uint64_t func_count_cur = 0; // Actual current function count.
 static unsigned long inst_count = 0;
 static std::ofstream out;
 
+static void emit_func_to_inst(ADDRINT func, ADDRINT inst) {
+  out << func << " " << inst << std::endl;
+}
+
 static void advance_func_count() {
   if (func_counts_it == func_counts.end()) {
     // Mapped all requested func->inst, so exit.
     func_count_tgt = 0;
-    PIN_ExitApplication(0);
+    if (EarlyExit.Value())
+      PIN_ExitApplication(0);
+    return;
   }
   func_count_tgt = *func_counts_it++;
   assert(func_count_cur < func_count_tgt);
@@ -29,7 +37,7 @@ static void advance_func_count() {
 static void DynamicRoutine() {
   ++func_count_cur;
   if (func_count_cur == func_count_tgt) {
-    out << inst_count << std::endl;
+    emit_func_to_inst(func_count_cur, inst_count);
     advance_func_count();
   }
 }
@@ -50,6 +58,7 @@ static void StaticTrace(TRACE trace, void *) {
 }
 
 static void Fini(int32_t exit_code, void *) {
+  out << "# function-count-at-end " << func_count_cur << std::endl;
   if (func_count_tgt) {
     out << "FAILED: didn't hit all function calls" << std::endl;
     std::exit(EXIT_FAILURE);
@@ -86,6 +95,10 @@ int main(int argc, char *argv[]) {
     assert(func_count);
   func_counts_it = func_counts.begin();
   advance_func_count();
+  if (func_count_tgt == 0) {
+    emit_func_to_inst(0, 0);
+    advance_func_count();
+  }
   assert(func_count_tgt);
 
   RTN_AddInstrumentFunction(StaticRoutine, nullptr);
