@@ -356,7 +356,7 @@ for sw_name, sw_config in config.sw.items():
     ninja.build(
         outputs = [os.path.join('cpt', sw_name, 'all')],
         rule = 'phony',
-        inputs = [os.path.join('cpt', sw_name, bench_name, 'cpt', 'verify.stamp')
+        inputs = [os.path.join('cpt', sw_name, bench_name, 'all')
                   for bench_name in benchspec],
     )
     
@@ -518,6 +518,7 @@ for sw_name, sw_config in config.sw.items():
             '--pin-kernel', bbv_pin_kernel,
             '--pin-tool', bbv_pin_tool,
             '--interval-size', str(config.vars.interval),
+            '--mem-size', get_mem(bench_name),
             '--output', '>(gzip > bbv.out.gz)',
             '--',
             os.path.abspath(exe),
@@ -611,6 +612,7 @@ for sw_name, sw_config in config.sw.items():
             '--pin-tool', config.vars.pin_tool,
             '--f2i-input', spt_funcs,
             '--f2i-output', spt_insts,
+            '--mem-size', get_mem(bench_name),
             '--', '--', os.path.abspath(exe), *bench_spec.args,
             # '>', 'stdout', '2>', 'stderr',
         ]

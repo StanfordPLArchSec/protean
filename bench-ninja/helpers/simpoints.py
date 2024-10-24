@@ -11,8 +11,6 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--simpoints', required = True, help = 'Path to simpoints.out')
 parser.add_argument('--weights', required = True, help = 'Path to weights.out')
 parser.add_argument('--bbv', required = True, help = 'Path to bbv.out.gz')
-parser.add_argument('--pin', required = True, help = 'Path to pin binary')
-parser.add_argument('--pintool', required = True, help = 'Path to functoinst PinTool')
 parser.add_argument('--funcs', required = True, help = '(Output, temp) Path to funcs.out')
 parser.add_argument('--insts', required = True, help = '(Output, temp) Path to insts.out')
 parser.add_argument('--output', required = True, help = '(Output) JSON file describing normalized SimPoint')
@@ -123,7 +121,8 @@ if not args.skip_pin:
     flags = []
     if args.early_exit:
         flags = ['-allow-early-exit', '1']
-    pin_cmd = [args.pin, '-t', args.pintool, '-i', args.funcs, '-o', args.insts, *flags, '--', args.cmd, *args.args]
+    # pin_cmd = [args.pin, '-t', args.pintool, '-i', args.funcs, '-o', args.insts, *flags, '--', args.cmd, *args.args]
+    pin_cmd = [args.cmd, *args.args]
     print('Running Pin command:', *pin_cmd, file = sys.stderr)
     subprocess.run(pin_cmd, check = True)
 
