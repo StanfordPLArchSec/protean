@@ -504,12 +504,28 @@ for sw_name, sw_config in config.sw.items():
         bbv_run_outputs = [os.path.join(bbv_subdir, output) for output in bench_spec.outputs]
         bbv_outputs = [bbv_file, *bbv_run_outputs]
         assert len(bbv_outputs) >= 2
+        bbv_script = os.path.join(sim_config.src, sim_config.script_bbv)
+        bbv_pin_exe = config.vars.pin
+        bbv_pin_tool = config.vars.pin_tool
+        bbv_pin_kernel = config.vars.pin_kernel
+        bbv_inputs = [gem5_exe, bbv_script, bbv_pin_exe, bbv_pin_tool, bbv_pin_kernel]
         bbv_run_args = ' '.join(bench_spec.args)
         bbv_run_cmd = [
             'cd', bbv_subdir, '&&',
-            config.vars.pin, '-t', config.vars.pinpoints, '-o', '>(gzip > bbv.out.gz)', '-interval-size', str(config.vars.interval),
-            '--', os.path.abspath(exe), *bench_spec.args,
+            os.path.abspath(gem5_exe), '-r', '-e',
+            os.path.abspath(bbv_script),
+            '--pin', bbv_pin_exe,
+            '--pin-kernel', bbv_pin_kernel,
+            '--pin-tool', bbv_pin_tool,
+            '--interval-size', str(config.vars.interval),
+            '--output', '>(gzip > bbv.out.gz)',
+            '--',
+            os.path.abspath(exe),
+            *bench_spec.args,
             '2>', 'stderr',
+            # config.vars.pin, '-t', config.vars.pinpoints, '-o', '>(gzip > bbv.out.gz)', '-interval-size', str(config.vars.interval),
+            # '--', os.path.abspath(exe), *bench_spec.args,
+            # '2>', 'stderr',
         ]
         
         if not bench_spec.stdout:
@@ -521,8 +537,7 @@ for sw_name, sw_config in config.sw.items():
                 exe,
                 os.path.join('cpt', sw_name, bench_name, 'host', 'verify.stamp'),
                 os.path.join('cpt', sw_name, bench_name, 'bbv', 'copy.stamp'),
-                config.vars.pinpoints,
-                config.vars.pin
+                *bbv_inputs,
             ],
             variables = {
                 'cmd': ' '.join(bbv_run_cmd),
@@ -573,9 +588,9 @@ for sw_name, sw_config in config.sw.items():
             )
         else:
             # Set spt_simpoints, spt_weights to be parent's.
-            spt_subdir = os.path.join('cpt', sw_config.parent, bench_name, 'spt')
-            spt_simpoints = os.path.join(spt_subdir, 'simpoints.out')
-            spt_weights = os.path.join(spt_subdir, 'weights.out')
+            spt_parent_subdir = os.path.join('cpt', sw_config.parent, bench_name, 'spt')
+            spt_simpoints = os.path.join(spt_parent_subdir, 'simpoints.out')
+            spt_weights = os.path.join(spt_parent_subdir, 'weights.out')
             bbv_file = os.path.join('cpt', sw_config.parent, bench_name, 'bbv', 'bbv.out.gz')
 
         ## checkpoints
@@ -597,11 +612,13 @@ for sw_name, sw_config in config.sw.items():
             '--insts', os.path.abspath(os.path.join(spt_subdir, 'insts.out')),
             '--output', os.path.abspath(spt_json),
             '--', os.path.abspath(exe), *bench_spec.args,
+            '>', 'stdout', '2>', 'stderr',
         ]
         ninja.build(
             outputs = [spt_json],
             rule = 'custom-command',
-            inputs = [spt_simpoints, spt_weights, spt_json_py, exe],
+            inputs = [spt_simpoints, spt_weights, spt_json_py, exe,
+                      os.path.join(cpt_subdir, 'copy.stamp')],
             variables = {
                 'cmd': ' '.join(spt_json_cmd),
                 'id': f'{sw_name}->{bench_name}->spt->simpoints.json',

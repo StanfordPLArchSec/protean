@@ -1,9 +1,11 @@
 {
     "vars": {
-	    "checkpoint-sim": "base",
+        "checkpoint-sim": "pincpu",
 	    "pin": "../pin/pin",
 	    "pinpoints": "../tools/build/libbbtrace.so",
         "functoinst" : "../tools/build/libfunctoinst.so",
+        "pin_tool": "../gem5/pincpu/pintool/build/libclient.so",
+        "pin_kernel": "../gem5/pincpu/pintool/build/kernel",
 	    "interval": 50000000,
 	    "simpoint": "../simpoint/bin/simpoint",
 	    "num_simpoints": 10,
@@ -20,7 +22,7 @@
 	        "cmake_build_type": "Release",
 	        "cflags": ["-O3", "-mno-avx", "-mllvm", "-global-isel", "-mllvm", "-global-isel-abort=0"],
 	        "fflags": ["-O3", "-mno-avx", "-mllvm", "-global-isel", "-mllvm", "-global-isel-abort=0"],
-	        "ldflags": ["-static", "-fuse-ld=lld", "-Wl,--allow-multiple-definition"],
+	        "ldflags": ["-static", "-fuse-ld=lld", "-Wl,--allow-multiple-definition", "-lm"],
 	        "libc_cflags": ["-mllvm", "-global-isel=0"],
 	        "libcxx_cflags": ["-mllvm", "-global-isel=0"],
 	        "deps": []
@@ -57,6 +59,16 @@
             "+cflags": ["-mllvm", "-x86-ptex"],
             "+fflags": ["-mllvm", "-x86-ptex"],
             "+ldflags": ["-L/home/nmosier/llsct2/llvm/ptex-rel/build/lib"]
+        },
+
+        "ptex-all": {
+            "inherit": "_default",
+            "parent": "base",
+            "llvm": "../llvm/ptex-all",
+            "cc": "../llvm/ptex-all/build/bin/clang",
+            "cxx": "../llvm/ptex-all/build/bin/clang",
+            "fc": "../llvm/ptex-all/build/bin/flang-new",
+            "+ldflags": ["-L/home/nmosier/llsct2/llvm/ptex-all/build/lib"]
         },
 
 	    "ptex-rel-stores": {
@@ -107,6 +119,12 @@
 	        "inherit": "_default",
 	        "src": "../gem5/base"
 	    },
+        "pincpu": {
+            "inherit": "_default",
+            "src": "../gem5/pincpu",
+            "script_bbv": "configs/pin-bbv.py",
+            "script_f2i": "confgis/pin-f2i.py"
+        },
         "ptex": {
             "inherit": "_default",
             "src": "../gem5/ptex"
