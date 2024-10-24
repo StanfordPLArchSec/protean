@@ -17,7 +17,6 @@ parser.add_argument('--funcs', required = True, help = '(Output, temp) Path to f
 parser.add_argument('--insts', required = True, help = '(Output, temp) Path to insts.out')
 parser.add_argument('--output', required = True, help = '(Output) JSON file describing normalized SimPoint')
 parser.add_argument('--skip-pin', action = 'store_true', help = '(Debug) skip running Pin; mainly used for script debugging')
-parser.add_argument('--interval', required = True, type = int, help = '(Input) Interval size, for sanity checking')
 parser.add_argument('--early-exit', action = 'store_true', help = '(Input) Allow early exit')
 parser.add_argument('cmd')
 parser.add_argument('args', nargs = '*')
@@ -37,7 +36,7 @@ class SimPoint:
             'interval': self.interval,
             'weight': self.weight,
             'func_range': [*self.func_range],
-            'func_count': self.func_size(),
+            'func_count': self.func_count(),
             'inst_range': [*self.inst_range],
             'inst_count': self.inst_count(),
         }
@@ -89,20 +88,11 @@ with gzip.open(args.bbv, 'rt') as f:
     interval = 0
     for i, line in enumerate(lines):
         tokens = line.strip().split()
-        if len(tokens) == 0:
+        if not (len(tokens) >= 5 and tokens[0] == '#' and tokens[1] == 'func-range'):
             continue
-        if tokens[0] == 'T':
-            func_end = int(lines[i + 1].split()[1])
-            if interval in intervals:
-                assert func_begin < func_end
-                intervals[interval].func_range = (func_begin, func_end)
-            interval += 1
-        elif tokens[0] == 'calls':
-            func_begin = int(line.split()[1])
-        else:
-            print('error: unrecognized token:', tokens[0], file = sys.stderr)
-            exit(1)
-            
+        interval, func_begin, func_end = tuple(list(map(int, tokens[2:]))[:3])
+        if interval in intervals:
+            intervals[interval].func_range = (func_begin, func_end)
 
     # Make sure we hit all the SimPoints' intervals.
     for simpoint in simpoints.values():
@@ -154,7 +144,6 @@ for simpoint in simpoints.values():
     inst_begin = func_to_inst[func_begin]
     inst_end = func_to_inst[func_end]
     simpoint.inst_range = (inst_begin, inst_end)
-    assert simpoint.inst_count() <= args.interval
 
 # Output SimPoints.
 simpoints = list(simpoints.values())
