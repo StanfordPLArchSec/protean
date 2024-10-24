@@ -123,7 +123,7 @@
             "inherit": "_default",
             "src": "../gem5/pincpu",
             "script_bbv": "configs/pin-bbv.py",
-            "script_f2i": "confgis/pin-f2i.py"
+            "script_f2i": "configs/pin-f2i.py"
         },
         "ptex": {
             "inherit": "_default",

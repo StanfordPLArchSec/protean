@@ -522,7 +522,7 @@ for sw_name, sw_config in config.sw.items():
             '--',
             os.path.abspath(exe),
             *bench_spec.args,
-            '2>', 'stderr',
+            '>', 'stdout', '2>', 'stderr',
             # config.vars.pin, '-t', config.vars.pinpoints, '-o', '>(gzip > bbv.out.gz)', '-interval-size', str(config.vars.interval),
             # '--', os.path.abspath(exe), *bench_spec.args,
             # '2>', 'stderr',
@@ -600,25 +600,40 @@ for sw_name, sw_config in config.sw.items():
         ### simpoints: generate simpoints.json
         spt_json = os.path.join(cpt_subdir, 'simpoints.json')
         spt_json_py = get_helper('simpoints.py')
+        spt_insts = os.path.abspath(os.path.join(spt_subdir, 'insts.out'))
+        spt_funcs = os.path.abspath(os.path.join(spt_subdir, 'funcs.out'))
+        f2i_script = os.path.join(sim_config.src, sim_config.script_f2i)
+        f2i_pin_cmd = [
+            os.path.abspath(gem5_exe), '-r', '-e',
+            os.path.abspath(f2i_script),
+            '--pin', config.vars.pin,
+            '--pin-kernel', config.vars.pin_kernel,
+            '--pin-tool', config.vars.pin_tool,
+            '--f2i-input', spt_funcs,
+            '--f2i-output', spt_insts,
+            '--', '--', os.path.abspath(exe), *bench_spec.args,
+            # '>', 'stdout', '2>', 'stderr',
+        ]
         spt_json_cmd = [
             'cd', cpt_subdir, '&&',
             spt_json_py,
             '--simpoints', os.path.abspath(spt_simpoints),
             '--weights', os.path.abspath(spt_weights),
             '--bbv', os.path.abspath(bbv_file),
-            '--pin', config.vars.pin,
-            '--pintool', config.vars.functoinst,
             '--funcs', os.path.abspath(os.path.join(spt_subdir, 'funcs.out')),
             '--insts', os.path.abspath(os.path.join(spt_subdir, 'insts.out')),
             '--output', os.path.abspath(spt_json),
-            '--', os.path.abspath(exe), *bench_spec.args,
+            # '--', os.path.abspath(exe), *bench_spec.args,
+            '--', *f2i_pin_cmd,
             '>', 'stdout', '2>', 'stderr',
         ]
         ninja.build(
             outputs = [spt_json],
             rule = 'custom-command',
             inputs = [spt_simpoints, spt_weights, spt_json_py, exe,
-                      os.path.join(cpt_subdir, 'copy.stamp')],
+                      os.path.join(cpt_subdir, 'copy.stamp'), config.vars.pin,
+                      config.vars.pin_kernel, config.vars.pin_tool, f2i_script,
+                ],
             variables = {
                 'cmd': ' '.join(spt_json_cmd),
                 'id': f'{sw_name}->{bench_name}->spt->simpoints.json',
