@@ -113,7 +113,7 @@
 	        "target": "build/X86_MESI_Three_Level/gem5.opt",
 	        "script_kvm": "configs/se-kvm-cpt.py",
 	        "script_o3": "configs/AlderLake/se.py",
-	        "sconsopts": ["--ignore-style", "-j25"]
+	        "sconsopts": ["--ignore-style", "-j25", "--linker=lld"]
 	    },
 	    "base": {
 	        "inherit": "_default",

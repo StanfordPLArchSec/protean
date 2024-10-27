@@ -110,6 +110,11 @@ def process_benchspec(benchspec: dict) -> dict:
             bench_spec['stdin'] = bench_spec['litargs'][idx + 1]
             del bench_spec['litargs'][idx:idx+2]
 
+        if 'symbol_blacklist' not in bench_spec:
+            bench_spec['symbol_blacklist'] = '/dev/null'
+        else:
+            bench_spec['symbol_blacklist'] = os.path.abspath(bench_spec['symbol_blacklist'])
+
         bench_spec = types.SimpleNamespace(**bench_spec)
 
         if type(bench_spec.verify) is not list:

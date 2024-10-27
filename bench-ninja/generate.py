@@ -520,6 +520,7 @@ for sw_name, sw_config in config.sw.items():
             '--interval-size', str(config.vars.interval),
             '--mem-size', get_mem(bench_name),
             '--output', '>(gzip > bbv.out.gz)',
+            '--symbol-blacklist', bench_spec.symbol_blacklist,
             '--',
             os.path.abspath(exe),
             *bench_spec.args,
@@ -536,9 +537,10 @@ for sw_name, sw_config in config.sw.items():
             rule = 'custom-command',
             inputs = [
                 exe,
-                os.path.join('cpt', sw_name, bench_name, 'host', 'verify.stamp'),
+                # os.path.join('cpt', sw_name, bench_name, 'host', 'verify.stamp'),
                 os.path.join('cpt', sw_name, bench_name, 'bbv', 'copy.stamp'),
                 *bbv_inputs,
+                bench_spec.symbol_blacklist,
             ],
             variables = {
                 'cmd': ' '.join(bbv_run_cmd),
@@ -567,9 +569,12 @@ for sw_name, sw_config in config.sw.items():
         spt_subdir = os.path.join('cpt', sw_name, bench_name, 'spt')
         spt_simpoints = os.path.join(spt_subdir, 'simpoints.out')
         spt_weights = os.path.join(spt_subdir, 'weights.out')
+        spt_awk_script = f"awk 'BEGIN {{ i = 0; }} {{ print $$1, i; i += 1; }}'"
+        os.makedirs(spt_subdir, exist_ok = True)
         spt_cmd = [
             config.vars.simpoint, '-loadFVFile', bbv_file, '-maxK', str(config.vars.num_simpoints),
-            '-saveSimpoints', spt_simpoints, '-saveSimpointWeights', spt_weights,
+            '-saveSimpoints', f'>({spt_awk_script} > {spt_simpoints})',
+            '-saveSimpointWeights', f'>({spt_awk_script} > {spt_weights})',
             '>', os.path.join(spt_subdir, 'stdout'),
             '2>', os.path.join(spt_subdir, 'stderr'),
             '-inputVectorsGzipped',
@@ -613,6 +618,7 @@ for sw_name, sw_config in config.sw.items():
             '--f2i-input', spt_funcs,
             '--f2i-output', spt_insts,
             '--mem-size', get_mem(bench_name),
+            '--symbol-blacklist', bench_spec.symbol_blacklist,
             '--', '--', os.path.abspath(exe), *bench_spec.args,
             # '>', 'stdout', '2>', 'stderr',
         ]
@@ -635,11 +641,13 @@ for sw_name, sw_config in config.sw.items():
             inputs = [spt_simpoints, spt_weights, spt_json_py, exe,
                       os.path.join(cpt_subdir, 'copy.stamp'), config.vars.pin,
                       config.vars.pin_kernel, config.vars.pin_tool, f2i_script,
+                      bench_spec.symbol_blacklist,
                 ],
             variables = {
                 'cmd': ' '.join(spt_json_cmd),
                 'id': f'{sw_name}->{bench_name}->spt->simpoints.json',
                 'desc': 'Compute SimPoint JSON',
+                'pool': 'mem', 'weight': get_mem(bench_name),
             },
         )
         spt_outputs = [spt_json]
