@@ -71,7 +71,7 @@ ninja.rule(
     restat = True,
     pool = 'sim',
 )
-ninja.pool('mem', 100) # for 100 GB
+ninja.pool('mem', 256) # for 100 GB
 
 ## copy-resource-dir
 ## NOTE: We are just copying symbolic links now!!!!
