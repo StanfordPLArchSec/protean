@@ -247,6 +247,60 @@ for sw_name, sw_config in config.sw.items():
     libcxx_include_dir = os.path.realpath(os.path.join(libcxx_build_dir, 'include', 'c++', 'v1'))
     libcxx_library_dir = os.path.realpath(os.path.join(libcxx_build_dir, 'lib'))
 
+    ## openmp -- [optional, for PARSEC] build LLVM's openmp.
+    ### Configure openmp.
+    openmp_cflags = [
+        *sw_config.cflags,
+        '-nostdinc++', '-nostdlib++', '-isystem', libcxx_include_dir,
+    ]
+    openmp_ldflags = [
+        *sw_config.ldflags, # base
+        '-L', os.path.realpath(os.path.dirname(libc_library)), '-lllvmlibc', # libc
+        '-nostdlib++', '-L', libcxx_library_dir, '-lc++', '-lc++abi', # libcxx
+    ]
+    openmp_build_dir = os.path.join(build_dir, 'openmp')
+    openmp_configure_deps = [sw_config.cc, sw_config.cxx, sw_config.fc, *sw_config.deps, libc_library, *libcxx_libraries]
+    openmp_build_file = os.path.join(openmp_build_dir, 'build.ninja')
+    openmp_configure_cmd = [
+        'cmake', '-S', os.path.join(sw_config.llvm, 'openmp'), '-B', openmp_build_dir,
+        f'-DCMAKE_BUILD_TYPE={sw_config.cmake_build_type}',
+        f'-DCMAKE_C_COMPILER={sw_config.cc}',
+        f'-DCMAKE_CXX_COMPILER={sw_config.cxx}',
+        '-DCMAKE_C_FLAGS="{}"'.format(' '.join(openmp_cflags)),
+        '-DCMAKE_CXX_FLAGS="{}"'.format(' '.join(openmp_cflags)),
+        '-DCMAKE_EXE_LINKER_FLAGS="{}"'.format(' '.join(openmp_ldflags)),
+        '-DCMAKE_SHARED_LINKER_FLAGS="{}"'.format(' '.join(openmp_ldflags)),
+        '-DCMAKE_STATIC_LINKER_FLAGS="{}"'.format(' '.join(openmp_ldflags)),
+        '-DLIBOMP_USE_HWLOC=0',
+    ]
+    ninja.build(
+        outputs = openmp_build_file,
+        rule = 'custom-command',
+        inputs = openmp_configure_deps,
+        variables = {
+            'cmd': ' '.join(openmp_configure_cmd),
+            'id': f'{sw_name}->openmp->configure',
+            'desc': 'Configure OpenMP',
+        },
+    )
+    ninja.build(
+        outputs = os.path.join(openmp_build_dir, 'configure'),
+        rule = 'phony',
+        inputs = openmp_build_file,
+    )
+
+    ### Build OpenMP.
+    ninja.build(
+        outputs = os.path.join(openmp_build_dir, 'build'),
+        rule = 'restated-custom-command',
+        inputs = openmp_build_file,
+        variables = {
+            'cmd': f'ninja -C {openmp_build_dir}',
+            'id': f'{sw_name}->openmp->build',
+            'desc': 'Build OpenMP',
+        },
+    )
+
     ## test-suite -- build LLVM's test suite
     ### Configure test-suite
     test_suite_cflags = [*sw_config.cflags, '-nostdinc++', '-nostdlib++',
