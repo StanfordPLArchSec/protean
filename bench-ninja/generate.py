@@ -673,6 +673,7 @@ for sw_name, sw_config in config.sw.items():
             '--f2i-input', spt_funcs,
             '--f2i-output', spt_insts,
             '--mem-size', get_mem(bench_name),
+            '--max-stack-size', get_ss(bench_name),            
             '--symbol-blacklist', bench_spec.symbol_blacklist,
             '--', '--', os.path.abspath(exe), *bench_spec.args,
             # '>', 'stdout', '2>', 'stderr',
