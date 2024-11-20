@@ -63,7 +63,6 @@
 	    "verify": "true"
     },
     "603.bwaves_s": {
-        "skip": 1,
 	    "type": "FP",
 	    "mem": "16GB",
 	    "ss": "16GB",
@@ -93,12 +92,10 @@
 	    "verify": "true"
     },
     "627.cam4_s": {
-        "skip": 1,
 	    "type": "FP",
 	    "mem": "16GB",
 	    "ss": "1GB",
-        "args": "",
-        "outputs": ["cam4_validate.txt"],
+        "args": "> cam4.out",
 	    "verify": "true"
     },
     "628.pop2_s": {

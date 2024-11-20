@@ -573,6 +573,7 @@ for sw_name, sw_config in config.sw.items():
             '--pin-tool', bbv_pin_tool,
             '--interval-size', str(config.vars.interval),
             '--mem-size', get_mem(bench_name),
+            '--max-stack-size', get_ss(bench_name),
             '--output', '>(gzip > bbv.out.gz)',
             '--symbol-blacklist', bench_spec.symbol_blacklist,
             '--',
@@ -583,6 +584,8 @@ for sw_name, sw_config in config.sw.items():
             # '--', os.path.abspath(exe), *bench_spec.args,
             # '2>', 'stderr',
         ]
+        if args.sw_depend:
+            bbv_inputs.append(exe)
         
         if not bench_spec.stdout:
             bbv_run_cmd.extend(['>', 'stdout'])
@@ -590,8 +593,6 @@ for sw_name, sw_config in config.sw.items():
             outputs = bbv_outputs,
             rule = 'custom-command',
             inputs = [
-                exe,
-                # os.path.join('cpt', sw_name, bench_name, 'host', 'verify.stamp'),
                 os.path.join('cpt', sw_name, bench_name, 'bbv', 'copy.stamp'),
                 *bbv_inputs,
                 bench_spec.symbol_blacklist,
@@ -692,7 +693,8 @@ for sw_name, sw_config in config.sw.items():
         ninja.build(
             outputs = [spt_json],
             rule = 'custom-command',
-            inputs = [spt_simpoints, spt_weights, spt_json_py, exe,
+            inputs = [spt_simpoints, spt_weights, spt_json_py,
+                      *([exe] if args.sw_depend else []),
                       os.path.join(cpt_subdir, 'copy.stamp'), config.vars.pin,
                       config.vars.pin_kernel, config.vars.pin_tool, f2i_script,
                       bench_spec.symbol_blacklist,
