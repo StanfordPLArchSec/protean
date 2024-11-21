@@ -15,13 +15,13 @@ simpoints_py=../../bench-ninja/helpers/simpoints.py
 
 # benchmarks
 ctaes_exe=ctaes/bench
-ctaes_args=()
+ctaes_args=(dummy)
 
 bearssl_exe=bearssl/build/testspeed
 bearssl_args=(chacha20_ct)
 
 djbsort_exe=djbsort/link-install/command/int32-speed
-djbsort_args=()
+djbsort_args=(dummy)
 
 benchmarks=(bearssl ctaes djbsort)
 
