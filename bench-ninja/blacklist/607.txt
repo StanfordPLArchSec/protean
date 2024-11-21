@@ -1,0 +1,4 @@
+_ZN11__llvm_libc6strchrEPKci
+_ZN11__llvm_libc6strcmpEPKcS1_
+_ZN11__llvm_libc6strlenEPKc
+_ZN11__llvm_libc6strstrEPKcS1_
