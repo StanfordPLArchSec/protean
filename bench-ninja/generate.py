@@ -268,10 +268,12 @@ for sw_name, sw_config in config.sw.items():
         f'-DCMAKE_CXX_COMPILER={sw_config.cxx}',
         '-DCMAKE_C_FLAGS="{}"'.format(' '.join(openmp_cflags)),
         '-DCMAKE_CXX_FLAGS="{}"'.format(' '.join(openmp_cflags)),
-        '-DCMAKE_EXE_LINKER_FLAGS="{}"'.format(' '.join(openmp_ldflags)),
-        '-DCMAKE_SHARED_LINKER_FLAGS="{}"'.format(' '.join(openmp_ldflags)),
-        '-DCMAKE_STATIC_LINKER_FLAGS="{}"'.format(' '.join(openmp_ldflags)),
+        # '-DCMAKE_EXE_LINKER_FLAGS="{}"'.format(' '.join(openmp_ldflags)),
+        # '-DCMAKE_SHARED_LINKER_FLAGS="{}"'.format(' '.join(openmp_ldflags)),
+        # '-DCMAKE_STATIC_LINKER_FLAGS="{}"'.format(' '.join(openmp_ldflags)),
+        '-DLIBOMP_ENABLE_SHARED=0',
         '-DLIBOMP_USE_HWLOC=0',
+        '-DLLVM_DIR={}'.format(os.path.join(os.path.dirname(os.path.dirname(sw_config.cc)), 'lib', 'cmake', 'llvm')),
     ]
     ninja.build(
         outputs = openmp_build_file,
@@ -295,7 +297,7 @@ for sw_name, sw_config in config.sw.items():
         rule = 'restated-custom-command',
         inputs = openmp_build_file,
         variables = {
-            'cmd': f'ninja -C {openmp_build_dir}',
+            'cmd': f'ninja -C {openmp_build_dir} libomp.a',
             'id': f'{sw_name}->openmp->build',
             'desc': 'Build OpenMP',
         },
