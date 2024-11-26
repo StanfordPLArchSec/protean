@@ -81,7 +81,19 @@
 	        "inherit": "ptex-all",
 	        "+cflags": ["-mllvm", "-x86-annotate-public=pointers"],
 	        "+fflags": ["-mllvm", "-x86-annotate-public=pointers"]
-	    }
+	    },
+
+        "annotate-bound-to-leak-nst": {
+            "inherit": "ptex-nst",
+            "+cflags": ["-mllvm", "-x86-annotate-public=bound-to-leak"],
+            "+fflags": ["-mllvm", "-x86-annotate-public=bound-to-leak"]
+        },
+
+        "annotate-pointer-loads-nst": {
+            "inherit": "ptex-nst",
+            "+cflags": ["-mllvm", "-x86-annotate-public=bound-to-leak"],
+            "+fflags": ["-mllvm", "-x86-annotate-public=bound-to-leak"]
+        }
     },
 
     "sim": {
