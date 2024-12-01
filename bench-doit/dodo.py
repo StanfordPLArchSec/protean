@@ -5,7 +5,10 @@ from benchmark import *
 
 # User-defined config vars
 root = "."
-test_suite_base = "/home/nmosier/llsct2/bench-ninja/sw/base/test-suite"
+test_suites = {
+    "base": "/home/nmosier/llsct2/bench-ninja/sw/base/test-suite",
+    "nst": "/home/nmosier/llsct2/bench-ninja/sw/ptex-nst/test-suite",
+}
 gem5 = "/home/nmosier/llsct2/gem5/pincpu"
 fp = False
 
@@ -14,10 +17,9 @@ gem5_exe = f"{gem5}/build/X86/gem5.opt"
 
 # Benchmarks
 benches = []
-benches.extend(get_cpu2017_int(os.path.abspath(test_suite_base)))    
+benches.extend(get_cpu2017_int(test_suites))
 if fp:
-    benches.extend(get_cpu2017_fp(os.path.abspath(test_suite_base)))
-
+    benches.extend(get_cpu2017_fp(test_suites))
 
 def bench_outdir(bench: Benchmark) -> str:
     return os.path.join(root, bench.name)
@@ -25,21 +27,20 @@ def bench_outdir(bench: Benchmark) -> str:
 def bench_input_outdir(bench: Benchmark, input: Benchmark.Input) -> str:
     return os.path.join(bench_outdir(bench), input.name)
 
-def generate_uniqtrace(bench: Benchmark, input: Benchmark.Input):
-    dir_rel = bench_input_outdir(bench, input)
+def generate_uniqtrace(dir_rel: str, exe: Benchmark.Executable, input: Benchmark.Input):
     rundir_rel = f"{dir_rel}/run"
     outdir_rel = f"{dir_rel}/qtrace"
     outdir_abs = os.path.abspath(outdir_rel)
     gem5_pin = f"{gem5}/configs/pin.py"
     qtrace_name = "qtrace.out"
     yield {
-        "basename": f"{bench.name}.{input.name}.uniqtrace",
+        "basename": outdir_rel,
         "actions": [
             f"mkdir -p {dir_rel} {outdir_rel}",
-            f"ln -sf {os.path.abspath(bench.wd)} {rundir_rel}",
-            f"cd {rundir_rel} && /usr/bin/time -vo {outdir_abs}/time.txt {gem5_exe} -re --silent-redirect -d {outdir_abs} {gem5_pin} --mem-size={input.mem_size} --max-stack-size={input.stack_size} --errout=stderr.txt --output=stdout.txt --pin-tool-args='-qtrace {outdir_abs}/{qtrace_name}' -- {bench.exe} {input.args}",
+            f"[ -d {rundir_rel} ] || ln -sf {os.path.abspath(exe.wd)} {rundir_rel}",
+            f"/usr/bin/time -vo {outdir_rel}/time.txt {gem5_exe} -re --silent-redirect -d {outdir_rel} {gem5_pin} --chdir={rundir_rel} --mem-size={input.mem_size} --max-stack-size={input.stack_size} --stdout=stdout.txt --stderr=stderr.txt --pin-tool-args='-qtrace {outdir_rel}/{qtrace_name}' -- {exe.path} {input.args}",
         ],
-        "file_dep": [gem5_exe, gem5_pin, bench.exe],
+        "file_dep": [gem5_exe, gem5_pin, exe.path],
         "targets": [f"{outdir_rel}/{filename}" for filename in ["simout.txt", "simerr.txt", "stdout.txt", "stderr.txt", qtrace_name, "time.txt"]],
     }
 
@@ -47,8 +48,10 @@ def generate_uniqtrace(bench: Benchmark, input: Benchmark.Input):
 
 def generate_all_uniqtraces(benches):
     for bench in benches:
-        for input in bench.inputs:
-            yield generate_uniqtrace(bench, input)
+        for exe in bench.exes:
+            for input in bench.inputs:
+                dir = os.path.join(bench.name, input.name, exe.name)
+                yield generate_uniqtrace(dir, exe, input)
 
 
 def task_all():
