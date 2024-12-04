@@ -561,18 +561,15 @@ for sw_name, sw_config in config.sw.items():
         bbv_outputs = [bbv_file, *bbv_run_outputs]
         assert len(bbv_outputs) >= 2
         bbv_script = os.path.join(sim_config.src, sim_config.script_bbv)
-        bbv_pin_exe = config.vars.pin
-        bbv_pin_tool = config.vars.pin_tool
-        bbv_pin_kernel = config.vars.pin_kernel
-        bbv_inputs = [gem5_exe, bbv_script, bbv_pin_exe, bbv_pin_tool, bbv_pin_kernel]
+        bbv_inputs = [gem5_exe, bbv_script]
         bbv_run_args = ' '.join(bench_spec.args)
         bbv_run_cmd = [
             'cd', bbv_subdir, '&&',
             os.path.abspath(gem5_exe), '-r', '-e',
             os.path.abspath(bbv_script),
-            '--pin', bbv_pin_exe,
-            '--pin-kernel', bbv_pin_kernel,
-            '--pin-tool', bbv_pin_tool,
+            # '--pin', bbv_pin_exe,
+            # '--pin-kernel', bbv_pin_kernel,
+            # '--pin-tool', bbv_pin_tool,
             '--interval-size', str(config.vars.interval),
             '--mem-size', get_mem(bench_name),
             '--max-stack-size', get_ss(bench_name),
@@ -669,9 +666,9 @@ for sw_name, sw_config in config.sw.items():
         f2i_pin_cmd = [
             os.path.abspath(gem5_exe), '-r', '-e',
             os.path.abspath(f2i_script),
-            '--pin', config.vars.pin,
-            '--pin-kernel', config.vars.pin_kernel,
-            '--pin-tool', config.vars.pin_tool,
+            # '--pin', config.vars.pin,
+            # '--pin-kernel', config.vars.pin_kernel,
+            # '--pin-tool', config.vars.pin_tool,
             '--f2i-input', spt_funcs,
             '--f2i-output', spt_insts,
             '--mem-size', get_mem(bench_name),
@@ -698,8 +695,9 @@ for sw_name, sw_config in config.sw.items():
             rule = 'custom-command',
             inputs = [spt_simpoints, spt_weights, spt_json_py,
                       *([exe] if args.sw_depend else []),
-                      os.path.join(cpt_subdir, 'copy.stamp'), config.vars.pin,
-                      config.vars.pin_kernel, config.vars.pin_tool, f2i_script,
+                      os.path.join(cpt_subdir, 'copy.stamp'),
+                      # config.vars.pin, config.vars.pin_kernel, config.vars.pin_tool,
+                      f2i_script,
                       bench_spec.symbol_blacklist,
                 ],
             variables = {
