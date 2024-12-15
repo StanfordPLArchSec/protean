@@ -4,6 +4,7 @@ sys.path.append(os.path.join(os.path.dirname(__file__), "../scripts"))
 from benchmark import *
 import types
 import json
+import collections
 
 # User-defined config vars
 root = "."
@@ -18,6 +19,8 @@ addr2line = f"{llvm}/bin/llvm-addr2line"
 
 # Dependent config vars
 gem5_exe = f"{gem5}/build/X86/gem5.opt"
+gem5_pin = f"{gem5}/configs/pin.py"
+gem5_pintool = f"{gem5}/build/X86/cpu/pin/libclient.so"
 
 # Benchmarks
 benches = []
@@ -31,76 +34,158 @@ def bench_outdir(bench: Benchmark) -> str:
 def bench_input_outdir(bench: Benchmark, input: Benchmark.Input) -> str:
     return os.path.join(bench_outdir(bench), input.name)
 
-def convert_srcinfo(s: str) -> str:
-    j = json.loads(s)
-    symbols = j["Symbol"]
-    id_tokens = []
-    addr = j["Address"]
-    for symbol in symbols:
-        symbol = types.SimpleNamespace(**symbol)
-        if len(symbol.FileName) == 0 or \
-           symbol.Line == 0 or \
-           symbol.Column == 0: # TODO: Maybe too strict?
-            return (addr, None)
-        id_tokens.append(f"{symbol.FileName}:{symbol.Line}:{symbol.Column}")
-    assert len(id_tokens) == len(symbols)
-    if len(id_tokens) == 0:
-        return (addr, None)
-    return (addr, id_tokens[0])
-
-def convert_srcinfos(qpath: str, srcpath: str, outpath: str):
-    with open(qpath, "rt") as qfile, open(srcpath, "rt") as srcfile, open(outpath, "wt") as outfile:
-        for qline, srcinfo in zip(qfile, srcfile):
-            addr, srcid = convert_srcinfo(srcinfo)
-            qtokens = qline.split()
-            assert int(qtokens[0], 0) == int(addr, 0)
-            if srcid:
-                print(addr, qtokens[1], srcid, file=outfile)
-            
-
-def generate_uniqtrace(dir_rel: str, exe: Benchmark.Executable, input: Benchmark.Input):
-    rundir_rel = f"{dir_rel}/run"
-    outdir_rel = f"{dir_rel}/qtrace"
-    outdir_abs = os.path.abspath(outdir_rel)
-    gem5_pin = f"{gem5}/configs/pin.py"
-    qtrace_name = "qtrace0.txt"
-    qtrace = f"{outdir_rel}/{qtrace_name}"
-
-    yield {
-        "basename": qtrace,
-        "actions": [
-            f"mkdir -p {dir_rel} {outdir_rel}",
-            f"[ -d {rundir_rel} ] || ln -sf {os.path.abspath(exe.wd)} {rundir_rel}",
-            f"/usr/bin/time -vo {outdir_rel}/time.txt {gem5_exe} -re --silent-redirect -d {outdir_rel} {gem5_pin} --chdir={rundir_rel} --mem-size={input.mem_size} --max-stack-size={input.stack_size} --stdout=stdout.txt --stderr=stderr.txt --pin-tool-args='-qtrace {qtrace}' -- {exe.path} {input.args}",
-        ],
-        "file_dep": [gem5_exe, gem5_pin, exe.path],
-        "targets": [f"{outdir_rel}/{filename}" for filename in ["simout.txt", "simerr.txt", "stdout.txt", "stderr.txt", qtrace_name, "time.txt"]],
-    }
-
-    srcinfo_json = f"{outdir_rel}/srcinfo.json"
-    yield {
-        "basename": srcinfo_json,
-        "actions": [f"cut -d' ' -f1 < {qtrace} | {addr2line} --addresses --inlines --exe {exe.path} --output-style=JSON > {srcinfo_json}"],
-        "file_dep": [qtrace, exe.path],
-        "targets": [srcinfo_json],
-    }
-
-    qtrace_annot = f"{outdir_rel}/qtrace1.txt"
-    yield {
-        "basename": qtrace_annot,
-        "actions": [(convert_srcinfos, [qtrace, srcinfo_json, qtrace_annot], {})],
-        "file_dep": [srcinfo_json, qtrace],
-        "targets": [qtrace_annot],
-    }
+def build_gem5_pin_command(rundir: str, outdir: str, exe: Benchmark.Executable,
+                           input: Benchmark.Input, pintool_args: str) -> str:
+    return f"/usr/bin/time -vo {outdir}/time.txt {gem5_exe} -re --silent-redirect -d {outdir} {gem5_pin} --chdir={rundir} --mem-size={input.mem_size} --max-stack-size={input.stack_size} --stdout=stdout.txt --stderr=stderr.txt --pin-tool-args='{pintool_args}' -- {exe.path} {input.args}"
     
 
-def generate_all_uniqtraces(benches):
+def get_srcloc(line: str) -> str:
+    j = json.loads(line)
+    assert len(j["Symbol"]) == 1
+    symbol = types.SimpleNamespace(**j["Symbol"][0])
+    addr = j["Address"].removeprefix("0x")
+    if len(symbol.FileName) == 0 or \
+       symbol.Line == 0 or \
+       symbol.Column == 0: # TODO: Maybe too strict?
+        return None
+    return f"{addr} {symbol.FileName}:{symbol.Line}:{symbol.Column}"
+
+def compute_srclocs(inpath: str, outpath: str):
+    with open(inpath) as infile, \
+         open(outpath, "wt") as outfile:
+        for line in infile:
+            srcloc = get_srcloc(line)
+            if srcloc:
+                print(srcloc, file = outfile)
+
+def generate_srclocs(dir: str):
+    srclist = f"{dir}/srclist.txt"
+    srclocs = f"{dir}/srclocs.txt"
+    yield {
+        "basename": f"{dir}/srclocs",
+        "actions": [(compute_srclocs, [], {"inpath": srclist, "outpath": srclocs})],
+        "file_dep": [srclist],
+        "targets": [srclocs],
+    }
+
+def generate_bbhist(dir: str, exe: Benchmark.Executable, input: Benchmark.Input):
+    rundir = f"{dir}/run"
+    bbhist_base = f"{dir}/bbhist"
+    bbhist_txt = f"{bbhist_base}.txt"
+    bbhist_dir = bbhist_base
+    # TODO: Make main directory creation a different task.
+    yield {
+        "basename": bbhist_base,
+        "actions": [
+            f"mkdir -p {dir} {bbhist_dir}",
+            f"[ -d {rundir} ] || ln -sf {os.path.abspath(exe.wd)} {rundir}",
+            build_gem5_pin_command(rundir, bbhist_dir, exe, input, f"-bbhist {bbhist_txt}"),
+        ],
+        "file_dep": [gem5_exe, gem5_pin, gem5_pintool, exe.path],
+        "targets": [bbhist_txt, *[f"{bbhist_dir}/{name}.txt" for name in ["simout", "simerr", "stdout", "stderr", "time"]]],
+    }
+
+def compute_instlist(inpath: str, outpath: str):
+    with open(inpath) as infile, \
+         open(outpath, "wt") as outfile:
+        insts = set()
+        for line in infile:
+            insts.update(line.split()[1].split(","))
+        for inst in sorted(list(insts)):
+            print(inst, file = outfile)
+
+def generate_instlist(dir: str):
+    bbhist_txt = f"{dir}/bbhist.txt"
+    instlist_base = f"{dir}/instlist"
+    instlist_txt = f"{instlist_base}.txt"
+    yield {
+        "basename": instlist_base,
+        "actions": [(compute_instlist, [], {"inpath": bbhist_txt, "outpath": instlist_txt})],
+        "file_dep": [bbhist_txt],
+        "targets": [instlist_txt],
+    }
+
+def assert_equal_file_lengths(*paths):
+    def file_length(path) -> int:
+        num_lines = 0
+        with open(path) as f:
+            for line in f:
+                num_lines += 1
+        return num_lines
+
+    lengths = list(map(file_length, paths))
+    for length in lengths[1:]:
+        assert length == lengths[0]
+
+def generate_srclist(dir: str, exe: Benchmark.Executable):
+    instlist = f"{dir}/instlist.txt"
+    srclist = f"{dir}/srclist.txt"
+    yield {
+        "basename": f"{dir}/srclist",
+        "actions": [
+            f"{addr2line} --exe {exe.path} --output-style=JSON < {instlist} > {srclist}",
+            (assert_equal_file_lengths, [instlist, srclist]),
+        ],
+        "file_dep": [instlist],
+        "targets": [srclist],
+    }
+
+def compute_lehist(bbhist_path: str, srclocs_path: str, outpath: str):
+    # Parse srclocs.
+    locs = dict()
+    with open(srclocs_path) as f:
+        for line in f:
+            inst, loc = line.split()
+            locs[inst] = loc
+
+    # Compute location edge histogram.
+    hist = collections.defaultdict(int)
+    with open(bbhist_path) as f:
+        for line in f:
+            tokens = line.split()
+            block_hits = int(tokens[0])
+            insts = tokens[1].split(",")
+            assert len(insts) > 0
+            for inst1, inst2 in zip(insts[:-1], insts[1:]):
+                if inst1 in locs and inst2 in locs:
+                    loc1 = locs[inst1]
+                    loc2 = locs[inst2]
+                    if loc1 != loc2:
+                        hist[(loc1, loc2)] += block_hits
+
+    # Write out sorted histogram.
+    hist = sorted(list(hist.items()))
+    with open(outpath, "wt") as f:
+        for locs, count in hist:
+            print(*locs, count, file = f)
+
+
+def generate_lehist(dir: str):
+    lehist_base = f"{dir}/lehist"
+    lehist_txt = f"{lehist_base}.txt"
+    bbhist_txt = f"{dir}/bbhist.txt"
+    srclocs_txt = f"{dir}/srclocs.txt"
+    yield {
+        "basename": lehist_base,
+        "actions": [(compute_lehist, [], {
+            "bbhist_path": bbhist_txt,
+            "srclocs_path": srclocs_txt,
+            "outpath": lehist_txt,
+            })],
+        "file_dep": [bbhist_txt, srclocs_txt],
+        "targets": [lehist_txt],
+    }
+
+def generate_all(benches):
     for bench in benches:
         for exe in bench.exes:
             for input in bench.inputs:
                 dir = os.path.join(bench.name, input.name, exe.name)
-                yield generate_uniqtrace(dir, exe, input)
-
+                yield generate_srclist(dir, exe)
+                yield generate_srclocs(dir)
+                yield generate_bbhist(dir, exe, input)
+                yield generate_instlist(dir)
+                yield generate_lehist(dir)
 
 def task_all():
-    yield generate_all_uniqtraces(benches)
+    yield generate_all(benches)
