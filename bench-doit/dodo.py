@@ -16,6 +16,9 @@ gem5 = "/home/nmosier/llsct2/gem5/pincpu"
 fp = False
 llvm = "/home/nmosier/llsct2/llvm/base/build"
 addr2line = f"{llvm}/bin/llvm-addr2line"
+simpoint_interval_length = 50000000 # 50M instructions
+warmup_interval_length = 10000000 # 10M instructions
+simpoint = "/home/nmosier/llsct2/simpoint/bin/simpoint"
 
 # Dependent config vars
 gem5_exe = f"{gem5}/build/X86/gem5.opt"
@@ -201,20 +204,43 @@ def generate_shlocedges(dir: str, exes: List[Benchmark.Executable]):
         "file_dep": lehists,
         "targets": [out],
     }
+
+def generate_bbv(dir: str, exe: Benchmark.Executable, input: Benchmark.Input):
+    rundir = f"{dir}/run"
+    bbv_base = f"{dir}/bbv"
+    bbv_txt = f"{dir}/bbv.txt"
+    bbv_dir = bbv_base
+    locedges_txt = f"{dir}/../locedges.txt"
+    srclocs_txt = f"{dir}/srclocs.txt"
+    # TODO: Make main directory creation a different task.
+    yield {
+        "basename": bbv_base,
+        "actions": [
+            f"mkdir -p {dir} {bbv_dir}",
+            f"[ -d {rundir} ] || ln -sf {os.path.abspath(exe.wd)} {rundir}",
+            build_gem5_pin_command(rundir, bbv_dir, exe, input, f"-slev {bbv_txt} -slev-interval {simpoint_interval_length} -slev-edges {locedges_txt} -slev-map {srclocs_txt}"),
+        ],
+        "file_dep": [gem5_exe, gem5_pin, gem5_pintool, exe.path, locedges_txt, srclocs_txt],
+        "targets": [bbv_txt, *[f"{bbv_dir}/{name}.txt" for name in ["simout", "simerr", "stdout", "stderr", "time"]]],
+    }
     
 def generate_all(benches):
     for bench in benches:
         for input in bench.inputs:
             for exe in bench.exes:
                 dir = os.path.join(bench.name, input.name, exe.name)
-                yield generate_srclist(dir, exe)
-                yield generate_srclocs(dir)
                 yield generate_bbhist(dir, exe, input)
                 yield generate_instlist(dir)
+                yield generate_srclist(dir, exe)
+                yield generate_srclocs(dir)
                 yield generate_lehist(dir)
 
             # Among all exes, generate the shared set of locedges with identical hit counts.
             yield generate_shlocedges(os.path.join(bench.name, input.name), bench.exes)
+
+            # Collect source location edge vectors for leader.
+            for exe in bench.exes:
+                yield generate_bbv(os.path.join(bench.name, input.name, exe.name), exe, input)
 
 def task_all():
     yield generate_all(benches)
