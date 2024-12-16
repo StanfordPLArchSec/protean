@@ -40,6 +40,23 @@ def bench_input_outdir(bench: Benchmark, input: Benchmark.Input) -> str:
 def build_gem5_pin_command(rundir: str, outdir: str, exe: Benchmark.Executable,
                            input: Benchmark.Input, pintool_args: str) -> str:
     return f"/usr/bin/time -vo {outdir}/time.txt {gem5_exe} -re --silent-redirect -d {outdir} {gem5_pin} --chdir={rundir} --mem-size={input.mem_size} --max-stack-size={input.stack_size} --stdout=stdout.txt --stderr=stderr.txt --pin-tool-args='{pintool_args}' -- {exe.path} {input.args}"
+
+def generate_gem5_pin_command(dir: str, outdir: str, exe: Benchmark.Executable,
+                              input: Benchmark.Input, pintool_args: str,
+                              file_dep: List[str],
+                              targets: List[str]):
+    rundir = f"{dir}/run"
+    implicit_targets = [f"{outdir}/{name}.txt" for name in ["simout", "simerr", "stdout", "stderr", "time"]]
+    yield {
+        "basename": outdir,
+        "actions": [
+            f"mkdir -p {dir} {outdir}",
+            f"[ -d {rundir} ] || ln -sf {os.path.abspath(exe.wd)} {rundir}",
+            build_gem5_pin_command(rundir, outdir, exe, input, pintool_args),
+        ],
+        "file_dep": [gem5_exe, gem5_pin, gem5_pintool, exe.path, *file_dep],
+        "targets": targets + implicit_targets,
+    }
     
 
 def get_srcloc(line: str) -> str:
@@ -72,21 +89,18 @@ def generate_srclocs(dir: str):
     }
 
 def generate_bbhist(dir: str, exe: Benchmark.Executable, input: Benchmark.Input):
-    rundir = f"{dir}/run"
     bbhist_base = f"{dir}/bbhist"
-    bbhist_txt = f"{bbhist_base}.txt"
     bbhist_dir = bbhist_base
-    # TODO: Make main directory creation a different task.
-    yield {
-        "basename": bbhist_base,
-        "actions": [
-            f"mkdir -p {dir} {bbhist_dir}",
-            f"[ -d {rundir} ] || ln -sf {os.path.abspath(exe.wd)} {rundir}",
-            build_gem5_pin_command(rundir, bbhist_dir, exe, input, f"-bbhist {bbhist_txt}"),
-        ],
-        "file_dep": [gem5_exe, gem5_pin, gem5_pintool, exe.path],
-        "targets": [bbhist_txt, *[f"{bbhist_dir}/{name}.txt" for name in ["simout", "simerr", "stdout", "stderr", "time"]]],
-    }
+    bbhist_txt = f"{dir}/bbhist.txt"
+    yield generate_gem5_pin_command(
+        dir = dir,
+        outdir = bbhist_dir,
+        exe = exe,
+        input = input,
+        pintool_args = f"-bbhist {bbhist_txt}",
+        file_dep = [],
+        targets = [bbhist_txt],
+    )
 
 def compute_instlist(inpath: str, outpath: str):
     with open(inpath) as infile, \
@@ -206,23 +220,20 @@ def generate_shlocedges(dir: str, exes: List[Benchmark.Executable]):
     }
 
 def generate_bbv(dir: str, exe: Benchmark.Executable, input: Benchmark.Input):
-    rundir = f"{dir}/run"
     bbv_base = f"{dir}/bbv"
     bbv_txt = f"{dir}/bbv.txt"
     bbv_dir = bbv_base
     locedges_txt = f"{dir}/../locedges.txt"
     srclocs_txt = f"{dir}/srclocs.txt"
-    # TODO: Make main directory creation a different task.
-    yield {
-        "basename": bbv_base,
-        "actions": [
-            f"mkdir -p {dir} {bbv_dir}",
-            f"[ -d {rundir} ] || ln -sf {os.path.abspath(exe.wd)} {rundir}",
-            build_gem5_pin_command(rundir, bbv_dir, exe, input, f"-slev {bbv_txt} -slev-interval {simpoint_interval_length} -slev-edges {locedges_txt} -slev-map {srclocs_txt}"),
-        ],
-        "file_dep": [gem5_exe, gem5_pin, gem5_pintool, exe.path, locedges_txt, srclocs_txt],
-        "targets": [bbv_txt, *[f"{bbv_dir}/{name}.txt" for name in ["simout", "simerr", "stdout", "stderr", "time"]]],
-    }
+    yield generate_gem5_pin_command(
+        dir = dir,
+        outdir = bbv_dir,
+        exe = exe,
+        input = input,
+        pintool_args = f"-slev {bbv_txt} -slev-interval {simpoint_interval_length} -slev-edges {locedges_txt} -slev-map {srclocs_txt}",
+        file_dep = [locedges_txt, srclocs_txt],
+        targets = [bbv_txt],
+    )
     
 def generate_all(benches):
     for bench in benches:
