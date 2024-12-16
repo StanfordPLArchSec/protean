@@ -278,8 +278,9 @@ def generate_progmark(dir: str):
     }
 
 def generate_bbv(dir: str, exe: Benchmark.Executable, input: Benchmark.Input):
-    bbv_base = f"{dir}/bbv"
-    bbv_txt = f"{dir}/bbv.txt"
+    parent_dir = os.path.dirname(dir)
+    bbv_base = f"{parent_dir}/bbv"
+    bbv_txt = f"{parent_dir}/bbv.txt"
     bbv_dir = bbv_base
     progmark_txt = f"{dir}/progmark.txt"
     yield generate_gem5_pin_command(
@@ -292,10 +293,10 @@ def generate_bbv(dir: str, exe: Benchmark.Executable, input: Benchmark.Input):
         targets = [bbv_txt],
     )
 
-def generate_simpoint(dir: str):
-    simpoint_base = f"{dir}/simpoint"
-    simpoint_intervals = f"{dir}/simpoint-intervals.txt"
-    simpoint_weights = f"{dir}/simpoint-weights.txt"
+def generate_simpoint_intervals(dir: str):
+    simpoint_base = f"{dir}/intervals"
+    simpoint_intervals = f"{dir}/intervals.txt"
+    simpoint_weights = f"{dir}/weights.txt"
     bbv = f"{dir}/bbv.txt"
     yield {
         "basename": simpoint_base,
@@ -303,27 +304,100 @@ def generate_simpoint(dir: str):
         "file_dep": [simpoint_exe, bbv],
         "targets": [simpoint_intervals, simpoint_weights],
     }
+
+def compute_simpoint_waypoint_ranges(intervals: str, bbv: str, out: str):
+    # Parse BBV, keeping only the metadata in the following format:
+    # # interval=6078 insts=303850148799,303900148855 progmarks=94698984980,94706273461
+    interval_to_progmarks = {}
+    with open(bbv) as f:
+        for line in f:
+            if line.startswith("#"):
+                x = types.SimpleNamespace(**dict(map(lambda token: token.split("="), line.removeprefix("#").split())))
+                interval_to_progmarks[x.interval] = x.progmarks
+    
+    with open(intervals) as f, \
+         open(out, "wt") as outf:
+        # FORMAT: interval-num simpoint-name
+        for line in f:
+            interval, name = line.split()
+            progmarks = interval_to_progmarks[interval]
+            # TODO: Also print out name?
+            print(progmarks, name, file = outf)
+
+
+def generate_simpoint_waypoint_ranges(dir: str):
+    bbv_path = f"{dir}/bbv.txt"
+    intervals_path = f"{dir}/intervals.txt"
+    out_base = f"{dir}/waypoint-ranges"
+    out_path = f"{out_base}.txt"
+    yield {
+        "basename": out_base,
+        "actions": [
+            (compute_simpoint_waypoint_ranges, [], {
+                "intervals": intervals_path,
+                "bbv": bbv_path,
+                "out": out_path,
+            }),
+        ],
+        "file_dep": [bbv_path, intervals_path],
+        "targets": [out_path],
+    }
+
+def compute_simpoint_waypoint_counts(out: str, waypoint_ranges: str):
+    counts = set()
+    with open(waypoint_ranges) as f:
+        for line in f:
+            r, name = line.split()
+            begin, end = r.split(",")
+            counts.add(begin)
+            counts.add(end)
+    with open(out, "wt") as f:
+        for count in counts:
+            print(count, file = f)
+        
+
+def generate_simpoint_waypoint_counts(dir: str):
+    waypoint_ranges = f"{dir}/waypoint-ranges.txt"
+    out_base = f"{dir}/waypoint-counts"
+    out = f"{out_base}.txt"
+    yield {
+        "basename": out_base,
+        "actions": [(compute_simpoint_waypoint_counts, [], {
+            "waypoint_ranges": waypoint_ranges,
+            "out": out,
+        })],
+        "file_dep": [waypoint_ranges],
+        "targets": [out],
+    }
+
     
 def generate_all(benches):
     for bench in benches:
+        b_dir = bench.name
         for input in bench.inputs:
+            bi_dir = os.path.join(b_dir, input.name)
             for exe in bench.exes:
-                dir = os.path.join(bench.name, input.name, exe.name)
-                yield generate_bbhist(dir, exe, input)
-                yield generate_instlist(dir)
-                yield generate_srclist(dir, exe)
-                yield generate_srclocs(dir)
-                yield generate_lehist(dir)
+                bix_dir = os.path.join(bi_dir, exe.name)
+                yield generate_bbhist(bix_dir, exe, input)
+                yield generate_instlist(bix_dir)
+                yield generate_srclist(bix_dir, exe)
+                yield generate_srclocs(bix_dir)
+                yield generate_lehist(bix_dir)
 
             # Among all exes, generate the shared set of locedges with identical hit counts.
-            yield generate_shlocedges(os.path.join(bench.name, input.name), bench.exes)
+            yield generate_shlocedges(bi_dir, bench.exes)
 
             # Collect source location edge vectors for leader.
             for exe in bench.exes:
-                dir = os.path.join(bench.name, input.name, exe.name)
-                yield generate_progmark(dir)
-                yield generate_bbv(dir, exe, input)
-                yield generate_simpoint(dir)
+                yield generate_progmark(os.path.join(bi_dir, exe.name))
+
+            main_exe = bench.exes[0]
+            bixmain_dir = os.path.join(bi_dir, main_exe.name)
+            yield generate_bbv(bixmain_dir, main_exe, input) # TODO: Fixup dirs.
+            yield generate_simpoint_intervals(bi_dir) # TODO: Only for main?
+            yield generate_simpoint_waypoint_ranges(bi_dir)
+            yield generate_simpoint_waypoint_counts(bi_dir)
+
 
 def task_all():
     yield generate_all(benches)
