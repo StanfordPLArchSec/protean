@@ -176,16 +176,45 @@ def generate_lehist(dir: str):
         "targets": [lehist_txt],
     }
 
+def compute_shlocedges(outpath: str, inpaths: List[str]):
+    assert len(inpaths) > 0
+
+    def get_line_set(path: str) -> set:
+        with open(path) as f:
+            return set(f)
+
+    lines = list(set.intersection(*map(get_line_set, inpaths)))
+    lines.sort()
+
+    with open(outpath, "wt") as f:
+        for line in lines:
+            f.write(line)
+        
+    
+def generate_shlocedges(dir: str, exes: List[Benchmark.Executable]):
+    lehists = [f"{dir}/{exe.name}/lehist.txt" for exe in exes]
+    out_base = f"{dir}/locedges"
+    out = f"{out_base}.txt"
+    yield {
+        "basename": out_base,
+        "actions": [(compute_shlocedges, [], {"outpath": out, "inpaths": lehists})],
+        "file_dep": lehists,
+        "targets": [out],
+    }
+    
 def generate_all(benches):
     for bench in benches:
-        for exe in bench.exes:
-            for input in bench.inputs:
+        for input in bench.inputs:
+            for exe in bench.exes:
                 dir = os.path.join(bench.name, input.name, exe.name)
                 yield generate_srclist(dir, exe)
                 yield generate_srclocs(dir)
                 yield generate_bbhist(dir, exe, input)
                 yield generate_instlist(dir)
                 yield generate_lehist(dir)
+
+            # Among all exes, generate the shared set of locedges with identical hit counts.
+            yield generate_shlocedges(os.path.join(bench.name, input.name), bench.exes)
 
 def task_all():
     yield generate_all(benches)
