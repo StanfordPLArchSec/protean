@@ -18,7 +18,8 @@ llvm = "/home/nmosier/llsct2/llvm/base/build"
 addr2line = f"{llvm}/bin/llvm-addr2line"
 simpoint_interval_length = 50000000 # 50M instructions
 warmup_interval_length = 10000000 # 10M instructions
-simpoint = "/home/nmosier/llsct2/simpoint/bin/simpoint"
+simpoint_exe = "/home/nmosier/llsct2/simpoint/bin/simpoint"
+simpoint_max = 10
 
 # Dependent config vars
 gem5_exe = f"{gem5}/build/X86/gem5.opt"
@@ -290,6 +291,18 @@ def generate_bbv(dir: str, exe: Benchmark.Executable, input: Benchmark.Input):
         file_dep = [progmark_txt],
         targets = [bbv_txt],
     )
+
+def generate_simpoint(dir: str):
+    simpoint_base = f"{dir}/simpoint"
+    simpoint_intervals = f"{dir}/simpoint-intervals.txt"
+    simpoint_weights = f"{dir}/simpoint-weights.txt"
+    bbv = f"{dir}/bbv.txt"
+    yield {
+        "basename": simpoint_base,
+        "actions": [f"{simpoint_exe} -loadFVFile {bbv} -maxK {simpoint_max} -saveSimpoints {simpoint_intervals} -saveSimpointWeights {simpoint_weights} -fixedLength off"],
+        "file_dep": [simpoint_exe, bbv],
+        "targets": [simpoint_intervals, simpoint_weights],
+    }
     
 def generate_all(benches):
     for bench in benches:
@@ -308,8 +321,9 @@ def generate_all(benches):
             # Collect source location edge vectors for leader.
             for exe in bench.exes:
                 dir = os.path.join(bench.name, input.name, exe.name)
-                yield generate_bbv(dir, exe, input)
                 yield generate_progmark(dir)
+                yield generate_bbv(dir, exe, input)
+                yield generate_simpoint(dir)
 
 def task_all():
     yield generate_all(benches)
