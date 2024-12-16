@@ -280,15 +280,14 @@ def generate_bbv(dir: str, exe: Benchmark.Executable, input: Benchmark.Input):
     bbv_base = f"{dir}/bbv"
     bbv_txt = f"{dir}/bbv.txt"
     bbv_dir = bbv_base
-    locedges_txt = f"{dir}/../locedges.txt"
-    srclocs_txt = f"{dir}/srclocs.txt"
+    progmark_txt = f"{dir}/progmark.txt"
     yield generate_gem5_pin_command(
         dir = dir,
         outdir = bbv_dir,
         exe = exe,
         input = input,
-        pintool_args = f"-slev {bbv_txt} -slev-interval {simpoint_interval_length} -slev-edges {locedges_txt} -slev-map {srclocs_txt}",
-        file_dep = [locedges_txt, srclocs_txt],
+        pintool_args = f"-slev {bbv_txt} -slev-interval {simpoint_interval_length} -slev-progmark {progmark_txt}",
+        file_dep = [progmark_txt],
         targets = [bbv_txt],
     )
     
