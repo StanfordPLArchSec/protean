@@ -219,6 +219,63 @@ def generate_shlocedges(dir: str, exes: List[Benchmark.Executable]):
         "targets": [out],
     }
 
+def compute_progmark(outpath: str, bbhist: str, locedges: str, locmap: str):
+    # Parse locmap.
+    # Format: instaddr srclocstr
+    inst_to_loc = {}
+    with open(locmap) as f:
+        for line in f:
+            inst, loc = line.split()
+            inst_to_loc[inst] = loc        
+
+    # Parse locedges.
+    # Format: srcloc dstloc count
+    loc_edges = set()
+    with open(locedges) as f:
+        for line in f:
+            loc1, loc2, count = line.split()
+            loc_edges.add((loc1, loc2))
+
+    # Parse bbhist into an intra-block instruction successor map.
+    # Format: count inst1,inst2,...,instn
+    # For the above line, we'd parse it into inst1->inst2, inst2->inst3, ..., inst{n-1}->instn.
+    inst_edges = {}
+    with open(bbhist) as f:
+        for line in f:
+            count, insts = line.split()
+            insts = insts.split(",")
+            assert len(insts) > 0
+            for inst1, inst2 in zip(insts[:-1], insts[1:]):
+                if inst1 in inst_to_loc and inst2 in inst_to_loc:
+                    loc1 = inst_to_loc[inst1]
+                    loc2 = inst_to_loc[inst2]
+                    if (loc1, loc2) in loc_edges:
+                        assert inst_edges.get(inst1, inst2) == inst2
+                        inst_edges[inst1] = inst2
+
+    # Print inst_edges to file.
+    with open(outpath, "wt") as f:
+        for inst1 in inst_edges:
+            print(inst1, file = f)
+
+def generate_progmark(dir: str):
+    out_base = f"{dir}/progmark"
+    out_txt = f"{out_base}.txt"
+    bbhist_txt = f"{dir}/bbhist.txt"
+    locedges_txt = os.path.join(os.path.dirname(dir), "locedges.txt")
+    locmap_txt = f"{dir}/srclocs.txt"
+    yield {
+        "basename": out_base,
+        "actions": [(compute_progmark, [], {
+            "outpath": out_txt,
+            "bbhist": bbhist_txt,
+            "locedges": locedges_txt,
+            "locmap": locmap_txt,
+        })],
+        "file_dep": [bbhist_txt, locedges_txt, locmap_txt],
+        "targets": [out_txt],
+    }
+
 def generate_bbv(dir: str, exe: Benchmark.Executable, input: Benchmark.Input):
     bbv_base = f"{dir}/bbv"
     bbv_txt = f"{dir}/bbv.txt"
@@ -251,7 +308,9 @@ def generate_all(benches):
 
             # Collect source location edge vectors for leader.
             for exe in bench.exes:
-                yield generate_bbv(os.path.join(bench.name, input.name, exe.name), exe, input)
+                dir = os.path.join(bench.name, input.name, exe.name)
+                yield generate_bbv(dir, exe, input)
+                yield generate_progmark(dir)
 
 def task_all():
     yield generate_all(benches)
