@@ -20,6 +20,7 @@ simpoint_interval_length = 50000000 # 50M instructions
 warmup_interval_length = 10000000 # 10M instructions
 simpoint_exe = "/home/nmosier/llsct2/simpoint/bin/simpoint"
 simpoint_max = 10
+gem5_script_kvm_cpt = "/home/nmosier/llsct2/gem5/pincpu/configs/se-kvm-cpt.py"
 
 # Dependent config vars
 gem5_exe = f"{gem5}/build/X86/gem5.opt"
@@ -38,29 +39,47 @@ def bench_outdir(bench: Benchmark) -> str:
 def bench_input_outdir(bench: Benchmark, input: Benchmark.Input) -> str:
     return os.path.join(bench_outdir(bench), input.name)
 
+def build_gem5_command(rundir: str, outdir: str, exe: Benchmark.Executable, input: Benchmark.Input,
+                       gem5_exe: str, gem5_script: str, gem5_script_args: str, gem5_exe_args: str = "",
+                       command_prefix: str = ""):
+    # TODO: utility function to join strip out empty tokens.
+    return " ".join([
+        command_prefix,
+        f"/usr/bin/time -vo {outdir}/time.txt {gem5_exe} -re --silent-redirect -d {outdir}",
+        gem5_exe_args, gem5_script, f"--chdir={rundir}", f"--mem-size={input.mem_size}",
+        f"--max-stack-size={input.stack_size}", "--stdout=stdout.txt",
+        f"--stderr=stderr.txt", gem5_script_args, "--", exe.path, input.args,
+    ])
+
 def build_gem5_pin_command(rundir: str, outdir: str, exe: Benchmark.Executable,
                            input: Benchmark.Input, pintool_args: str) -> str:
     return f"/usr/bin/time -vo {outdir}/time.txt {gem5_exe} -re --silent-redirect -d {outdir} {gem5_pin} --chdir={rundir} --mem-size={input.mem_size} --max-stack-size={input.stack_size} --stdout=stdout.txt --stderr=stderr.txt --pin-tool-args='{pintool_args}' -- {exe.path} {input.args}"
 
-def generate_gem5_pin_command(dir: str, outdir: str, exe: Benchmark.Executable,
-                              input: Benchmark.Input, pintool_args: str,
-                              file_dep: List[str],
-                              targets: List[str]):
+def generate_gem5_command(dir: str, outdir: str, exe: Benchmark.Executable, input: Benchmark.Input,
+                          file_dep: List[str], targets: List[str],
+                          gem5_exe: str, gem5_script: str, **kwargs):
     rundir = f"{dir}/run"
-    implicit_targets = [f"{outdir}/{name}.txt" for name in ["simout", "simerr", "stdout", "stderr", "time"]]
+    targets.extend([f"{outdir}/{name}.txt" for name in ["simout", "simerr", "stdout", "stderr", "time"]])
+    file_dep.extend([gem5_exe, gem5_script, exe.path])
     yield {
         "basename": outdir,
         "actions": [
             f"mkdir -p {dir} {outdir}",
             f"[ -d {rundir} ] || ln -sf {os.path.abspath(exe.wd)} {rundir}",
-            build_gem5_pin_command(rundir, outdir, exe, input, pintool_args),
+            build_gem5_command(rundir = rundir, outdir = outdir, exe = exe, input = input,
+                               gem5_exe = gem5_exe, gem5_script = gem5_script, **kwargs),
         ],
-        "file_dep": [gem5_exe, gem5_pin, exe.path, *file_dep,
-                     # gem5_pintool,
-                     ],
-        "targets": targets + implicit_targets,
+        "file_dep": file_dep,
+        "targets": targets,
     }
-    
+
+
+def generate_gem5_pin_command(dir: str, outdir: str, exe: Benchmark.Executable,
+                              input: Benchmark.Input, pintool_args: str,
+                              file_dep: List[str], targets: List[str]):
+    yield generate_gem5_command(dir = dir, outdir = outdir, exe = exe, input = input, file_dep = file_dep,
+                                targets = targets, gem5_exe = gem5_exe, gem5_script = gem5_pin,
+                                gem5_script_args = f"--pin-tool-args='{pintool_args}'")
 
 def get_srcloc(line: str) -> str:
     j = json.loads(line)
@@ -474,6 +493,28 @@ def generate_simpoint_json(dir: str):
         "file_dep": [in_weights, in_waypoints, in_intervals, in_insts],
         "targets": [out_simpoint_json],
     }
+
+
+
+
+def generate_take_checkpoints(dir: str, exe: Benchmark.Executable, input: Benchmark.Input):
+    out_base = f"{dir}/cpt"
+    out_dir = out_base
+    simpoints_json = f"{dir}/simpoint.json"
+
+    yield generate_gem5_command(
+        dir = dir,
+        outdir = out_dir,
+        exe = exe,
+        input = input,
+        gem5_exe = gem5_exe,
+        gem5_script = gem5_script_kvm_cpt,
+        gem5_script_args = f"--cpu-type=X86KvmCPU --simpoints-json={simpoints_json} --simpoints-warmup={warmup_interval_length}",
+        command_prefix = "taskset --cpu-list 0-15",
+        file_dep = [simpoints_json],
+        targets = [],
+    )
+
     
 def generate_all(benches):
     for bench in benches:
@@ -507,6 +548,7 @@ def generate_all(benches):
                 yield generate_simpoint_waypoint2inst(bix_dir, exe, input)
                 yield generate_simpoint_inst_ranges(bix_dir)
                 yield generate_simpoint_json(bix_dir)
+                yield generate_take_checkpoints(bix_dir, exe, input)
 
 
 def task_all():
