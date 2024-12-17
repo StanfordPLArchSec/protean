@@ -5,12 +5,14 @@ from benchmark import *
 import types
 import json
 import collections
+import copy
 
 # User-defined config vars
 root = "."
 test_suites = {
     "base": "/home/nmosier/llsct2/bench-ninja/sw/base/test-suite",
     "nst": "/home/nmosier/llsct2/bench-ninja/sw/ptex-nst/test-suite",
+    "slh": "/home/nmosier/llsct2/bench-ninja/sw/slh/test-suite",
 }
 gem5 = "/home/nmosier/llsct2/gem5/pincpu"
 fp = False
@@ -32,6 +34,35 @@ benches = []
 benches.extend(get_cpu2017_int(test_suites))
 if fp:
     benches.extend(get_cpu2017_fp(test_suites))
+
+# Experiments:
+# TODO: Define elsewhere.
+class Experiment:
+    def __init__(self, name: str, sw: str, gem5_exe: str, gem5_script: str, gem5_script_args: str):
+        self.name = name
+        self.sw = sw
+        self.gem5_exe = gem5_exe
+        self.gem5_script = gem5_script
+        self.gem5_script_args = gem5_script_args
+
+exp_base = Experiment(
+    name = "base",
+    gem5_exe = "/home/nmosier/llsct2/gem5/base/build/X86/gem5.opt",
+    gem5_script = "/home/nmosier/llsct2/gem5/base/configs/deprecated/example/se.py",
+    gem5_script_args = "",
+    sw = "base",
+)
+exp_slh = copy.copy(exp_base)
+exp_slh.name = "slh"
+exp_slh.sw = "slh"
+exp_stt = Experiment(
+    name = "stt",
+    gem5_exe = "/home/nmosier/llsct2/gem5/stt/build/X86/gem5.opt",
+    gem5_script = "/home/nmosier/llsct2/gem5/stt/configs/deprecated/example/se.py",
+    gem5_script_args = "--stt --implicit-channel=Lazy --speculation-model=Ctrl",
+    sw = "base",
+)
+exps = [exp_base, exp_stt, exp_slh]
 
 def bench_outdir(bench: Benchmark) -> str:
     return os.path.join(root, bench.name)
@@ -515,8 +546,7 @@ def generate_take_checkpoints(dir: str, exe: Benchmark.Executable, input: Benchm
         targets = [],
     )
 
-    
-def generate_all(benches):
+def generate_simpoints(benches):
     for bench in benches:
         b_dir = bench.name
         for input in bench.inputs:
@@ -550,6 +580,46 @@ def generate_all(benches):
                 yield generate_simpoint_json(bix_dir)
                 yield generate_take_checkpoints(bix_dir, exe, input)
 
+def task_simpoints():
+    yield generate_simpoints(benches)
 
-def task_all():
-    yield generate_all(benches)
+
+def generate_experiments(benches, exps):
+    for bench in benches:
+        for input in bench.inputs:
+            for exp in exps:
+                # Find matching binary.
+                exes = [exe for exe in bench.exes if exe.name == exp.sw]
+                assert len(exes) == 1
+                exe = exes[0]
+
+                root_dir = os.path.join(bench.name, input.name, exe.name)
+                exp_dir = os.path.join(root_dir, exp.name)
+                cpt_dir = os.path.join(root_dir, "cpt")
+                cpt_stamp = f"{cpt_dir}/simout.txt"
+                rundir = f"{root_dir}/run"
+
+                # For each simpoint.
+                for i in range(simpoint_max):
+                    dir = f"{exp_dir}/{i}"
+                    stats = f"{dir}/stats.txt"
+
+                    # Resume from simpoint.
+                    yield {
+                        "basename": dir,
+                        "actions": [
+                            f"if [ -d {cpt_dir}/cpt.simpoint_{i:02}_* ]; then " + \
+                            f"{exp.gem5_exe} -re --silent-redirect -d {dir} " + \
+                            f"{exp.gem5_script} --chdir={rundir} --mem-size={input.mem_size} " + \
+                            f"--errout=stderr.txt --output=stdout.txt {exp.gem5_script_args} --cmd={exe.path} " + \
+                            f"--options='{input.args}' --cpu-type=X86O3CPU --checkpoint-dir={cpt_dir} " + \
+                            f"--restore-simpoint-checkpoint --checkpoint-restore={i + 1} " + \
+                            f"--caches; else mkdir -p {dir} && touch {dir}/stats.txt; fi"
+                        ],
+                        "file_dep": [exp.gem5_exe, exp.gem5_script, cpt_stamp],
+                        "targets": [stats],
+                    }
+
+
+def task_experiments():
+    yield generate_experiments(benches, exps)
