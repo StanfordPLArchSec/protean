@@ -387,7 +387,93 @@ def generate_simpoint_waypoint2inst(dir: str, exe: Benchmark.Executable, input: 
         file_dep = [waypoint_counts, waypoints],
         targets = [out],
     )
-    
+
+def compute_simpoint_inst_ranges(out: str, waypoint_ranges: str, waypoint2inst: str):
+    # Parse waypoint->inst map.
+    m = {}
+    with open(waypoint2inst) as f:
+        for line in f:
+            w, i = line.split()
+            m[w] = i
+
+    with open(waypoint_ranges) as fin, \
+         open(out, "wt") as fout:
+        for line in fin:
+            r, name = line.split()
+            w1, w2 = r.split(",")
+            i1 = m[w1]
+            i2 = m[w2]
+            print(f"{i1},{i2}", name, file = fout)
+
+def generate_simpoint_inst_ranges(dir: str):
+    out_base = f"{dir}/inst-ranges"
+    out_txt = f"{out_base}.txt"
+    parent = os.path.dirname(dir)
+    in_waypoint_ranges = f"{parent}/waypoint-ranges.txt"
+    in_waypoint2inst = f"{dir}/waypoint2inst.txt"
+    yield {
+        "basename": out_base,
+        "actions": [(compute_simpoint_inst_ranges, [], {
+            "out": out_txt,
+            "waypoint_ranges": in_waypoint_ranges,
+            "waypoint2inst": in_waypoint2inst,
+        })],
+        "file_dep": [in_waypoint_ranges, in_waypoint2inst],
+        "targets": [out_txt],
+    }
+
+def compute_simpoint_json(out: str, weights: str, waypoints: str, intervals: str, insts: str):
+    with open(weights) as f_weights, \
+         open(waypoints) as f_waypoints, \
+         open(intervals) as f_intervals, \
+         open(insts) as f_insts:
+        infos = []
+        for l_weights, l_waypoints, l_intervals, l_insts in zip(f_weights, f_waypoints, f_intervals, f_insts):
+            weight, name1 = l_weights.split()
+            waypoint_range, name2 = l_waypoints.split()
+            interval, name3 = l_intervals.split()
+            inst_range, name4 = l_insts.split()
+            assert name1 == name2 and name2 == name3 and name3 == name4
+            waypoint1, waypoint2 = map(int, waypoint_range.split(","))
+            inst1, inst2 = map(int, inst_range.split(","))
+            info = {
+                "name": name1,
+                "interval": int(interval),
+                "weight": float(weight),
+                "waypoint_range": [waypoint1, waypoint2],
+                "waypoint_count": [waypoint2 - waypoint1],
+                "inst_range": [inst1, inst2],
+                "inst_count": inst2 - inst1,
+            }
+            infos.append(info)
+
+    infos.sort(key = lambda x: x["waypoint_range"][0])
+    for i, info in enumerate(infos):
+        info["name"] = str(i)
+    with open(out, "wt") as f:
+        json.dump(infos, f, indent = 4)
+
+
+def generate_simpoint_json(dir: str):
+    simpoint_base = f"{dir}/simpoint"
+    out_simpoint_json = f"{simpoint_base}.json"
+    parent = os.path.dirname(dir)
+    in_weights = f"{parent}/weights.txt"
+    in_waypoints = f"{parent}/waypoint-ranges.txt"
+    in_intervals = f"{parent}/intervals.txt"
+    in_insts = f"{dir}/inst-ranges.txt"
+    yield {
+        "basename": simpoint_base,
+        "actions": [(compute_simpoint_json, [], {
+            "out": out_simpoint_json,
+            "weights": in_weights,
+            "waypoints": in_waypoints,
+            "intervals": in_intervals,
+            "insts": in_insts,
+        })],
+        "file_dep": [in_weights, in_waypoints, in_intervals, in_insts],
+        "targets": [out_simpoint_json],
+    }
     
 def generate_all(benches):
     for bench in benches:
@@ -417,7 +503,10 @@ def generate_all(benches):
             yield generate_simpoint_waypoint_counts(bi_dir)
 
             for exe in bench.exes:
-                yield generate_simpoint_waypoint2inst(os.path.join(bi_dir, exe.name), exe, input)
+                bix_dir = os.path.join(bi_dir, exe.name)
+                yield generate_simpoint_waypoint2inst(bix_dir, exe, input)
+                yield generate_simpoint_inst_ranges(bix_dir)
+                yield generate_simpoint_json(bix_dir)
 
 
 def task_all():
