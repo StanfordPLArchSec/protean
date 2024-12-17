@@ -55,7 +55,9 @@ def generate_gem5_pin_command(dir: str, outdir: str, exe: Benchmark.Executable,
             f"[ -d {rundir} ] || ln -sf {os.path.abspath(exe.wd)} {rundir}",
             build_gem5_pin_command(rundir, outdir, exe, input, pintool_args),
         ],
-        "file_dep": [gem5_exe, gem5_pin, gem5_pintool, exe.path, *file_dep],
+        "file_dep": [gem5_exe, gem5_pin, exe.path, *file_dep,
+                     # gem5_pintool,
+                     ],
         "targets": targets + implicit_targets,
     }
     
@@ -370,6 +372,22 @@ def generate_simpoint_waypoint_counts(dir: str):
         "targets": [out],
     }
 
+def generate_simpoint_waypoint2inst(dir: str, exe: Benchmark.Executable, input: Benchmark.Input):
+    parent = os.path.dirname(dir)
+    waypoint_counts = f"{parent}/waypoint-counts.txt"
+    waypoints = f"{dir}/progmark.txt"
+    out_base = f"{dir}/waypoint2inst"
+    out = f"{out_base}.txt"
+    yield generate_gem5_pin_command(
+        dir = dir,
+        outdir = out_base,
+        exe = exe,
+        input = input,
+        pintool_args = f"-progmark2inst {out} -progmark2inst-counts {waypoint_counts} -progmark2inst-markers {waypoints}",
+        file_dep = [waypoint_counts, waypoints],
+        targets = [out],
+    )
+    
     
 def generate_all(benches):
     for bench in benches:
@@ -397,6 +415,9 @@ def generate_all(benches):
             yield generate_simpoint_intervals(bi_dir) # TODO: Only for main?
             yield generate_simpoint_waypoint_ranges(bi_dir)
             yield generate_simpoint_waypoint_counts(bi_dir)
+
+            for exe in bench.exes:
+                yield generate_simpoint_waypoint2inst(os.path.join(bi_dir, exe.name), exe, input)
 
 
 def task_all():
