@@ -6,6 +6,7 @@ import types
 import json
 import collections
 import copy
+import doit
 
 # User-defined config vars
 root = "."
@@ -95,6 +96,7 @@ def generate_gem5_command(dir: str, outdir: str, exe: Benchmark.Executable, inpu
     yield {
         "basename": outdir,
         "actions": [
+            f"rm -rf {outdir}",
             f"mkdir -p {dir} {outdir}",
             f"[ -d {rundir} ] || ln -sf {os.path.abspath(exe.wd)} {rundir}",
             build_gem5_command(rundir = rundir, outdir = outdir, exe = exe, input = input,
@@ -598,28 +600,41 @@ def generate_experiments(benches, exps):
                 cpt_dir = os.path.join(root_dir, "cpt")
                 cpt_stamp = f"{cpt_dir}/simout.txt"
                 rundir = f"{root_dir}/run"
+                intervals = f"{bench.name}/{input.name}/intervals"
 
-                # For each simpoint.
-                for i in range(simpoint_max):
-                    dir = f"{exp_dir}/{i}"
-                    stats = f"{dir}/stats.txt"
+                @doit.create_after(executed = intervals, target_regex = f"{exp_dir}/[0-9]+/stats.txt")
+                def _task_resume_from_simpoints(bench=bench, input=input, exp=exp, exe=exe, root_dir=root_dir, exp_dir=exp_dir, cpt_dir=cpt_dir, cpt_stamp=cpt_stamp, rundir=rundir, intervals=intervals):
+                    intervals_txt = intervals + ".txt"
 
-                    # Resume from simpoint.
-                    yield {
-                        "basename": dir,
-                        "actions": [
-                            f"if [ -d {cpt_dir}/cpt.simpoint_{i:02}_* ]; then " + \
-                            f"{exp.gem5_exe} -re --silent-redirect -d {dir} " + \
-                            f"{exp.gem5_script} --chdir={rundir} --mem-size={input.mem_size} " + \
-                            f"--errout=stderr.txt --output=stdout.txt {exp.gem5_script_args} --cmd={exe.path} " + \
-                            f"--options='{input.args}' --cpu-type=X86O3CPU --checkpoint-dir={cpt_dir} " + \
-                            f"--restore-simpoint-checkpoint --checkpoint-restore={i + 1} " + \
-                            f"--caches; else mkdir -p {dir} && touch {dir}/stats.txt; fi"
-                        ],
-                        "file_dep": [exp.gem5_exe, exp.gem5_script, cpt_stamp],
-                        "targets": [stats],
-                    }
+                    # Compute number of simpoints.
+                    with open(intervals_txt) as f:
+                        num_simpoints = len(list(f))
 
+                    # For each simpoint.
+                    for i in range(num_simpoints):
+                        dir = f"{exp_dir}/{i}"
+                        stats = f"{dir}/stats.txt"
 
-def task_experiments():
-    yield generate_experiments(benches, exps)
+                        # Resume from simpoint.
+                        yield {
+                            "basename": dir,
+                            "actions": [
+                                f"if [ -d {cpt_dir}/cpt.simpoint_{i:02}_* ]; then " + \
+                                f"{exp.gem5_exe} -re --silent-redirect -d {dir} " + \
+                                f"{exp.gem5_script} --chdir={rundir} --mem-size={input.mem_size} " + \
+                                f"--errout=stderr.txt --output=stdout.txt {exp.gem5_script_args} --cmd={exe.path} " + \
+                                f"--options='{input.args}' --cpu-type=X86O3CPU --checkpoint-dir={cpt_dir} " + \
+                                f"--restore-simpoint-checkpoint --checkpoint-restore={i + 1} " + \
+                                f"--caches; else mkdir -p {dir} && touch {dir}/stats.txt; fi"
+                            ],
+                            "file_dep": [exp.gem5_exe, exp.gem5_script, cpt_stamp],
+                            "targets": [stats],
+                        }
+
+                name = f"task_experiments_{bench.name}_{input.name}_{exp.name}"
+                _task_resume_from_simpoints.__name__ = name
+                globals()[name] = _task_resume_from_simpoints
+
+# def task_experiments():
+#     yield generate_experiments(benches, exps)
+generate_experiments(benches, exps)
