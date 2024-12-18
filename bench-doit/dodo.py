@@ -2,6 +2,9 @@ import sys
 import os
 sys.path.append(os.path.join(os.path.dirname(__file__), "../scripts"))
 from benchmark import *
+from compiler import *
+from libc import *
+from libcxx import *
 import types
 import json
 import collections
@@ -16,7 +19,7 @@ test_suites = {
     "slh": "/home/nmosier/llsct2/bench-ninja/sw/slh/test-suite",
 }
 gem5 = "/home/nmosier/llsct2/gem5/pincpu"
-fp = False
+fp = True
 llvm = "/home/nmosier/llsct2/llvm/base/build"
 addr2line = f"{llvm}/bin/llvm-addr2line"
 simpoint_interval_length = 50000000 # 50M instructions
@@ -35,6 +38,12 @@ benches = []
 benches.extend(get_cpu2017_int(test_suites))
 if fp:
     benches.extend(get_cpu2017_fp(test_suites))
+
+debug = os.getenv("DEBUG")
+if debug and int(debug):
+    import pdb
+    pdb.set_trace()
+    
 
 # Experiments:
 # TODO: Define elsewhere.
@@ -75,13 +84,16 @@ def build_gem5_command(rundir: str, outdir: str, exe: Benchmark.Executable, inpu
                        gem5_exe: str, gem5_script: str, gem5_script_args: str, gem5_exe_args: str = "",
                        command_prefix: str = ""):
     # TODO: utility function to join strip out empty tokens.
-    return " ".join([
+    l = [
         command_prefix,
         f"/usr/bin/time -vo {outdir}/time.txt {gem5_exe} -re --silent-redirect -d {outdir}",
         gem5_exe_args, gem5_script, f"--chdir={rundir}", f"--mem-size={input.mem_size}",
         f"--max-stack-size={input.stack_size}", "--stdout=stdout.txt",
         f"--stderr=stderr.txt", gem5_script_args, "--", exe.path, input.args,
-    ])
+    ]
+    if None in l:
+        print(l, file = sys.stderr)
+    return " ".join(l)
 
 def build_gem5_pin_command(rundir: str, outdir: str, exe: Benchmark.Executable,
                            input: Benchmark.Input, pintool_args: str) -> str:
@@ -707,3 +719,46 @@ def generate_experiments(benches, exps):
                 globals()[name] = _task_resume_from_simpoints
 
 generate_experiments(benches, exps)
+
+# Define the compilers.
+# TODO: Split compiler up into Executables + Config.
+cc_base = llvm_compiler(
+    name = "base",
+    prefix = "/home/nmosier/llsct2/llvm/base/build",
+    cflags = "-O3 -mno-avx -g",
+    ldflags = "-static -fuse-ld=lld -Wl,--allow-multiple-definition",
+    cmake_build_type = "Release",
+)
+cc_slh = cc_base.dup().set_name("slh").add_cflags("-mllvm --x86-speculative-load-hardening")
+
+cc_ptex = llvm_compiler(
+    name = "ptex",
+    prefix = "/home/nmosier/llsct2/llvm/ptex-all/build",
+    cflags = cc_base.cflags,
+    ldflags = cc_base.ldflags,
+    cmake_build_type = cc_base.cmake_build_type,
+)
+cc_ptex_nst = cc_ptex.dup()
+# TODO: Enable optimizations.
+cc_ptex_nst.cflags += " -mllvm -x86-ptex=nst"
+
+compilers = [cc_base, cc_slh, cc_ptex_nst]
+
+def generate_lib(compilers: List[Compiler], src: str, bin: str, build_lib):
+    for cc in compilers:
+        yield build_lib(
+            src = src,
+            bin = f"{bin}/{cc.name}",
+            compiler = cc,
+        )
+
+def task_libs():
+    for cc in compilers:
+        cc = cc.dup()
+        cc.ldflags = ""
+        for lib, build_lib in [("libc", build_libc), ("libcxx", build_libcxx)]:
+            yield build_lib(
+                src = "/home/nmosier/llsct2/llvm/base",
+                bin = f"{lib}/{cc.name}",
+                compiler = cc,
+            )
