@@ -585,7 +585,42 @@ def generate_simpoints(benches):
 def task_simpoints():
     yield generate_simpoints(benches)
 
+def compute_single_results(stats: dict, inpath: str, outpath: str):
+    results = {}
+    with open(inpath) as f:
+        for line in f:
+            tokens = line.split()
+            if len(tokens) > 0 and tokens[0] in stats:
+                results[stats[tokens[0]]] = float(tokens[1])
+    with open(outpath, "wt") as f:
+        json.dump(results, f, indent = 4)
 
+def compute_total_results(inpaths: List[str], outpath: str, simpoints: str):
+    with open(simpoints) as f:
+        simpoints = json.load(f)
+    simpoints = dict([(simpoint["name"], simpoint) for simpoint in simpoints])
+    total_weight = 0
+    total_results = dict()
+    for inpath in inpaths:
+        simpoint = simpoints[os.path.basename(os.path.dirname(inpath))]
+        weight = simpoint["weight"]
+        with open(inpath) as f:
+            results = json.load(f)
+        for key in results:
+            results[key] *= weight
+        if total_results:
+            assert total_results.keys() == results.keys()
+            for key, value in results.items():
+                total_results[key] += value
+        else:
+            total_results = results
+        total_weight += weight
+    tolerance = 0.001
+    assert 1 - tolerance <= total_weight and total_weight <= 1 + tolerance
+    with open(outpath, "wt") as f:
+        json.dump(total_results, f, indent = 4)
+        
+        
 def generate_experiments(benches, exps):
     for bench in benches:
         for input in bench.inputs:
@@ -602,7 +637,8 @@ def generate_experiments(benches, exps):
                 rundir = f"{root_dir}/run"
                 intervals = f"{bench.name}/{input.name}/intervals"
 
-                @doit.create_after(executed = intervals, target_regex = f"{exp_dir}/[0-9]+/stats.txt")
+                # FIXME: Should instead look at simpoints.json, not intervals.txt.
+                @doit.create_after(executed = intervals, target_regex = f"{exp_dir}/([0-9]+/(stats.txt|results.json)|results.json)")
                 def _task_resume_from_simpoints(bench=bench, input=input, exp=exp, exe=exe, root_dir=root_dir, exp_dir=exp_dir, cpt_dir=cpt_dir, cpt_stamp=cpt_stamp, rundir=rundir, intervals=intervals):
                     intervals_txt = intervals + ".txt"
 
@@ -611,6 +647,12 @@ def generate_experiments(benches, exps):
                         num_simpoints = len(list(f))
 
                     # For each simpoint.
+                    results_jsons = []
+                    stats_dict = {
+                        "system.switch_cpus.commitStats0.ipc": "ipc",
+                        "system.switch_cpus.numCycles": "cycles",
+                        "system.switch_cpus.thread_0.numInsts": "insts",
+                    }
                     for i in range(num_simpoints):
                         dir = f"{exp_dir}/{i}"
                         stats = f"{dir}/stats.txt"
@@ -619,22 +661,49 @@ def generate_experiments(benches, exps):
                         yield {
                             "basename": dir,
                             "actions": [
-                                f"if [ -d {cpt_dir}/cpt.simpoint_{i:02}_* ]; then " + \
                                 f"{exp.gem5_exe} -re --silent-redirect -d {dir} " + \
                                 f"{exp.gem5_script} --chdir={rundir} --mem-size={input.mem_size} " + \
                                 f"--errout=stderr.txt --output=stdout.txt {exp.gem5_script_args} --cmd={exe.path} " + \
                                 f"--options='{input.args}' --cpu-type=X86O3CPU --checkpoint-dir={cpt_dir} " + \
                                 f"--restore-simpoint-checkpoint --checkpoint-restore={i + 1} " + \
-                                f"--caches; else mkdir -p {dir} && touch {dir}/stats.txt; fi"
+                                f"--caches"
                             ],
                             "file_dep": [exp.gem5_exe, exp.gem5_script, cpt_stamp],
                             "targets": [stats],
                         }
 
+                        # Collect stats into results.json
+                        results = f"{dir}/results"
+                        results_json = f"{results}.json"
+                        yield {
+                            "basename": results,
+                            "actions": [(compute_single_results, [], {
+                                "stats": stats_dict,
+                                "inpath": stats,
+                                "outpath": f"{dir}/results.json"})],
+                            "file_dep": [stats],
+                            "targets": [results_json],
+                        }
+                        results_jsons.append(results_json)
+
+                    # Collect weighted stats into main stats.
+                    total_results = f"{exp_dir}/results"
+                    total_results_json = f"{total_results}.json"
+                    simpoints_json = f"{root_dir}/simpoint.json"
+                    yield {
+                        "basename": total_results,
+                        "actions": [(compute_total_results, [], {
+                            "inpaths": results_jsons,
+                            "outpath": total_results_json,
+                            "simpoints": simpoints_json,
+                        })],
+                        "file_dep": [simpoints_json] + results_jsons,
+                        "targets": [total_results_json],
+                    }
+
+
                 name = f"task_experiments_{bench.name}_{input.name}_{exp.name}"
                 _task_resume_from_simpoints.__name__ = name
                 globals()[name] = _task_resume_from_simpoints
 
-# def task_experiments():
-#     yield generate_experiments(benches, exps)
 generate_experiments(benches, exps)
