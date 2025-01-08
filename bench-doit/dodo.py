@@ -655,6 +655,8 @@ def generate_experiments(benches, exps):
                     intervals_txt = intervals + ".txt"
 
                     # Compute number of simpoints.
+                    if not os.path.exists(intervals_txt):
+                        return
                     with open(intervals_txt) as f:
                         num_simpoints = len(list(f))
 
