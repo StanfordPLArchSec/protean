@@ -16,7 +16,7 @@ root = "."
 test_suites = {
     "base": "/home/nmosier/llsct2/bench-ninja/sw/base/test-suite",
     "nst": "/home/nmosier/llsct2/bench-ninja/sw/ptex-nst/test-suite",
-    "slh": "/home/nmosier/llsct2/bench-ninja/sw/slh/test-suite",
+    # "slh": "/home/nmosier/llsct2/bench-ninja/sw/slh/test-suite",
 }
 gem5 = "/home/nmosier/llsct2/gem5/pincpu"
 fp = True
@@ -72,7 +72,11 @@ exp_stt = Experiment(
     gem5_script_args = "--stt --implicit-channel=Lazy --speculation-model=Ctrl",
     sw = "base",
 )
-exps = [exp_base, exp_stt, exp_slh]
+exps = [
+    exp_base,
+    exp_stt,
+    # exp_slh,
+]
 
 def bench_outdir(bench: Benchmark) -> str:
     return os.path.join(root, bench.name)
@@ -126,6 +130,17 @@ def generate_gem5_pin_command(dir: str, outdir: str, exe: Benchmark.Executable,
                                 targets = targets, gem5_exe = gem5_exe, gem5_script = gem5_pin,
                                 gem5_script_args = f"--pin-tool-args='{pintool_args}'")
 
+def generate_pin_test(dir: str, exe: Benchmark.Executable, input: Benchmark.Input):
+    yield generate_gem5_pin_command(
+        dir = dir,
+        outdir = f"{dir}/test",
+        exe = exe,
+        input = input,
+        pintool_args = "",
+        file_dep = [],
+        targets = [f"{dir}/test"],
+    )
+    
 def get_srcloc(line: str) -> str:
     j = json.loads(line)
     assert len(j["Symbol"]) == 1
@@ -567,6 +582,7 @@ def generate_simpoints(benches):
             bi_dir = os.path.join(b_dir, input.name)
             for exe in bench.exes:
                 bix_dir = os.path.join(bi_dir, exe.name)
+                # yield generate_pin_test(bix_dir, exe, input)
                 yield generate_bbhist(bix_dir, exe, input)
                 yield generate_instlist(bix_dir)
                 yield generate_srclist(bix_dir, exe)
