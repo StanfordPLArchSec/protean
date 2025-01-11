@@ -16,7 +16,7 @@ root = "."
 test_suites = {
     "base": "/home/nmosier/llsct2/bench-ninja/sw/base/test-suite",
     "nst": "/home/nmosier/llsct2/bench-ninja/sw/ptex-nst/test-suite",
-    # "slh": "/home/nmosier/llsct2/bench-ninja/sw/slh/test-suite",
+    "slh": "/home/nmosier/llsct2/bench-ninja/sw/slh/test-suite",
 }
 gem5 = "/home/nmosier/llsct2/gem5/pincpu"
 fp = True
@@ -26,11 +26,12 @@ simpoint_interval_length = 50000000 # 50M instructions
 warmup_interval_length = 10000000 # 10M instructions
 simpoint_exe = "/home/nmosier/llsct2/simpoint/bin/simpoint"
 simpoint_max = 10
-gem5_script_kvm_cpt = "/home/nmosier/llsct2/gem5/pincpu/configs/se-kvm-cpt.py"
 
 # Dependent config vars
 gem5_exe = f"{gem5}/build/X86/gem5.opt"
 gem5_pin = f"{gem5}/configs/pin.py"
+gem5_pin_cpt = f"{gem5}/configs/pin-cpt.py"
+gem5_kvm_cpt = f"{gem5}/configs/se-kvm-cpt.py"
 gem5_pintool = f"{gem5}/build/X86/cpu/pin/libclient.so"
 
 # Benchmarks
@@ -75,7 +76,7 @@ exp_stt = Experiment(
 exps = [
     exp_base,
     exp_stt,
-    # exp_slh,
+    exp_slh,
 ]
 
 def bench_outdir(bench: Benchmark) -> str:
@@ -124,11 +125,17 @@ def generate_gem5_command(dir: str, outdir: str, exe: Benchmark.Executable, inpu
 
 
 def generate_gem5_pin_command(dir: str, outdir: str, exe: Benchmark.Executable,
-                              input: Benchmark.Input, pintool_args: str,
-                              file_dep: List[str], targets: List[str]):
+                              input: Benchmark.Input,
+                              file_dep: List[str],
+                              targets: List[str],
+                              pintool_args: str = None,
+                              gem5_script_args: List[str] = "",
+                              gem5_script: str = gem5_pin):
+    if pintool_args:
+        gem5_script_args += f" --pin-tool-args='{pintool_args}'"
     yield generate_gem5_command(dir = dir, outdir = outdir, exe = exe, input = input, file_dep = file_dep,
-                                targets = targets, gem5_exe = gem5_exe, gem5_script = gem5_pin,
-                                gem5_script_args = f"--pin-tool-args='{pintool_args}'")
+                                targets = targets, gem5_exe = gem5_exe, gem5_script = gem5_script,
+                                gem5_script_args = gem5_script_args)
 
 def generate_pin_test(dir: str, exe: Benchmark.Executable, input: Benchmark.Input):
     yield generate_gem5_pin_command(
@@ -179,7 +186,9 @@ def generate_bbhist(dir: str, exe: Benchmark.Executable, input: Benchmark.Input)
         outdir = bbhist_dir,
         exe = exe,
         input = input,
-        pintool_args = f"-bbhist {bbhist_txt}",
+        # pintool_args = f"-bbhist {bbhist_txt}",
+        gem5_script = f"{gem5}/configs/pin-bbhist.py",
+        gem5_script_args = f"--bbhist={bbhist_txt}",
         file_dep = [],
         targets = [bbhist_txt],
     )
@@ -568,8 +577,8 @@ def generate_take_checkpoints(dir: str, exe: Benchmark.Executable, input: Benchm
         exe = exe,
         input = input,
         gem5_exe = gem5_exe,
-        gem5_script = gem5_script_kvm_cpt,
-        gem5_script_args = f"--cpu-type=X86KvmCPU --simpoints-json={simpoints_json} --simpoints-warmup={warmup_interval_length}",
+        gem5_script = gem5_pin_cpt,
+        gem5_script_args = f"--simpoints-json={simpoints_json} --simpoints-warmup={warmup_interval_length}",
         command_prefix = "taskset --cpu-list 0-15",
         file_dep = [simpoints_json],
         targets = [],
@@ -582,7 +591,7 @@ def generate_simpoints(benches):
             bi_dir = os.path.join(b_dir, input.name)
             for exe in bench.exes:
                 bix_dir = os.path.join(bi_dir, exe.name)
-                # yield generate_pin_test(bix_dir, exe, input)
+                yield generate_pin_test(bix_dir, exe, input)
                 yield generate_bbhist(bix_dir, exe, input)
                 yield generate_instlist(bix_dir)
                 yield generate_srclist(bix_dir, exe)
