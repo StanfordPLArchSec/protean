@@ -349,6 +349,7 @@ def compute_progmark(outpath: str, bbhist: str, locedges: str, locmap: str):
         for inst1 in inst_edges:
             print(inst1, file = f)
 
+# TODO: Rename progmark -> waypoints
 def generate_progmark(dir: str):
     out_base = f"{dir}/progmark"
     out_txt = f"{out_base}.txt"
@@ -371,6 +372,7 @@ def generate_bbv(dir: str, exe: Benchmark.Executable, input: Benchmark.Input):
     parent_dir = os.path.dirname(dir)
     bbv_base = f"{parent_dir}/bbv"
     bbv_txt = f"{parent_dir}/bbv.txt"
+    aux_txt = f"{parent_dir}/bbv.info.txt"
     bbv_dir = bbv_base
     progmark_txt = f"{dir}/progmark.txt"
     yield generate_gem5_pin_command(
@@ -378,9 +380,10 @@ def generate_bbv(dir: str, exe: Benchmark.Executable, input: Benchmark.Input):
         outdir = bbv_dir,
         exe = exe,
         input = input,
-        pintool_args = f"-slev {bbv_txt} -slev-interval {simpoint_interval_length} -slev-progmark {progmark_txt}",
+        gem5_script = f"{gem5}/configs/pin-bbv.py",
+        gem5_script_args = f"--bbv={bbv_txt} --bbvinfo={aux_txt} --warmup={warmup_interval_length} --interval={simpoint_interval_length} --waypoints={progmark_txt}",
         file_dep = [progmark_txt],
-        targets = [bbv_txt],
+        targets = [bbv_txt, aux_txt],
     )
 
 def generate_simpoint_intervals(dir: str):
@@ -395,149 +398,38 @@ def generate_simpoint_intervals(dir: str):
         "targets": [simpoint_intervals, simpoint_weights],
     }
 
-def compute_simpoint_waypoint_ranges(intervals: str, bbv: str, out: str):
-    # Parse BBV, keeping only the metadata in the following format:
-    # # interval=6078 insts=303850148799,303900148855 progmarks=94698984980,94706273461
-    interval_to_progmarks = {}
-    with open(bbv) as f:
-        for line in f:
-            if line.startswith("#"):
-                x = types.SimpleNamespace(**dict(map(lambda token: token.split("="), line.removeprefix("#").split())))
-                interval_to_progmarks[x.interval] = x.progmarks
-    
-    with open(intervals) as f, \
-         open(out, "wt") as outf:
-        # FORMAT: interval-num simpoint-name
-        for line in f:
-            interval, name = line.split()
-            progmarks = interval_to_progmarks[interval]
-            # TODO: Also print out name?
-            print(progmarks, name, file = outf)
-
-
-def generate_simpoint_waypoint_ranges(dir: str):
-    bbv_path = f"{dir}/bbv.txt"
-    intervals_path = f"{dir}/intervals.txt"
-    out_base = f"{dir}/waypoint-ranges"
-    out_path = f"{out_base}.txt"
-    yield {
-        "basename": out_base,
-        "actions": [
-            (compute_simpoint_waypoint_ranges, [], {
-                "intervals": intervals_path,
-                "bbv": bbv_path,
-                "out": out_path,
-            }),
-        ],
-        "file_dep": [bbv_path, intervals_path],
-        "targets": [out_path],
-    }
-
-def compute_simpoint_waypoint_counts(out: str, waypoint_ranges: str):
-    counts = set()
-    with open(waypoint_ranges) as f:
-        for line in f:
-            r, name = line.split()
-            begin, end = r.split(",")
-            counts.add(begin)
-            counts.add(end)
-    with open(out, "wt") as f:
-        for count in counts:
-            print(count, file = f)
-        
-
-def generate_simpoint_waypoint_counts(dir: str):
-    waypoint_ranges = f"{dir}/waypoint-ranges.txt"
-    out_base = f"{dir}/waypoint-counts"
-    out = f"{out_base}.txt"
-    yield {
-        "basename": out_base,
-        "actions": [(compute_simpoint_waypoint_counts, [], {
-            "waypoint_ranges": waypoint_ranges,
-            "out": out,
-        })],
-        "file_dep": [waypoint_ranges],
-        "targets": [out],
-    }
-
-def generate_simpoint_waypoint2inst(dir: str, exe: Benchmark.Executable, input: Benchmark.Input):
-    parent = os.path.dirname(dir)
-    waypoint_counts = f"{parent}/waypoint-counts.txt"
-    waypoints = f"{dir}/progmark.txt"
-    out_base = f"{dir}/waypoint2inst"
-    out = f"{out_base}.txt"
-    yield generate_gem5_pin_command(
-        dir = dir,
-        outdir = out_base,
-        exe = exe,
-        input = input,
-        pintool_args = f"-progmark2inst {out} -progmark2inst-counts {waypoint_counts} -progmark2inst-markers {waypoints}",
-        file_dep = [waypoint_counts, waypoints],
-        targets = [out],
-    )
-
-def compute_simpoint_inst_ranges(out: str, waypoint_ranges: str, waypoint2inst: str):
-    # Parse waypoint->inst map.
-    m = {}
-    with open(waypoint2inst) as f:
-        for line in f:
-            w, i = line.split()
-            m[w] = i
-
-    with open(waypoint_ranges) as fin, \
-         open(out, "wt") as fout:
-        for line in fin:
-            r, name = line.split()
-            w1, w2 = r.split(",")
-            i1 = m[w1]
-            i2 = m[w2]
-            print(f"{i1},{i2}", name, file = fout)
-
-def generate_simpoint_inst_ranges(dir: str):
-    out_base = f"{dir}/inst-ranges"
-    out_txt = f"{out_base}.txt"
-    parent = os.path.dirname(dir)
-    in_waypoint_ranges = f"{parent}/waypoint-ranges.txt"
-    in_waypoint2inst = f"{dir}/waypoint2inst.txt"
-    yield {
-        "basename": out_base,
-        "actions": [(compute_simpoint_inst_ranges, [], {
-            "out": out_txt,
-            "waypoint_ranges": in_waypoint_ranges,
-            "waypoint2inst": in_waypoint2inst,
-        })],
-        "file_dep": [in_waypoint_ranges, in_waypoint2inst],
-        "targets": [out_txt],
-    }
-
-def compute_simpoint_json(out: str, weights: str, waypoints: str, intervals: str, insts: str):
+# weights: the weights.txt file produced by SimPoint utility.
+# intervals: the intervals.txt file produced by SimPoint utility.
+# waypoints: the bbv.info.txt file produced by pin-bbv.py.
+def compute_simpoint_json(out: str, weights: str, waypoints: str, intervals: str):
+    infos = []
     with open(weights) as f_weights, \
-         open(waypoints) as f_waypoints, \
-         open(intervals) as f_intervals, \
-         open(insts) as f_insts:
-        infos = []
-        for l_weights, l_waypoints, l_intervals, l_insts in zip(f_weights, f_waypoints, f_intervals, f_insts):
-            weight, name1 = l_weights.split()
-            waypoint_range, name2 = l_waypoints.split()
-            interval, name3 = l_intervals.split()
-            inst_range, name4 = l_insts.split()
-            assert name1 == name2 and name2 == name3 and name3 == name4
-            waypoint1, waypoint2 = map(int, waypoint_range.split(","))
-            inst1, inst2 = map(int, inst_range.split(","))
-            info = {
-                "name": name1,
-                "interval": int(interval),
-                "weight": float(weight),
-                "waypoint_range": [waypoint1, waypoint2],
-                "waypoint_count": [waypoint2 - waypoint1],
-                "inst_range": [inst1, inst2],
-                "inst_count": inst2 - inst1,
-            }
-            infos.append(info)
+         open(intervals) as f_intervals:
+        for weight_line, interval_line in zip(f_weights, f_intervals):
+            weight, idx1 = weight_line.split()
+            interval, idx2 = interval_line.split()
+            assert idx1 == idx2
+            weight = float(weight)
+            interval = int(interval)
+            infos.append({
+                "interval": interval,
+                "weight": weight,
+            })
 
-    infos.sort(key = lambda x: x["waypoint_range"][0])
+    # Add waypoints.
+    with open(waypoints) as f:
+        waypoints_lines = list(map(str.strip, f))
+    for info in infos:
+        tokens = waypoints_lines[info["interval"]].split()
+        assert len(tokens) == 3
+        info["waypoints"] = tokens
+
+    # Number the simpoints.
+    infos.sort(key = lambda d: d["interval"])
     for i, info in enumerate(infos):
         info["name"] = str(i)
+
+    # Dump output file.
     with open(out, "wt") as f:
         json.dump(infos, f, indent = 4)
 
@@ -545,11 +437,9 @@ def compute_simpoint_json(out: str, weights: str, waypoints: str, intervals: str
 def generate_simpoint_json(dir: str):
     simpoint_base = f"{dir}/simpoint"
     out_simpoint_json = f"{simpoint_base}.json"
-    parent = os.path.dirname(dir)
-    in_weights = f"{parent}/weights.txt"
-    in_waypoints = f"{parent}/waypoint-ranges.txt"
-    in_intervals = f"{parent}/intervals.txt"
-    in_insts = f"{dir}/inst-ranges.txt"
+    in_weights = f"{dir}/weights.txt"
+    in_waypoints = f"{dir}/bbv.info.txt"
+    in_intervals = f"{dir}/intervals.txt"
     yield {
         "basename": simpoint_base,
         "actions": [(compute_simpoint_json, [], {
@@ -557,19 +447,20 @@ def generate_simpoint_json(dir: str):
             "weights": in_weights,
             "waypoints": in_waypoints,
             "intervals": in_intervals,
-            "insts": in_insts,
         })],
-        "file_dep": [in_weights, in_waypoints, in_intervals, in_insts],
+        "file_dep": [in_weights, in_waypoints, in_intervals],
         "targets": [out_simpoint_json],
     }
 
 
 
-
+# TODO: remove command_prefix
 def generate_take_checkpoints(dir: str, exe: Benchmark.Executable, input: Benchmark.Input):
+    parent = os.path.dirname(dir)
     out_base = f"{dir}/cpt"
     out_dir = out_base
-    simpoints_json = f"{dir}/simpoint.json"
+    simpoints_json = f"{parent}/simpoint.json"
+    waypoints = f"{dir}/progmark.txt"
 
     yield generate_gem5_command(
         dir = dir,
@@ -577,10 +468,9 @@ def generate_take_checkpoints(dir: str, exe: Benchmark.Executable, input: Benchm
         exe = exe,
         input = input,
         gem5_exe = gem5_exe,
-        gem5_script = gem5_pin_cpt,
-        gem5_script_args = f"--simpoints-json={simpoints_json} --simpoints-warmup={warmup_interval_length}",
-        command_prefix = "taskset --cpu-list 0-15",
-        file_dep = [simpoints_json],
+        gem5_script = f"{gem5}/configs/pin-cpt2.py", # TODO: rename cpt2->cpt
+        gem5_script_args = f"--simpoints-json={simpoints_json} --waypoints={waypoints}",
+        file_dep = [simpoints_json, waypoints],
         targets = [],
     )
 
@@ -607,16 +497,12 @@ def generate_simpoints(benches):
 
             main_exe = bench.exes[0]
             bixmain_dir = os.path.join(bi_dir, main_exe.name)
-            yield generate_bbv(bixmain_dir, main_exe, input) # TODO: Fixup dirs.
-            yield generate_simpoint_intervals(bi_dir) # TODO: Only for main?
-            yield generate_simpoint_waypoint_ranges(bi_dir)
-            yield generate_simpoint_waypoint_counts(bi_dir)
+            yield generate_bbv(bixmain_dir, main_exe, input)
+            yield generate_simpoint_intervals(bi_dir)
+            yield generate_simpoint_json(bi_dir)
 
             for exe in bench.exes:
                 bix_dir = os.path.join(bi_dir, exe.name)
-                yield generate_simpoint_waypoint2inst(bix_dir, exe, input)
-                yield generate_simpoint_inst_ranges(bix_dir)
-                yield generate_simpoint_json(bix_dir)
                 yield generate_take_checkpoints(bix_dir, exe, input)
 
 def task_simpoints():
