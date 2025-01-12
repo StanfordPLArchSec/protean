@@ -20,8 +20,8 @@
 	        "spec2017": "../cpu2017",
 	        "test-suite": "../test-suite",
 	        "cmake_build_type": "Release",
-	        "cflags": ["-O3", "-mno-avx", "-mllvm", "-global-isel", "-mllvm", "-global-isel-abort=0"],
-	        "fflags": ["-O3", "-mno-avx", "-mllvm", "-global-isel", "-mllvm", "-global-isel-abort=0"],
+	        "cflags": ["-O3", "-mno-avx", "-mllvm", "-global-isel", "-mllvm", "-global-isel-abort=0", "-g"],
+	        "fflags": ["-O3", "-mno-avx", "-mllvm", "-global-isel", "-mllvm", "-global-isel-abort=0", "-g"],
 	        "ldflags": ["-static", "-fuse-ld=lld", "-Wl,--allow-multiple-definition", "-lm"],
 	        "libc_cflags": ["-mllvm", "-global-isel=0"],
 	        "libcxx_cflags": ["-mllvm", "-global-isel=0"],
@@ -47,28 +47,16 @@
             "+ldflags": ["-L/home/nmosier/llsct2/llvm/ptex-all/build/lib"]
         },
 
-        "ptex-cts": {
-            "inherit": "ptex-all",
-            "+cflags": ["-mllvm", "-x86-ptex", "-mllvm", "-x86-ptex-type=cts"],
-            "+fflags": ["-mllvm", "-x86-ptex", "-mllvm", "-x86-ptex-type=cts"]
-        },
-
         "ptex-ct": {
             "inherit": "ptex-all",
-            "+cflags": ["-mllvm", "-x86-ptex", "-mllvm", "-x86-ptex-type=ct"],
-            "+fflags": ["-mllvm", "-x86-ptex", "-mllvm", "-x86-ptex-type=ct"]
-        },
-
-        "ptex-ctd": {
-            "inherit": "ptex-all",
-            "+cflags": ["-mllvm", "-x86-ptex", "-mllvm", "-x86-ptex-type=ctdecl"],
-            "+fflags": ["-mllvm", "-x86-ptex", "-mllvm", "-x86-ptex-type=ctdecl"]
+            "+cflags": ["-mllvm", "-x86-ptex=ct", "-mllvm", "-x86-ptex-sink", "-mllvm", "-x86-ptex-hoist", "-mllvm", "-x86-ptex-analyze-branches", "-mllvm", "-x86-ptex-flags"],
+            "+fflags": ["-mllvm", "-x86-ptex=ct", "-mllvm", "-x86-ptex-sink", "-mllvm", "-x86-ptex-hoist", "-mllvm", "-x86-ptex-analyze-branches", "-mllvm", "-x86-ptex-flags"]
         },
 
         "ptex-nst": {
             "inherit": "ptex-all",
-            "+cflags": ["-mllvm", "-x86-ptex", "-mllvm", "-x86-ptex-type=nst"],
-            "+fflags": ["-mllvm", "-x86-ptex", "-mllvm", "-x86-ptex-type=nst"]
+            "+cflags": ["-mllvm", "-x86-ptex=nst", "-mllvm", "-x86-ptex-sink", "-mllvm", "-x86-ptex-hoist", "-mllvm", "-x86-ptex-analyze-branches", "-mllvm", "-x86-ptex-flags", "-mllvm", "-x86-ptex-split", "-mllvm", "-x86-ptex-reload=0"],
+            "+fflags": ["-mllvm", "-x86-ptex=nst", "-mllvm", "-x86-ptex-sink", "-mllvm", "-x86-ptex-hoist", "-mllvm", "-x86-ptex-analyze-branches", "-mllvm", "-x86-ptex-flags", "-mllvm", "-x86-ptex-split", "-mllvm", "-x86-ptex-reload=0"]
         },
 
         "annotate-bound-to-leak": {
@@ -93,6 +81,12 @@
             "inherit": "ptex-nst",
             "+cflags": ["-mllvm", "-x86-annotate-public=bound-to-leak"],
             "+fflags": ["-mllvm", "-x86-annotate-public=bound-to-leak"]
+        },
+
+        "slh": {
+            "inherit": "base",
+            "+cflags": ["-mllvm -x86-speculative-load-hardening"],
+            "+fflags": ["-mllvm -x86-speculative-load-hardening"]
         }
     },
 
@@ -101,7 +95,7 @@
 	        "target": "build/X86_MESI_Three_Level/gem5.opt",
 	        "script_kvm": "configs/se-kvm-cpt.py",
 	        "script_o3": "configs/AlderLake/se.py",
-	        "sconsopts": ["--ignore-style", "-j25", "--linker=lld"]
+	        "sconsopts": ["--ignore-style", "-j25"]
 	    },
 	    "base": {
 	        "inherit": "_default",
@@ -174,14 +168,14 @@
             "+script_opts": ["--stt", "--recon", "--implicit-channel=Lazy"]
         },
 
-        "recon-orig": {
+        "rstt-buggy": {
             "inherit": "_default",
-            "+script_opts": ["--stt", "--recon", "--recon-bugfix-taint"]
+            "+script_opts": ["--stt", "--speculation-model=AtRet"]
         },
 
-        "recon-orig-sttonly": {
-            "inherit": "_default",
-            "+script_opts": ["--stt", "--recon-bugfix-taint"]
+        "rstt-bugfixed": {
+            "inherit": "rstt-buggy",
+            "+script_opts": ["--recon-bugfix-taint", "--recon-bugfix-insert", "--recon-bugfix-reveal"]
         },
 
         "tpt": {
@@ -194,24 +188,12 @@
         "stt-atret": {"inherit": "stt", "+script_opts": ["--speculation-model=AtRet"]},
         "recon-ctrl": {"inherit": "recon", "+script_opts": ["--speculation-model=Ctrl"]},
         "recon-atret": {"inherit": "recon", "+script_opts": ["--speculation-model=AtRet"]},
-        "recon-orig-ctrl": {"inherit": "recon-orig", "+script_opts": ["--speculation-model=Ctrl"]},
-        "recon-orig-atret": {"inherit": "recon-orig", "+script_opts": ["--speculation-model=AtRet"]},        
-        "recon-orig-sttonly-ctrl": {"inherit": "recon-orig-sttonly", "+script_opts": ["--speculation-model=Ctrl"]},
-        "recon-orig-sttonly-atret": {"inherit": "recon-orig-sttonly", "+script_opts": ["--speculation-model=AtRet"]},        
         "tpt-atret": {"inherit": "tpt", "+script_opts": ["--speculation-model=AtRet", "--tpt-mode=YRoT"]},
         "tpt-ctrl": {"inherit": "tpt", "+script_opts": ["--speculation-model=Ctrl", "--tpt-mode=YRoT"]},
         "spt-ctrl": {"inherit": "spt", "+script_opts": ["--speculation-model=Ctrl"]},
         "spt-atret": {"inherit": "spt", "+script_opts": ["--speculation-model=AtRet"]},
         "tpe-ctrl": {"inherit": "tpe", "+script_opts": ["--speculation-model=Ctrl"]},
-        "tpe-atret": {"inherit": "tpe", "+script_opts": ["--speculation-model=AtRet"]},
-
-        "recon-tmp0": {"inherit": "_default", "+script_opts": ["--stt", "--speculation-model=AtRet"]},
-        "recon-tmp1": {"inherit": "_default", "+script_opts": ["--stt", "--recon-bugfix-taint", "--speculation-model=AtRet"]},
-        "recon-tmp2": {"inherit": "_default", "+script_opts": ["--stt", "--recon-bugfix-taint", "--recon-bugfix-insert", "--speculation-model=AtRet"]},
-        "recon-tmp3": {"inherit": "_default", "+script_opts": ["--stt", "--recon-bugfix-taint", "--recon-bugfix-insert", "--recon-bugfix-reveal", "--speculation-model=AtRet"]},
-        "recon-tmp4": {"inherit": "_default", "+script_opts": ["--stt", "--recon", "--recon-bugfix-taint", "--recon-bugfix-insert", "--recon-bugfix-reveal", "--speculation-model=AtRet"]},
-        "recon-tmp5": {"inherit": "_default", "+script_opts": ["--stt", "--speculation-model=AtRet"]},
-        "recon-tmp6": {"inherit": "_default", "+script_opts": ["--stt", "--recon", "--speculation-model=AtRet"]}
+        "tpe-atret": {"inherit": "tpe", "+script_opts": ["--speculation-model=AtRet"]}
     },
 
     "exp": {
@@ -220,23 +202,13 @@
         "stt-atret": {"sw": "base", "sim": "stt", "hwmode": "stt-atret"},
         "recon-ctrl": {"sw": "base", "sim": "recon", "hwmode": "recon-ctrl"},
         "recon-atret": {"sw": "base", "sim": "recon", "hwmode": "recon-atret"},
-        "recon-orig-ctrl": {"sw": "base", "sim": "recon-orig", "hwmode": "recon-orig-ctrl"},
-        "recon-orig-sttonly-atret": {"sw": "base", "sim": "recon-orig", "hwmode": "recon-orig-sttonly-atret"},
-        "recon-orig-sttonly-ctrl": {"sw": "base", "sim": "recon-orig", "hwmode": "recon-orig-sttonly-ctrl"},
-        "recon-orig-atret": {"sw": "base", "sim": "recon-orig", "hwmode": "recon-orig-atret"},
         "spt-ctrl": {"sw": "base", "sim": "spt", "hwmode": "spt-ctrl"},
         "spt-atret": {"sw": "base", "sim": "spt", "hwmode": "spt-atret"},
         "tpt-nsa-ctrl": {"sw": "base", "sim": "tpt", "hwmode": "tpt-ctrl"},
         "tpt-nsa-atret": {"sw": "base", "sim": "tpt", "hwmode": "tpt-atret"},
 
-        "tpt-cts-ctrl": {"sw": "ptex-cts", "sim": "tpt", "hwmode": "tpt-ctrl"},
-        "tpt-cts-atret": {"sw": "ptex-cts", "sim": "tpt", "hwmode": "tpt-atret"},
-
         "tpt-ct-ctrl": {"sw": "ptex-ct", "sim": "tpt", "hwmode": "tpt-ctrl"},
         "tpt-ct-atret": {"sw": "ptex-ct", "sim": "tpt", "hwmode": "tpt-atret"},
-
-        "tpt-ctd-ctrl": {"sw": "ptex-ctd", "sim": "tpt", "hwmode": "tpt-ctrl"},
-        "tpt-ctd-atret": {"sw": "ptex-ctd", "sim": "tpt", "hwmode": "tpt-atret"},
 
         "tpt-nst-ctrl": {"sw": "ptex-nst", "sim": "tpt", "hwmode": "tpt-ctrl"},
         "tpt-nst-atret": {"sw": "ptex-nst", "sim": "tpt", "hwmode": "tpt-atret"},
@@ -250,12 +222,7 @@
         "recon-ptr-ctrl": {"sw": "annotate-pointer-loads", "sim": "recon", "hwmode": "recon-ctrl"},
         "recon-ptr-atret": {"sw": "annotate-pointer-loads", "sim": "recon", "hwmode": "recon-atret"},
 
-        "recon-tmp0": {"sw": "base", "sim": "recon-orig", "hwmode": "recon-tmp0"},
-        "recon-tmp1": {"sw": "base", "sim": "recon-orig", "hwmode": "recon-tmp1"},
-        "recon-tmp2": {"sw": "base", "sim": "recon-orig", "hwmode": "recon-tmp2"},
-        "recon-tmp3": {"sw": "base", "sim": "recon-orig", "hwmode": "recon-tmp3"},
-        "recon-tmp4": {"sw": "base", "sim": "recon-orig", "hwmode": "recon-tmp4"},
-        "recon-tmp5": {"sw": "base", "sim": "recon", "hwmode": "recon-tmp5"},
-        "recon-tmp6": {"sw": "base", "sim": "recon", "hwmode": "recon-tmp6"}
+        "rstt-buggy": {"sw": "base", "sim": "recon-orig", "hwmode": "rstt-buggy"},
+        "rstt-bugfixed": {"sw": "base", "sim": "recon-orig", "hwmode": "rstt-bugfixed"}
     }
 }
