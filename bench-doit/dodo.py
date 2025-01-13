@@ -93,8 +93,11 @@ def build_gem5_command(rundir: str, outdir: str, exe: Benchmark.Executable, inpu
         command_prefix,
         f"/usr/bin/time -vo {outdir}/time.txt {gem5_exe} -re --silent-redirect -d {outdir}",
         gem5_exe_args, gem5_script, f"--chdir={rundir}", f"--mem-size={input.mem_size}",
-        f"--max-stack-size={input.stack_size}", "--stdout=stdout.txt",
-        f"--stderr=stderr.txt", gem5_script_args, "--", exe.path, input.args,
+        f"--max-stack-size={input.stack_size}",
+        f"--stdin={input.stdin}", "--stdout=stdout.txt", f"--stderr=stderr.txt",
+        gem5_script_args,
+        "--",
+        exe.path, input.args,
     ]
     if None in l:
         print(l, file = sys.stderr)
