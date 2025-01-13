@@ -19,7 +19,7 @@ test_suites = {
     "slh": "/home/nmosier/llsct2/bench-ninja/sw/slh/test-suite",
 }
 gem5 = "/home/nmosier/llsct2/gem5/pincpu"
-fp = True
+fp = int(doit.get_var("fp", "1")) > 0
 llvm = "/home/nmosier/llsct2/llvm/base/build"
 addr2line = f"{llvm}/bin/llvm-addr2line"
 simpoint_interval_length = 50000000 # 50M instructions
@@ -634,7 +634,8 @@ def generate_experiments(benches, exps):
                 _task_resume_from_simpoints.__name__ = name
                 globals()[name] = _task_resume_from_simpoints
 
-generate_experiments(benches, exps)
+if int(doit.get_var("exps", "1")) > 0:
+    generate_experiments(benches, exps)
 
 # Define the compilers.
 # TODO: Split compiler up into Executables + Config.
