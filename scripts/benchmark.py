@@ -1,28 +1,54 @@
 import os
 import re
+from typing import List, Optional
 
 class Benchmark:
+    class Executable:
+        def __init__(self, name: str, path: str, wd: str):
+            self.name = name
+            self.path = path
+            self.wd = wd
+    
     class Input:
-        def __init__(self, name: str, args: str, stdin: str, mem_size: str):
+        def __init__(self, name: str, args: str, stdin: str, mem_size: str, stack_size: str):
             self.name = name
             self.args = args
             self.mem_size = mem_size
+            self.stack_size = stack_size
             self.stdin = stdin
 
-    def __init__(self, exe, name: str, wd: str):
+    def __init__(self, name: str):
         self.name = name
-        self.exe = exe
-        self.wd = wd
+        self.exes = []
         self.inputs = []
 
-    def add_input(self, args: str = None, stdin: str = None, mem_size: str = "512MiB"):
+    def add_executable(self, name: str, path: str, wd: str):
+        self.exes.append(Benchmark.Executable(
+            name = name,
+            path = path,
+            wd = wd,
+        ))
+        return self
+
+    def add_input(self, args: str = "", stdin: str = "/dev/null", mem_size: str = "512MiB", stack_size: str = "8MiB"):
         self.inputs.append(Benchmark.Input(
             name = str(len(self.inputs)),
             args = args,
             stdin = stdin,
             mem_size = mem_size,
+            stack_size = stack_size,
         ))
         return self
+
+# class MultiBinaryBenchmark:
+#     def __init__(self, leader: Benchmark):
+#         self.benchmarks = [leader]
+# 
+#     def leader() -> Benchmark:
+#         return self.benchmarks[0]
+#         
+#     def add_benchmark(self, benchmark: Benchmark):
+#         self.benchmarks.append(benchmark)
 
 class CPU2017IntBenchmark(Benchmark):
     def __init__(self, root: str, name: str):
@@ -30,21 +56,24 @@ class CPU2017IntBenchmark(Benchmark):
                          name = name,
                          wd = os.path.join(root, "External", "SPEC", "CINT2017speed", name, "run_ref"))
 
-def make_spec_bench(root: str, full_name: str, kind: str) -> Benchmark:
+def make_spec_bench(roots, full_name: str, kind: str) -> Benchmark:
     assert kind in ["FP", "INT"]
     match = re.match(r"\d{3}\.(\w+)_s", full_name)
     assert match
     name = match.group(1)
-    dir = os.path.join(root, "External", "SPEC", f"C{kind}2017speed", full_name)
-    return Benchmark(
-        name = name,
-        exe = os.path.join(dir, full_name),
-        wd = os.path.join(dir, "run_ref"),
-    )
+    bench = Benchmark(name = name)
+    for rootname, root in roots.items():
+        dir = os.path.join(root, "External", "SPEC", f"C{kind}2017speed", full_name)
+        bench.add_executable(
+            name = rootname,
+            path = os.path.join(dir, full_name),
+            wd = os.path.join(dir, "run_ref"),
+        )
+    return bench
 
-def get_cpu2017_int(root: str) -> list:
+def get_cpu2017_int(roots) -> list:
     def make_bench(full_name: str):
-        return make_spec_bench(root, full_name, "INT")
+        return make_spec_bench(roots, full_name, "INT")
 
     perlbench = make_bench("600.perlbench_s")
     perlbench.add_input("-I./lib checkspam.pl 2500 5 25 11 150 1 1 1 1")
@@ -64,8 +93,10 @@ def get_cpu2017_int(root: str) -> list:
 
     x264 = make_bench("625.x264_s")
     x264.add_input("--pass 1 --stats x264_stats.log --bitrate 1000 --frames 1000 -o BuckBunny_New.264 BuckBunny.yuv 1280x720")
-    x264.add_input("--pass 2 --stats x264_stats.log --bitrate 1000 --dumpyuv 200 --frames 1000 -o BuckBunny_New.264 BuckBunny.yuv 1280x720")
-    x264.add_input("--seek 500 --dumpyuv 200 --frames 1250 -o BuckBunny_New.264 BuckBunny.yuv 1280x720")
+    # FIXME: Need to add dependency support in pydoit. The next command depends on an implicit output of the previous command.
+    # This should actually be pretty easy to handle...
+    # x264.add_input("--pass 2 --stats x264_stats.log --bitrate 1000 --dumpyuv 200 --frames 1000 -o BuckBunny_New.264 BuckBunny.yuv 1280x720")
+    # x264.add_input("--seek 500 --dumpyuv 200 --frames 1250 -o BuckBunny_New.264 BuckBunny.yuv 1280x720")
     
     deepsjeng = make_bench("631.deepsjeng_s").add_input("ref.txt", mem_size = "8GiB")
 
@@ -94,32 +125,37 @@ def get_cpu2017_int(root: str) -> list:
 
 
 
-def get_cpu2017_fp(root: str) -> list:
+def get_cpu2017_fp(roots) -> list:
     def make_bench(full_name: str):
-        return make_spec_bench(root, full_name, "FP")
+        return make_spec_bench(roots, full_name, "FP")
 
     bwaves = make_bench("603.bwaves_s")
-    bwaves.add_input(stdin = "bwaves_1.in")
-    bwaves.add_input(stdin = "bwaves_2.in")
-    bwaves.add_input(stdin = "bwaves_3.in")
+    bwaves.add_input(stdin = "bwaves_1.in", mem_size = "16GiB", stack_size = "16GiB") \
+          .add_input(stdin = "bwaves_2.in", mem_size = "16GiB", stack_size = "16GiB")
 
-    cactuBSSN = make_bench("607.cactuBSSN_s").add_input("spec_ref.par")
+    cactuBSSN = make_bench("607.cactuBSSN_s").add_input("spec_ref.par", mem_size = "8GiB")
 
-    lbm = make_bench("619.lbm_s").add_input("2000 reference.dat 0 0 200_200_260_ldc.of")
+    lbm = make_bench("619.lbm_s").add_input("2000 reference.dat 0 0 200_200_260_ldc.of", mem_size = "4GiB")
 
-    wrf = make_bench("621.wrf_s").add_input()
+    wrf = make_bench("621.wrf_s").add_input(stack_size = "128MiB")
 
-    cam4 = make_bench("627.cam4_s").add_input()
+    cam4 = make_bench("627.cam4_s").add_input(mem_size = "1GiB", stack_size = "128MiB")
 
-    pop2 = make_bench("628.pop2_s").add_input()
+    # FIXME: Re-enable pop2. Currently not working.
+    # pop2 = make_bench("628.pop2_s").add_input(mem_size = "2GiB")
 
-    imagick = make_bench("638.imagick_s").add_input("-limit disk 0 %S/run_ref/refspeed_input.tga -resize 817% -rotate -2.76 -shave 540x375 -alpha remove -auto-level -contrast-stretch 1x1% -colorspace Lab -channel R -equalize +channel -colorspace sRGB -define histogram:unique-colors=false -adaptive-blur 0x5 -despeckle -auto-gamma -adaptive-sharpen 55 -enhance -brightness-contrast 10x10 -resize 30% refspeed_output.tga")
+    imagick = make_bench("638.imagick_s").add_input(
+        "-limit disk 0 refspeed_input.tga -resize 817% -rotate -2.76 -shave 540x375 -alpha remove -auto-level " \
+        "-contrast-stretch 1x1% -colorspace Lab -channel R -equalize +channel -colorspace sRGB -define histogram:unique-colors=false " \
+        "-adaptive-blur 0x5 -despeckle -auto-gamma -adaptive-sharpen 55 -enhance -brightness-contrast 10x10 -resize 30% refspeed_output.tga",
+        mem_size = "8GiB",
+    )
 
-    nab = make_bench("644.nab_s").add_input("3j1n 20140317 220")
+    nab = make_bench("644.nab_s").add_input("3j1n 20140317 220", mem_size = "1GiB")
 
-    fotonik3d = make_bench("649.fotonik3d_s").add_input()
+    fotonik3d = make_bench("649.fotonik3d_s").add_input(mem_size = "16GiB")
 
-    roms = make_bench("654.roms_s").add_input(stdin = "ocean_benchmark3.in.x")
+    roms = make_bench("654.roms_s").add_input(stdin = "ocean_benchmark3.in.x", mem_size = "16GiB", stack_size = "64MiB")
 
     benches =  [
         bwaves,
@@ -127,11 +163,12 @@ def get_cpu2017_fp(root: str) -> list:
         lbm,
         wrf,
         cam4,
-        pop2,
+        # pop2,
         imagick,
         nab,
         fotonik3d,
         roms,
     ]
-    assert len(benches) == 10
+    # REVERTME
+    assert len(benches) == 9
     return benches
