@@ -1,0 +1,5 @@
+#pragma once
+
+#define ENV_POOL_SEMID "POOL_SEMID"
+
+#define POSIXLY_CORRECT "POSIXLY_CORRECT"
