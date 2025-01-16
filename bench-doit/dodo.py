@@ -15,12 +15,12 @@ import doit
 root = "."
 test_suites = {
     "base": "/home/nmosier/llsct2/bench-ninja/sw/base/test-suite",
-    "nst": "/home/nmosier/llsct2/bench-ninja/sw/ptex-nst/test-suite",
-    "slh": "/home/nmosier/llsct2/bench-ninja/sw/slh/test-suite",
+    # "nst": "/home/nmosier/llsct2/bench-ninja/sw/ptex-nst/test-suite",
+    # "slh": "/home/nmosier/llsct2/bench-ninja/sw/slh/test-suite",
 }
 gem5 = "/home/nmosier/llsct2/gem5/pincpu"
 fp = int(doit.get_var("fp", "1")) > 0
-llvm = "/home/nmosier/llsct2/llvm/base/build"
+llvm = "/home/nmosier/llsct2/llvm/base-17/build"
 addr2line = f"{llvm}/bin/llvm-addr2line"
 simpoint_interval_length = 50000000 # 50M instructions
 warmup_interval_length = 10000000 # 10M instructions
@@ -29,9 +29,7 @@ simpoint_max = 10
 
 # Dependent config vars
 gem5_exe = f"{gem5}/build/X86/gem5.opt"
-gem5_pin = f"{gem5}/configs/pin.py"
-gem5_pin_cpt = f"{gem5}/configs/pin-cpt.py"
-gem5_kvm_cpt = f"{gem5}/configs/se-kvm-cpt.py"
+gem5_pin = f"{gem5}/configs/pin.py" # TODO: Remove.
 gem5_pintool = f"{gem5}/build/X86/cpu/pin/libclient.so"
 
 # Benchmarks
@@ -39,6 +37,12 @@ benches = []
 benches.extend(get_cpu2017_int(test_suites))
 if fp:
     benches.extend(get_cpu2017_fp(test_suites))
+
+# Fix up benchmarks if they contain '%', since pydoit later interprets
+# them as a format string.
+for bench in benches:
+    for input in bench.inputs:
+        input.args = input.args.replace('%', '%%')
 
 debug = os.getenv("DEBUG")
 if debug and int(debug):
@@ -76,7 +80,7 @@ exp_stt = Experiment(
 exps = [
     exp_base,
     exp_stt,
-    exp_slh,
+    # exp_slh,
 ]
 
 def bench_outdir(bench: Benchmark) -> str:
@@ -85,8 +89,15 @@ def bench_outdir(bench: Benchmark) -> str:
 def bench_input_outdir(bench: Benchmark, input: Benchmark.Input) -> str:
     return os.path.join(bench_outdir(bench), input.name)
 
-def build_gem5_command(rundir: str, outdir: str, exe: Benchmark.Executable, input: Benchmark.Input,
-                       gem5_exe: str, gem5_script: str, gem5_script_args: str, gem5_exe_args: str = "",
+# TODO: Remove `command_prefix`.
+def build_gem5_command(rundir: str,
+                       outdir: str,
+                       exe: Benchmark.Executable,
+                       input: Benchmark.Input,
+                       gem5_exe: str,
+                       gem5_script: str,
+                       gem5_script_args: str,
+                       gem5_exe_args: str = "",
                        command_prefix: str = ""):
     # TODO: utility function to join strip out empty tokens.
     l = [
@@ -103,13 +114,14 @@ def build_gem5_command(rundir: str, outdir: str, exe: Benchmark.Executable, inpu
         print(l, file = sys.stderr)
     return " ".join(l)
 
+# TODO: Remove.
 def build_gem5_pin_command(rundir: str, outdir: str, exe: Benchmark.Executable,
                            input: Benchmark.Input, pintool_args: str) -> str:
     return f"/usr/bin/time -vo {outdir}/time.txt {gem5_exe} -re --silent-redirect -d {outdir} {gem5_pin} --chdir={rundir} --mem-size={input.mem_size} --max-stack-size={input.stack_size} --stdout=stdout.txt --stderr=stderr.txt --pin-tool-args='{pintool_args}' -- {exe.path} {input.args}"
 
 def generate_gem5_command(dir: str, outdir: str, exe: Benchmark.Executable, input: Benchmark.Input,
-                          file_dep: List[str], targets: List[str],
-                          gem5_exe: str, gem5_script: str, **kwargs):
+                          file_dep: List[str], targets: List[str], gem5_exe: str, gem5_script: str,
+                          task_dep: List[str] = [], **kwargs):
     rundir = f"{dir}/run"
     targets.extend([f"{outdir}/{name}.txt" for name in ["simout", "simerr", "stdout", "stderr", "time"]])
     file_dep.extend([gem5_exe, gem5_script, exe.path])
@@ -123,24 +135,27 @@ def generate_gem5_command(dir: str, outdir: str, exe: Benchmark.Executable, inpu
                                gem5_exe = gem5_exe, gem5_script = gem5_script, **kwargs),
         ],
         "file_dep": file_dep,
+        "task_dep": task_dep,
         "targets": targets,
     }
 
 
+# TODO: Remove this.
 def generate_gem5_pin_command(dir: str, outdir: str, exe: Benchmark.Executable,
                               input: Benchmark.Input,
                               file_dep: List[str],
                               targets: List[str],
+                              task_dep: List[str] = [],
                               pintool_args: str = None,
                               gem5_script_args: List[str] = "",
                               gem5_script: str = gem5_pin):
     if pintool_args:
         gem5_script_args += f" --pin-tool-args='{pintool_args}'"
-    yield generate_gem5_command(dir = dir, outdir = outdir, exe = exe, input = input, file_dep = file_dep,
+    yield generate_gem5_command(dir = dir, outdir = outdir, exe = exe, input = input, file_dep = file_dep, task_dep = task_dep,
                                 targets = targets, gem5_exe = gem5_exe, gem5_script = gem5_script,
                                 gem5_script_args = gem5_script_args)
 
-def generate_pin_test(dir: str, exe: Benchmark.Executable, input: Benchmark.Input):
+def generate_pin_test(dir: str, exe: Benchmark.Executable, input: Benchmark.Input, task_dep: List[str]):
     yield generate_gem5_pin_command(
         dir = dir,
         outdir = f"{dir}/test",
@@ -148,6 +163,7 @@ def generate_pin_test(dir: str, exe: Benchmark.Executable, input: Benchmark.Inpu
         input = input,
         pintool_args = "",
         file_dep = [],
+        task_dep = task_dep,
         targets = [f"{dir}/test"],
     )
     
@@ -180,7 +196,7 @@ def generate_srclocs(dir: str):
         "targets": [srclocs],
     }
 
-def generate_bbhist(dir: str, exe: Benchmark.Executable, input: Benchmark.Input):
+def generate_bbhist(dir: str, exe: Benchmark.Executable, input: Benchmark.Input, task_dep: List[str]):
     bbhist_base = f"{dir}/bbhist"
     bbhist_dir = bbhist_base
     bbhist_txt = f"{dir}/bbhist.txt"
@@ -193,6 +209,7 @@ def generate_bbhist(dir: str, exe: Benchmark.Executable, input: Benchmark.Input)
         gem5_script = f"{gem5}/configs/pin-bbhist.py",
         gem5_script_args = f"--bbhist={bbhist_txt}",
         file_dep = [],
+        task_dep = task_dep,
         targets = [bbhist_txt],
     )
 
@@ -471,7 +488,7 @@ def generate_take_checkpoints(dir: str, exe: Benchmark.Executable, input: Benchm
         exe = exe,
         input = input,
         gem5_exe = gem5_exe,
-        gem5_script = f"{gem5}/configs/pin-cpt2.py", # TODO: rename cpt2->cpt
+        gem5_script = f"{gem5}/configs/pin-cpt.py",
         gem5_script_args = f"--simpoints-json={simpoints_json} --waypoints={waypoints}",
         file_dep = [simpoints_json, waypoints],
         targets = [],
@@ -480,12 +497,15 @@ def generate_take_checkpoints(dir: str, exe: Benchmark.Executable, input: Benchm
 def generate_simpoints(benches):
     for bench in benches:
         b_dir = bench.name
+        input_to_target = dict()
         for input in bench.inputs:
             bi_dir = os.path.join(b_dir, input.name)
             for exe in bench.exes:
                 bix_dir = os.path.join(bi_dir, exe.name)
-                yield generate_pin_test(bix_dir, exe, input)
-                yield generate_bbhist(bix_dir, exe, input)
+                task_dep = [f"{b_dir}/{input_dep.name}/{exe.name}/cpt" for input_dep in input.deps]
+                if int(doit.get_var("pin-test", "0")) > 0:
+                    yield generate_pin_test(bix_dir, exe, input, task_dep = task_dep)
+                yield generate_bbhist(bix_dir, exe, input, task_dep = task_dep)
                 yield generate_instlist(bix_dir)
                 yield generate_srclist(bix_dir, exe)
                 yield generate_srclocs(bix_dir)
@@ -556,7 +576,8 @@ def generate_experiments(benches, exps):
                 assert len(exes) == 1
                 exe = exes[0]
 
-                root_dir = os.path.join(bench.name, input.name, exe.name)
+                bi_dir = os.path.join(bench.name, input.name)
+                root_dir = os.path.join(bench.name, input.name, exe.name) # TODO: Rename to bix_dir.
                 exp_dir = os.path.join(root_dir, exp.name)
                 cpt_dir = os.path.join(root_dir, "cpt")
                 cpt_stamp = f"{cpt_dir}/simout.txt"
@@ -565,7 +586,17 @@ def generate_experiments(benches, exps):
 
                 # FIXME: Should instead look at simpoints.json, not intervals.txt.
                 @doit.create_after(executed = intervals, target_regex = f"{exp_dir}/([0-9]+/(stats.txt|results.json)|results.json)")
-                def _task_resume_from_simpoints(bench=bench, input=input, exp=exp, exe=exe, root_dir=root_dir, exp_dir=exp_dir, cpt_dir=cpt_dir, cpt_stamp=cpt_stamp, rundir=rundir, intervals=intervals):
+                def _task_resume_from_simpoints(bench=bench,
+                                                input=input,
+                                                exp=exp,
+                                                exe=exe,
+                                                root_dir=root_dir,
+                                                exp_dir=exp_dir,
+                                                cpt_dir=cpt_dir,
+                                                cpt_stamp=cpt_stamp,
+                                                rundir=rundir,
+                                                intervals=intervals,
+                                                bi_dir=bi_dir):
                     intervals_txt = intervals + ".txt"
 
                     # Compute number of simpoints.
@@ -617,7 +648,7 @@ def generate_experiments(benches, exps):
                     # Collect weighted stats into main stats.
                     total_results = f"{exp_dir}/results"
                     total_results_json = f"{total_results}.json"
-                    simpoints_json = f"{root_dir}/simpoint.json"
+                    simpoints_json = f"{bi_dir}/simpoint.json"
                     yield {
                         "basename": total_results,
                         "actions": [(compute_total_results, [], {
@@ -637,45 +668,49 @@ def generate_experiments(benches, exps):
 if int(doit.get_var("exps", "1")) > 0:
     generate_experiments(benches, exps)
 
-# Define the compilers.
-# TODO: Split compiler up into Executables + Config.
-cc_base = llvm_compiler(
-    name = "base",
-    prefix = "/home/nmosier/llsct2/llvm/base/build",
-    cflags = "-O3 -mno-avx -g",
-    ldflags = "-static -fuse-ld=lld -Wl,--allow-multiple-definition",
-    cmake_build_type = "Release",
-)
-cc_slh = cc_base.dup().set_name("slh").add_cflags("-mllvm --x86-speculative-load-hardening")
 
-cc_ptex = llvm_compiler(
-    name = "ptex",
-    prefix = "/home/nmosier/llsct2/llvm/ptex-all/build",
-    cflags = cc_base.cflags,
-    ldflags = cc_base.ldflags,
-    cmake_build_type = cc_base.cmake_build_type,
-)
-cc_ptex_nst = cc_ptex.dup()
-# TODO: Enable optimizations.
-cc_ptex_nst.cflags += " -mllvm -x86-ptex=nst"
+# REVERTME: Re-enable these.
+if False:
 
-compilers = [cc_base, cc_slh, cc_ptex_nst]
+    # Define the compilers.
+    # TODO: Split compiler up into Executables + Config.
+    cc_base = llvm_compiler(
+        name = "base",
+        prefix = "/home/nmosier/llsct2/llvm/base-17/build",
+        cflags = "-O3 -mno-avx -g",
+        ldflags = "-static -fuse-ld=lld -Wl,--allow-multiple-definition",
+        cmake_build_type = "Release",
+    )
+    cc_slh = cc_base.dup().set_name("slh").add_cflags("-mllvm --x86-speculative-load-hardening")
 
-def generate_lib(compilers: List[Compiler], src: str, bin: str, build_lib):
-    for cc in compilers:
-        yield build_lib(
-            src = src,
-            bin = f"{bin}/{cc.name}",
-            compiler = cc,
-        )
+    cc_ptex = llvm_compiler(
+        name = "ptex",
+        prefix = "/home/nmosier/llsct2/llvm/ptex-17/build",
+        cflags = cc_base.cflags,
+        ldflags = cc_base.ldflags,
+        cmake_build_type = cc_base.cmake_build_type,
+    )
+    cc_ptex_nst = cc_ptex.dup()
+    # TODO: Enable optimizations.
+    cc_ptex_nst.cflags += " -mllvm -x86-ptex=nst"
 
-def task_libs():
-    for cc in compilers:
-        cc = cc.dup()
-        cc.ldflags = ""
-        for lib, build_lib in [("libc", build_libc), ("libcxx", build_libcxx)]:
+    compilers = [cc_base, cc_slh, cc_ptex_nst]
+
+    def generate_lib(compilers: List[Compiler], src: str, bin: str, build_lib):
+        for cc in compilers:
             yield build_lib(
-                src = "/home/nmosier/llsct2/llvm/base",
-                bin = f"{lib}/{cc.name}",
+                src = src,
+                bin = f"{bin}/{cc.name}",
                 compiler = cc,
             )
+
+    def task_libs():
+        for cc in compilers:
+            cc = cc.dup()
+            cc.ldflags = ""
+            for lib, build_lib in [("libc", build_libc), ("libcxx", build_libcxx)]:
+                yield build_lib(
+                    src = "/home/nmosier/llsct2/llvm/base-17",
+                    bin = f"{lib}/{cc.name}",
+                    compiler = cc,
+                )
