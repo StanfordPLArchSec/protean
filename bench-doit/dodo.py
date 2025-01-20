@@ -10,12 +10,13 @@ import json
 import collections
 import copy
 import doit
+import math
 
 # User-defined config vars
 root = "."
 test_suites = {
     "base": "/home/nmosier/llsct2/bench-ninja/sw/base/test-suite",
-    # "nst": "/home/nmosier/llsct2/bench-ninja/sw/ptex-nst/test-suite",
+    "nst": "/home/nmosier/llsct2/bench-ninja/sw/ptex-nst/test-suite",
     # "slh": "/home/nmosier/llsct2/bench-ninja/sw/slh/test-suite",
 }
 gem5 = "/home/nmosier/llsct2/gem5/pincpu"
@@ -26,11 +27,11 @@ simpoint_interval_length = 50000000 # 50M instructions
 warmup_interval_length = 10000000 # 10M instructions
 simpoint_exe = "/home/nmosier/llsct2/simpoint/bin/simpoint"
 simpoint_max = 10
+gem5_exe_suffix = doit.get_var("gem5_exe_suffix", "X86_MESI_Three_Level/gem5.opt")
 
 # Dependent config vars
-gem5_exe = f"{gem5}/build/X86/gem5.opt"
+gem5_exe = f"{gem5}/build/{gem5_exe_suffix}"
 gem5_pin = f"{gem5}/configs/pin.py" # TODO: Remove.
-gem5_pintool = f"{gem5}/build/X86/cpu/pin/libclient.so"
 
 # Benchmarks
 benches = []
@@ -48,7 +49,8 @@ debug = os.getenv("DEBUG")
 if debug and int(debug):
     import pdb
     pdb.set_trace()
-    
+
+enable_pools = int(doit.get_var("enable_pools", "0"))
 
 # Experiments:
 # TODO: Define elsewhere.
@@ -60,11 +62,13 @@ class Experiment:
         self.gem5_script = gem5_script
         self.gem5_script_args = gem5_script_args
 
+shared_flags = "--ruby --enable-prefetch --ecore"
+
 exp_base = Experiment(
     name = "base",
-    gem5_exe = "/home/nmosier/llsct2/gem5/base/build/X86/gem5.opt",
-    gem5_script = "/home/nmosier/llsct2/gem5/base/configs/deprecated/example/se.py",
-    gem5_script_args = "",
+    gem5_exe = f"/home/nmosier/llsct2/gem5/base/build/{gem5_exe_suffix}",
+    gem5_script = "/home/nmosier/llsct2/gem5/base/configs/AlderLake/se.py",
+    gem5_script_args = shared_flags,
     sw = "base",
 )
 exp_slh = copy.copy(exp_base)
@@ -72,22 +76,68 @@ exp_slh.name = "slh"
 exp_slh.sw = "slh"
 exp_stt = Experiment(
     name = "stt",
-    gem5_exe = "/home/nmosier/llsct2/gem5/stt/build/X86/gem5.opt",
-    gem5_script = "/home/nmosier/llsct2/gem5/stt/configs/deprecated/example/se.py",
-    gem5_script_args = "--stt --implicit-channel=Lazy --speculation-model=Ctrl",
+    gem5_exe = f"/home/nmosier/llsct2/gem5/stt/build/{gem5_exe_suffix}",
+    gem5_script = "/home/nmosier/llsct2/gem5/stt/configs/AlderLake/se.py",
+    gem5_script_args = f"{shared_flags} --stt --implicit-channel=Lazy --speculation-model=Ctrl",
     sw = "base",
 )
+exp_spt = Experiment(
+    name = "spt",
+    gem5_exe = f"/home/nmosier/llsct2/gem5/spt/build/{gem5_exe_suffix}",
+    gem5_script = "/home/nmosier/llsct2/gem5/spt/configs/AlderLake/se.py",
+    gem5_script_args = f"{shared_flags} --spt --fwdUntaint=1 --bwdUntaint=1 --enableShadowL1=1",
+    sw = "base",
+)
+exp_tpt_nst = Experiment(
+    name = "tpt.nst",
+    gem5_exe = f"/home/nmosier/llsct2/gem5/tpt/build/{gem5_exe_suffix}",
+    gem5_script = "/home/nmosier/llsct2/gem5/tpt/configs/AlderLake/se.py",
+    gem5_script_args = f"{shared_flags} --tpt --implicit-channel=Lazy --tpt-reg --tpt-mem --tpt-xmit",
+    sw = "nst",
+)
+
+def exp_with_spec_model(exp: Experiment, spec_model: str) -> Experiment:
+    exp = copy.copy(exp)
+    exp.gem5_script_args += " --speculation-model=" + spec_model
+    exp.name += "." + spec_model.lower()
+    return exp
+
 exps = [
     exp_base,
-    exp_stt,
+    # exp_stt,
     # exp_slh,
 ]
+
+for exp in [exp_spt, exp_tpt_nst]:
+    for spec_model in ["Ctrl", "AtRet"]:
+        exps.append(exp_with_spec_model(exp, spec_model))
+
+def mem_size_in_gb(s: str) -> int:
+    if s.endswith("GiB"):
+        return int(s.removesuffix("GiB"))
+    elif s.endswith("MiB"):
+        return math.ceil(int(s.removesuffix("MiB")) / 1024)
+    else:
+        print(f"failed to parse mem size: {s}", file = sys.stderr)
+        exit(1)
 
 def bench_outdir(bench: Benchmark) -> str:
     return os.path.join(root, bench.name)
 
 def bench_input_outdir(bench: Benchmark, input: Benchmark.Input) -> str:
     return os.path.join(bench_outdir(bench), input.name)
+
+def generate_host_test(dir: str, exe: Benchmark.Executable, input: Benchmark.Input, task_dep: List[str]):
+    outdir = f"{dir}/host"
+    rundir = f"{dir}/run"
+    cmd = f"mkdir -p {outdir} && cd {rundir} && ulimit -s unlimited && /usr/bin/time -vo {os.path.abspath(outdir)}/time.txt {exe.path} < {input.stdin} {input.args} > {os.path.abspath(outdir)}/stdout.txt 2> {os.path.abspath(outdir)}/stderr.txt"
+    yield {
+        "basename": outdir,
+        "actions": [cmd],
+        "file_dep": [exe.path], # FIXME: Add stdin as input?
+        "task_dep": task_dep,
+        "targets": [outdir + "/time.txt", outdir + "/stdout.txt", outdir + "/stderr.txt"],
+    }
 
 # TODO: Remove `command_prefix`.
 def build_gem5_command(rundir: str,
@@ -100,6 +150,8 @@ def build_gem5_command(rundir: str,
                        gem5_exe_args: str = "",
                        command_prefix: str = ""):
     # TODO: utility function to join strip out empty tokens.
+    if enable_pools:
+        command_prefix = f"../pool/poolc -v 1 {mem_size_in_gb(input.mem_size)} -- {command_prefix}"
     l = [
         command_prefix,
         f"/usr/bin/time -vo {outdir}/time.txt {gem5_exe} -re --silent-redirect -d {outdir}",
@@ -113,11 +165,6 @@ def build_gem5_command(rundir: str,
     if None in l:
         print(l, file = sys.stderr)
     return " ".join(l)
-
-# TODO: Remove.
-def build_gem5_pin_command(rundir: str, outdir: str, exe: Benchmark.Executable,
-                           input: Benchmark.Input, pintool_args: str) -> str:
-    return f"/usr/bin/time -vo {outdir}/time.txt {gem5_exe} -re --silent-redirect -d {outdir} {gem5_pin} --chdir={rundir} --mem-size={input.mem_size} --max-stack-size={input.stack_size} --stdout=stdout.txt --stderr=stderr.txt --pin-tool-args='{pintool_args}' -- {exe.path} {input.args}"
 
 def generate_gem5_command(dir: str, outdir: str, exe: Benchmark.Executable, input: Benchmark.Input,
                           file_dep: List[str], targets: List[str], gem5_exe: str, gem5_script: str,
@@ -503,7 +550,9 @@ def generate_simpoints(benches):
             for exe in bench.exes:
                 bix_dir = os.path.join(bi_dir, exe.name)
                 task_dep = [f"{b_dir}/{input_dep.name}/{exe.name}/cpt" for input_dep in input.deps]
-                if int(doit.get_var("pin-test", "0")) > 0:
+                if int(doit.get_var("host_test", "0")) > 0:
+                    yield generate_host_test(bix_dir, exe, input, task_dep = task_dep)
+                if int(doit.get_var("pin_test", "0")) > 0:
                     yield generate_pin_test(bix_dir, exe, input, task_dep = task_dep)
                 yield generate_bbhist(bix_dir, exe, input, task_dep = task_dep)
                 yield generate_instlist(bix_dir)
@@ -555,6 +604,10 @@ def compute_total_results(inpaths: List[str], outpath: str, simpoints: str):
         for key in results:
             results[key] *= weight
         if total_results:
+            if total_results.keys() != results.keys():
+                print(f"{inpath = }", file=sys.stderr)
+                print(f"{total_results.keys() = }", file=sys.stderr)
+                print(f"{results.keys() = }", file=sys.stderr)
             assert total_results.keys() == results.keys()
             for key, value in results.items():
                 total_results[key] += value
@@ -616,17 +669,21 @@ def generate_experiments(benches, exps):
                         dir = f"{exp_dir}/{i}"
                         stats = f"{dir}/stats.txt"
 
+
+                        cmd = \
+                            f"{exp.gem5_exe} -re --silent-redirect -d {dir} " + \
+                            f"{exp.gem5_script} --chdir={rundir} --mem-size={input.mem_size} " + \
+                            f"--errout=stderr.txt --output=stdout.txt {exp.gem5_script_args} --cmd={exe.path} " + \
+                            f"--options='{input.args}' --cpu-type=X86O3CPU --checkpoint-dir={cpt_dir} " + \
+                            f"--restore-simpoint-checkpoint --checkpoint-restore={i + 1} " + \
+                            "--ruby"
+                        if enable_pools:
+                            cmd = f"../pool/poolc -v 1 {mem_size_in_gb(input.mem_size)} -- {cmd}"
+
                         # Resume from simpoint.
                         yield {
                             "basename": dir,
-                            "actions": [
-                                f"{exp.gem5_exe} -re --silent-redirect -d {dir} " + \
-                                f"{exp.gem5_script} --chdir={rundir} --mem-size={input.mem_size} " + \
-                                f"--errout=stderr.txt --output=stdout.txt {exp.gem5_script_args} --cmd={exe.path} " + \
-                                f"--options='{input.args}' --cpu-type=X86O3CPU --checkpoint-dir={cpt_dir} " + \
-                                f"--restore-simpoint-checkpoint --checkpoint-restore={i + 1} " + \
-                                f"--caches"
-                            ],
+                            "actions": [cmd],
                             "file_dep": [exp.gem5_exe, exp.gem5_script, cpt_stamp],
                             "targets": [stats],
                         }
@@ -635,7 +692,7 @@ def generate_experiments(benches, exps):
                         results = f"{dir}/results"
                         results_json = f"{results}.json"
                         yield {
-                            "basename": results,
+                            "basename": results_json,
                             "actions": [(compute_single_results, [], {
                                 "stats": stats_dict,
                                 "inpath": stats,
@@ -650,7 +707,7 @@ def generate_experiments(benches, exps):
                     total_results_json = f"{total_results}.json"
                     simpoints_json = f"{bi_dir}/simpoint.json"
                     yield {
-                        "basename": total_results,
+                        "basename": total_results_json,
                         "actions": [(compute_total_results, [], {
                             "inpaths": results_jsons,
                             "outpath": total_results_json,
