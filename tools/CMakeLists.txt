@@ -8,7 +8,7 @@ list(APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/cmake)
 
 # include(PinTool)
 include(PinTool2)
-add_pin_tool(FrameForwarding FrameForwarding.cpp)
+
 
 add_pin_tool(Declassify Declassify.cpp)
 
@@ -32,10 +32,6 @@ add_pin_tool(AccessSizes AccessSizes.cpp)
 
 add_pin_tool(RFSizes RFSizes.cpp)
 
-add_executable(popcount popcount.c)
-
-add_pin_tool(CFI CFI.cpp)
-
 add_pin_tool(Count Count.cpp)
 
 add_executable(cfitool cfitool.c)
@@ -49,29 +45,27 @@ add_executable(validate-trace2 validate-trace2.cc)
 add_pin_tool(bbtrace bbtrace.cpp)
 
 
-add_pin_tool(PrintInsts PrintInsts.cpp)
-
 add_pin_tool(bbtrace2 bbtrace2.cpp)
-
-
-# add_pin_tool(Instrument Instrument.cpp)
-# add_pin_tool(CallStack CallStack.cpp)
-# target_link_libraries(CallStack PRIVATE Instrument)
-add_pin_tool(CallStackTest CallStackTest.cpp CallStack.cpp Instrument.cpp)
 
 
 add_pin_tool(Train Train.cpp)
 
 add_library(TrainRuntime STATIC TrainRuntime.c)
 
+add_pin_tool(ProtectedPages ProtectedPages.cpp)
 
-add_subdirectory(tests/train)
+find_package(Boost REQUIRED COMPONENTS iostreams)
+find_package(ZLIB REQUIRED)
 
-add_executable(patternify patternify.cpp)
+add_executable(taint-primitive-hist taint-primitive-hist.cc)
+target_link_libraries(taint-primitive-hist PRIVATE Boost::iostreams ZLIB::ZLIB)
 
 
-add_executable(norecurse norecurse.cpp)
+add_pin_tool(functoinst functoinst.cpp)
+add_pin_tool(funccount funccount.cpp)
+add_pin_tool(instcount instcount.cpp)
+add_pin_tool(callcount callcount.cpp)
 
-add_library(align_runtime STATIC align_runtime.c)
+add_pin_tool(inscount2 inscount2.cpp)
 
-add_pin_tool(Tmp Tmp.cpp)
+add_pin_tool(pmcount pmcount.cc)
