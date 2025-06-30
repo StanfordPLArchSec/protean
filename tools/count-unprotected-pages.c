@@ -1,4 +1,5 @@
 #include <sys/ptrace.h>
+#include <linux/ptrace.h>
 #include <stdlib.h>
 #include <err.h>
 #include <stdio.h>
@@ -12,7 +13,7 @@ static int
 wait_chk(void)
 {
     int status;
-    if (wait(&status) < 0)
+    if (wait(&status) < 0) 
         err(EXIT_FAILURE, "wait");
     if (WIFSIGNALED(status)) {
         errx(EXIT_FAILURE, "child signaled %s",
@@ -54,11 +55,25 @@ int main(int argc, char *argv[]) {
              WEXITSTATUS(status));
     }
 
-    if (ptrace(PTRACE_CONT, pid, 0, 0) < 0)
-        err(EXIT_FAILURE, "ptrace: CONT");
+    // Trace all syscalls.
+    int sig = 0;
+    while (1) {
+        if (ptrace(PTRACE_SYSCALL, pid, 0, sig) < 0)
+            err(EXIT_FAILURE, "ptrace: SYSCALL");
+        status = wait_chk();
+        if (WIFEXITED(status))
+            break;
+        assert(WIFSTOPPED(status));
+        sig = WSTOPSIG(status);
+        if (sig != SIGTRAP)
+            continue;
+        sig = 0;
 
-    status = wait_chk();
-    assert(WIFEXITED(status));
+        // Stopped at syscall.
+        struct ptrace_syscall_info sys;
+        if (ptrace(PTRACE_GET_SYSCALL_INFO, pid, sizeof sys, &sys) < 0)
+            err(EXIT_FAILURE, "GET_SYSCALL_INFO");
+    }
 
     return WEXITSTATUS(status);
 }
