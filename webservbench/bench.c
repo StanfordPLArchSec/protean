@@ -96,11 +96,11 @@ int main(int argc, char *argv[]) {
   }
 
   // Start up the siege process.
-  const char *siege_cmd[] = {SIEGE_PREFIX "/bin/siege", "-c", num_clients, "-r", reqs_per_client, "-b", "https://127.0.0.1:8443/", NULL};
-  const pid_t siege_pid = subproc(siege_cmd);
+  const char *curl_cmd[] = {"curl", "-vk", "https://127.0.0.1:8443/", NULL};
+  const pid_t curl_pid = subproc(curl_cmd);
 
-  // Wait for siege to finish.
-  do_wait(siege_pid);
+  // Wait for curl to finish.
+  do_wait(curl_pid);
 
   // Kill nginx.
   if (kill(nginx_pid, SIGINT) < 0)
