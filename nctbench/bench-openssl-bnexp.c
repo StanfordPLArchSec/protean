@@ -24,9 +24,7 @@ int main(int argc, char *argv[]) {
   BN_set_bit(m, 0); // Ensure the modulus is odd.
 
   for (size_t i = 0; i < nreps; ++i) {
-    asm volatile ("int3");
     if (!BN_mod_exp(r, a, p, m, ctx))
       errx(EXIT_FAILURE, "ERROR: BN_mod_exp failed");
-    asm volatile ("int3");
   }
 }

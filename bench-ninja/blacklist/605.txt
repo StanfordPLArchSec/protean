@@ -1,3 +1,0 @@
-_ZN11__llvm_libc6strlenEPKc
-strlen
-strlen

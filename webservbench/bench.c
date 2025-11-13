@@ -72,16 +72,15 @@ static bool check_conn(const struct sockaddr_in *addr) {
 }
 
 int main(int argc, char *argv[]) {
-  if (argc != 3)
-    errx(EXIT_FAILURE, "usage: %s num_clients reqs_per_client", argv[0]);
+  if (argc != 2)
+    errx(EXIT_FAILURE, "usage: %s num_requests", argv[0]);
 
 #if 0
   // Add nginx, siege to path.
   add_to_path(SIEGE_PREFIX);
 #endif
 
-  const char *num_clients = argv[1];
-  const char *reqs_per_client = argv[2];
+  const char *num_reqs = argv[1];
 
   // Start up the nginx server.
   const char *nginx_cmd[] = {NGINX_PREFIX "/sbin/nginx", NULL};
