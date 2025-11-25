@@ -1,7 +1,0 @@
-#!/bin/bash
-
-usage() {
-    cat <<EOF
-usage: $0 [-h] <config-json>
-EOF
-}
