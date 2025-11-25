@@ -32,7 +32,8 @@ for bench in benches:
             with open(path) as f:
                 j = json.load(f)
                 w = j['weight']
-                assert 0.999 < w and w < 1.001
+                if not (0.999 < w and w < 1.001):
+                    print(f'warn: weight for {bench} is {w:.2}', file = sys.stderr)
                 ipcs.append(j['stats'][args.metric])
                 continue
         ipcs.append('-')

@@ -20,7 +20,8 @@ with open(args.simpoints_json) as f:
 def find_simpoint():
     for simpoint in simpoints:
         if int(simpoint.name) == args.simpoint_idx:
-            return simpoint
+            if 10000000 <= simpoint.inst_count and simpoint.inst_count <= 100000000:
+                return simpoint
     # print('error: failed to find requested simpoint', file = sys.stderr)
     # exit(1)
     with open(args.output, 'wt') as f:
@@ -40,10 +41,7 @@ stats = {
     key_insts: Stat('insts'),
     'system.switch_cpus.ipc': Stat('ipc'),
     'system.switch_cpus.numCycles': Stat('cycles'),
-    'system.switch_cpus.commit.committedAnnotatedUnprotectedRegisterRate': Stat('pub-annot-reg-rate', required = False),
-    'system.switch_cpus.commit.committedAnnotatedUnprotectedLoadRate': Stat('pub-annot-load-rate', required = False),
-    'system.switch_cpus.commit.committedAnnotatedUnprotectedLoadCount': Stat('pub-annot-load-count', required = False),
-    'system.switch_cpus.commit.committedAnnotatedLoadCount': Stat('annot-load-count', required = False),
+    'system.switch_cpus.commit.committedUnprotectedAnnotationsRate': Stat('unprot-annot-rate', required = False),
 }
 # stats = dict(map(lambda x: (x.name(), None), keys.values()))
 with open(args.stats) as f:

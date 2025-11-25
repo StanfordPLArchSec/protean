@@ -71,7 +71,7 @@ ninja.rule(
     restat = True,
     pool = 'sim',
 )
-ninja.pool('mem', 256) # for 100 GB
+ninja.pool('mem', 1000000) # for 100 GB
 
 ## copy-resource-dir
 ## NOTE: We are just copying symbolic links now!!!!
@@ -349,6 +349,8 @@ for sw_name, sw_config in config.sw.items():
 
     ### Build test-suite 
     test_suite_build_outputs = [os.path.join(test_suite_build_dir, 'External', 'SPEC', f'C{benchspec[bench_name].type}2017speed', bench_name, bench_name) for bench_name in benchspec]
+    if not args.sw_depend:
+        test_suite_build_outputs = [os.path.join(test_suite_build_dir, 'dummy')]
     test_suite_build_cmd = [
         'ninja', '--quiet', '-C', test_suite_build_dir, 'fpcmp-target', 'imagevalidate_625-target', *benchspec,
     ]
@@ -938,10 +940,13 @@ for core_type in ['pcore', 'ecore']:
                         '--simpoint-idx', str(cpt_idx),
                         '--output', results_json,
                     ]
+                    results_json_inputs = [generate_results_py, run_stamp]
+                    if args.cpt_depend:
+                        results_json_inputs.append(simpoints_json)
                     ninja.build(
                         outputs = [results_json],
                         rule = 'custom-command',
-                        inputs = [generate_results_py, run_stamp, simpoints_json],
+                        inputs = results_json_inputs,
                         variables = {
                             'cmd': ' '.join(results_json_cmd),
                             'id': f'exp->{core_type}->{bench_type}->{exp_name}->{bench_name}->{cpt_idx}->results.json',

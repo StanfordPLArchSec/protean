@@ -39,7 +39,6 @@
 
         "ptex-all": {
             "inherit": "_default",
-            "parent": "base",
             "llvm": "../llvm/ptex-all",
             "cc": "../llvm/ptex-all/build/bin/clang",
             "cxx": "../llvm/ptex-all/build/bin/clang",
@@ -49,24 +48,28 @@
 
         "ptex-cts": {
             "inherit": "ptex-all",
+            "parent": "base",
             "+cflags": ["-mllvm", "-x86-ptex", "-mllvm", "-x86-ptex-type=cts"],
             "+fflags": ["-mllvm", "-x86-ptex", "-mllvm", "-x86-ptex-type=cts"]
         },
 
         "ptex-ct": {
             "inherit": "ptex-all",
+            "parent": "base",
             "+cflags": ["-mllvm", "-x86-ptex", "-mllvm", "-x86-ptex-type=ct"],
             "+fflags": ["-mllvm", "-x86-ptex", "-mllvm", "-x86-ptex-type=ct"]
         },
 
         "ptex-ctd": {
             "inherit": "ptex-all",
+            "parent": "base",
             "+cflags": ["-mllvm", "-x86-ptex", "-mllvm", "-x86-ptex-type=ctdecl"],
             "+fflags": ["-mllvm", "-x86-ptex", "-mllvm", "-x86-ptex-type=ctdecl"]
         },
 
         "ptex-nst": {
             "inherit": "ptex-all",
+            "parent": "base",
             "+cflags": ["-mllvm", "-x86-ptex", "-mllvm", "-x86-ptex-type=nst"],
             "+fflags": ["-mllvm", "-x86-ptex", "-mllvm", "-x86-ptex-type=nst"]
         },
@@ -77,11 +80,23 @@
             "+fflags": ["-mllvm", "-x86-annotate-public=bound-to-leak"]
         },
 
-	    "annotate-pointer-loads": {
-	        "inherit": "ptex-all",
-	        "+cflags": ["-mllvm", "-x86-annotate-public=pointers"],
-	        "+fflags": ["-mllvm", "-x86-annotate-public=pointers"]
-	    }
+	"annotate-pointer-loads": {
+	    "inherit": "ptex-all",
+	    "+cflags": ["-mllvm", "-x86-annotate-public=pointers"],
+	    "+fflags": ["-mllvm", "-x86-annotate-public=pointers"]
+	},
+
+        "annotate-bound-to-leak-nst": {
+            "inherit": "ptex-all",
+            "+cflags": ["-mllvm", "-x86-annotate-public=bound-to-leak", "-mllvm", "-x86-ptex", "-mllvm", "-x86-ptex-type=nst"],
+            "+fflags": ["-mllvm", "-x86-annotate-public=bound-to-leak", "-mllvm", "-x86-ptex", "-mllvm", "-x86-ptex-type=nst"]
+        },
+
+	"annotate-pointer-loads-nst": {
+	    "inherit": "ptex-all",
+            "+cflags": ["-mllvm", "-x86-annotate-public=pointers", "-mllvm", "-x86-ptex", "-mllvm", "-x86-ptex-type=nst"],
+            "+fflags": ["-mllvm", "-x86-annotate-public=pointers", "-mllvm", "-x86-ptex", "-mllvm", "-x86-ptex-type=nst"]
+	}
     },
 
     "sim": {
@@ -123,12 +138,16 @@
         },
         "recon": {
             "inherit": "_default",
-            "src": "../gem5/stt-recon"
+            "src": "../gem5/recon"
         },
         "recon-orig": {
             "inherit": "_default",
             "src": "../gem5/recon"
-        }
+        },
+	"tpt-next": {
+	    "inherit": "_default",
+	    "src": "../gem5/tpt-next"
+	}
     },
 
     "hwmode": {
@@ -175,8 +194,10 @@
         "tpt": {
             "inherit": "_default",
             "+gem5_opts": ["--debug-flag=TPT"],
-            "+script_opts": ["--tpt", "--implicit-channel=Lazy", "--tpt-reg", "--tpt-mem", "--tpt-xmit"]
+            "+script_opts": ["--tpt", "--implicit-channel=Eager", "--tpt-reg", "--tpt-mem", "--tpt-xmit"]
         },
+
+	"tpt-next": {"inherit": "tpt"},
 
         "stt-ctrl": {"inherit": "stt", "+script_opts": ["--speculation-model=Ctrl"]},
         "stt-atret": {"inherit": "stt", "+script_opts": ["--speculation-model=AtRet"]},
@@ -229,14 +250,14 @@
         "tpt-nst-ctrl": {"sw": "ptex-nst", "sim": "tpt", "hwmode": "tpt-ctrl"},
         "tpt-nst-atret": {"sw": "ptex-nst", "sim": "tpt", "hwmode": "tpt-atret"},
 
-        "spt-btl-ctrl": {"sw": "annotate-bound-to-leak", "sim": "spt", "hwmode": "spt-ctrl"},
-        "spt-btl-atret": {"sw": "annotate-bound-to-leak", "sim": "spt", "hwmode": "spt-atret"},
-        "spt-ptr-ctrl": {"sw": "annotate-pointer-loads", "sim": "spt", "hwmode": "spt-ctrl"},
-        "spt-ptr-atret": {"sw": "annotate-pointer-loads", "sim": "spt", "hwmode": "spt-atret"},
-        "recon-btl-ctrl": {"sw": "annotate-bound-to-leak", "sim": "recon", "hwmode": "recon-ctrl"},
-        "recon-btl-atret": {"sw": "annotate-bound-to-leak", "sim": "recon", "hwmode": "recon-atret"},
-        "recon-ptr-ctrl": {"sw": "annotate-pointer-loads", "sim": "recon", "hwmode": "recon-ctrl"},
-        "recon-ptr-atret": {"sw": "annotate-pointer-loads", "sim": "recon", "hwmode": "recon-atret"},
+        "spt-btl": {"sw": "annotate-bound-to-leak", "sim": "spt", "hwmode": "spt-atret"},
+        "spt-ptr": {"sw": "annotate-pointer-loads", "sim": "spt", "hwmode": "spt-atret"},
+        "recon-btl": {"sw": "annotate-bound-to-leak", "sim": "recon", "hwmode": "recon-atret"},
+        "recon-ptr": {"sw": "annotate-pointer-loads", "sim": "recon", "hwmode": "recon-atret"},
+	"tpt-nsa-btl": {"sw": "annotate-bound-to-leak", "sim": "tpt-next", "hwmode": "tpt-atret"},
+	"tpt-nsa-ptr": {"sw": "annotate-pointer-loads", "sim": "tpt-next", "hwmode": "tpt-atret"},
+	"tpt-nst-btl": {"sw": "annotate-bound-to-leak-nst", "sim": "tpt-next", "hwmode": "tpt-atret"},
+	"tpt-nst-ptr": {"sw": "annotate-pointer-loads-nst", "sim": "tpt-next", "hwmode": "tpt-atret"},
 
         "recon-tmp0": {"sw": "base", "sim": "recon-orig", "hwmode": "recon-tmp0"},
         "recon-tmp1": {"sw": "base", "sim": "recon-orig", "hwmode": "recon-tmp1"},
