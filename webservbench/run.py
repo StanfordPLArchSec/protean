@@ -10,6 +10,7 @@ import signal
 parser = argparse.ArgumentParser()
 parser.add_argument("--nginx", required=True, help="Command to run nginx")
 parser.add_argument("--siege", required=True, help="Command to run siege")
+parser.add_argument("--port", required=True, type=int, help="Port that nginx and siege will connect on")
 args = parser.parse_args()
 
 # Starting running nginx.
