@@ -34,9 +34,19 @@ while True:
 # Spawn the siege process.
 siege = subprocess.Popen(args.siege.split())
 
+exitno = 0
+
 # Wait for siege to finish.
-siege.wait()
+siege_retval = siege.wait()
+if siege_retval:
+    exitno = 1
+    print("ERROR: siege failed", file=sys.stderr)
     
 # Kill nginx.
 nginx.send_signal(signal.SIGINT)
-nginx.wait()
+nginx_retval = nginx.wait()
+if nginx_retval:
+    exitno = 1
+    print("ERROR: nginx failed", file=sys.stderr)
+
+exit(exitno)
