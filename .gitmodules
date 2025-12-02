@@ -31,3 +31,6 @@
 [submodule "parsec"]
 	path = parsec
 	url = https://github.com/StanfordPLArchSec/protean-parsec.git
+[submodule "test-suite"]
+	path = test-suite
+	url = https://github.com/StanfordPLArchSec/protean-llvm-test-suite.git
