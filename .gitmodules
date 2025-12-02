@@ -28,3 +28,6 @@
 [submodule "llvm"]
 	path = llvm
 	url = https://github.com/StanfordPLArchSec/protean-llvm.git
+[submodule "parsec"]
+	path = parsec
+	url = https://github.com/StanfordPLArchSec/protean-parsec.git
