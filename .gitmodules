@@ -34,3 +34,6 @@
 [submodule "test-suite"]
 	path = test-suite
 	url = https://github.com/StanfordPLArchSec/protean-llvm-test-suite.git
+[submodule "bench"]
+	path = bench
+	url = https://github.com/StanfordPLArchSec/protean-bench.git
