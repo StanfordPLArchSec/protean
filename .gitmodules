@@ -22,3 +22,6 @@
 [submodule "gem5/stt"]
 	path = gem5/stt
 	url = https://github.com/StanfordPLArchSec/protean-gem5.git
+[submodule "amulet"]
+	path = amulet
+	url = https://github.com/StanfordPLArchSec/protean-amulet.git
