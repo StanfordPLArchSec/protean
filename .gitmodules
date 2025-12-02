@@ -25,3 +25,6 @@
 [submodule "amulet"]
 	path = amulet
 	url = https://github.com/StanfordPLArchSec/protean-amulet.git
+[submodule "llvm"]
+	path = llvm
+	url = https://github.com/StanfordPLArchSec/protean-llvm.git
