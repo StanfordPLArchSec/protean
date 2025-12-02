@@ -1,0 +1,24 @@
+[submodule "gem5/base"]
+	path = gem5/base
+	url = https://github.com/StanfordPLArchSec/protean-gem5.git
+[submodule "gem5/base-se"]
+	path = gem5/base-se
+	url = https://github.com/StanfordPLArchSec/protean-gem5.git
+[submodule "gem5/pincpu"]
+	path = gem5/pincpu
+	url = https://github.com/StanfordPLArchSec/protean-gem5.git
+[submodule "gem5/protean"]
+	path = gem5/protean
+	url = https://github.com/StanfordPLArchSec/protean-gem5.git
+[submodule "gem5/protean-se"]
+	path = gem5/protean-se
+	url = https://github.com/StanfordPLArchSec/protean-gem5.git
+[submodule "gem5/spt"]
+	path = gem5/spt
+	url = https://github.com/StanfordPLArchSec/protean-gem5.git
+[submodule "gem5/spt-se"]
+	path = gem5/spt-se
+	url = https://github.com/StanfordPLArchSec/protean-gem5.git
+[submodule "gem5/stt"]
+	path = gem5/stt
+	url = https://github.com/StanfordPLArchSec/protean-gem5.git
