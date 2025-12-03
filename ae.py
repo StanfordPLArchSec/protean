@@ -4,6 +4,7 @@ import argparse
 import os
 from pathlib import Path
 import subprocess
+from tabulate import tabulate
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--type", "-t", required=True, choices=["perf", "sec"])
