@@ -13,17 +13,21 @@ cd "$root"
 
 scons="$(realpath "$root/gem5/scons")"
 
-# Make sure we have ccache installed.
-which ccache >/dev/null
-
-# Don't hash directories, since we want to be able to get ccache hits when compiling
-# different gem5 repos.
-saved_ccache_conf="$(ccache --get-conf=hash_dir)"
-ccache --set-conf=hash_dir=false
-trap "ccache --set-conf=hash_dir=$saved_ccache_conf" EXIT
+# Check if we have ccache.
+if which ccache >/dev/null; then
+    # Don't hash directories, since we want to be able to get ccache hits when compiling
+    # different gem5 repos.
+    saved_ccache_conf="$(ccache --get-conf=hash_dir)"
+    ccache --set-conf=hash_dir=false
+    trap "ccache --set-conf=hash_dir=$saved_ccache_conf" EXIT
+fi
 
 perf_gem5_srcs=(gem5/pincpu gem5/base gem5/base-se gem5/protean gem5/protean-se gem5/stt gem5/spt gem5/spt-se)
 sec_gem5_srcs=(amulet/gem5/base amulet/gem5/protean amulet/gem5/stt amulet/gem5/spt)
+
+if [[ -z "$M5_BUILD_CACHE" ]]; then
+    M5_BUILD_CACHE="$root/m5cache"
+fi
 
 build_gem5() {
     # # Skip building if it already exists.
@@ -32,9 +36,9 @@ build_gem5() {
     # 	return 0
     # fi
 
-    target=$1/build/$2/gem5.$suffix
+    target=build/$2/gem5.$suffix
 
-    if [[ -x $target ]]; then
+    if [[ -x $1/$target ]]; then
 	echo "[*] skipping building $target (exists)"
 	return 0
     fi
@@ -47,26 +51,22 @@ build_gem5() {
 	./ext/pin/configure
     fi
 
-    # Set the build cache (optional).
-    if [[ "$M5_BUILD_CACHE" ]]; then
-	"$scons" setconfig build/$2 M5_BUILD_CACHE=$M5_BUILD_CACHE
-    fi
-
     # Build gem5.
     scons_opts=(
-	# CPPFLAGS="-fmacro-prefix-map=$PWD=/gem5-build -ffile-prefix-map=$PWD=/gem5-build"
 	$verbose
+	M5_BUILD_CACHE=$M5_BUILD_CACHE
     )
-    if ! "$scons" $target "${scons_opts[@]}"; then
-	echo "[!] failed to build $target"
+    
+    if ! "$scons" --keep-going $target "${scons_opts[@]}"; then
+	echo "[!] failed to build $1/$target"
 	exit 1
     fi
 
     # Remove intermediate .o files.
-    find build -name '*.o' -exec rm {} \;
+    # find build -name '*.o' -exec rm {} \;
 
     # Strip binary.
-    strip $target
+    # strip $target
 
     cd "$root"
 }
