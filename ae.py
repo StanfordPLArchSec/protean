@@ -5,10 +5,13 @@ import os
 from pathlib import Path
 import subprocess
 from tabulate import tabulate
+import json
+import re
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--type", "-t", required=True, choices=["perf", "sec"])
 parser.add_argument("--size", "-s", required=True, choices=["small", "medium", "full"])
+parser.add_argument("--dry-run", "-n", action="store_true")
 parser.add_argument("snakemake_command", nargs="*", default=["snakemake"],
                     help="Override snakemake binary/args with this.")
 args = parser.parse_args()
@@ -27,7 +30,7 @@ def do_perf_eval_small(args):
             self.suite_name = suite_name
             self.bench_name = bench_name
         def target(self, conf):
-            return f"{prefix}/{conf}.pcore/results.json"
+            return f"{self.prefix}/{conf}.pcore/results.json"
         def stat(self, conf):
             path = self.target(conf)
             j = json.loads(Path(path).read_text())
@@ -40,26 +43,33 @@ def do_perf_eval_small(args):
                 f"{self.protcc}/protdelay.atret",
             ]
         def normalized_stat(self, conf):
-            unsafe = self.stat("base/unsafe")
+            unsafe = self.stat(self.confs()[0])
             x = self.stat(conf)
             return f"{x / unsafe : .3f}"
 
     class WebserverBench(Bench):
         def target(self, conf):
-            return f"{prefix}/{conf}/stamp.txt"
+            return f"{self.prefix}/{conf}/stamp.txt"
         def stat(self, conf):
             l = []
             with Path(self.target(conf)).with_name("stats.txt").open() as f:
                 for line in f:
-                    if m := re.match(r"simSeconds\s+([0-9.]+)"):
+                    if m := re.match(r"simSeconds\s+([0-9.]+)", line):
                         l.append(float(m.group(1)))
             assert len(l) >= 1
             return l[-1]
+        def confs(self):
+            return [
+                "base/unsafe.se",
+                f"base/{self.baseline}.se.atret",
+                f"{self.protcc}/prottrack.se.atret",
+                f"{self.protcc}/protdelay.se.atret",
+            ]
 
     benches = [
-        SingleBench(f"ctsbench.hacl.poly1305/exp/0/ctsbench", "spt", "cts", "CTS-Crypto", "hacl.poly1305"),
-        SingleBench(f"bearssl/exp/0/ctbench", "spt", "ct", "CT-Crypto", "bearssl"),
-        SingleBench(f"nctbench.openssl.bnexp/exp/0/nctbench", "sptsb", "nct", "UNR-Crypto", "ossl.bnexp"),
+        Bench(f"ctsbench.hacl.poly1305/exp/0/ctsbench", "spt", "cts", "CTS-Crypto", "hacl.poly1305"),
+        Bench(f"bearssl/exp/0/ctbench", "spt", "ct", "CT-Crypto", "bearssl"),
+        Bench(f"nctbench.openssl.bnexp/exp/0/nctbench", "sptsb", "nct", "UNR-Crypto", "ossl.bnexp"),
         WebserverBench(f"webserv/exp/c1r1", "sptsb", "nct.ossl-annot", "Multi-Class Webserver", "nginx.c1r1"),
     ]
 
@@ -73,7 +83,8 @@ def do_perf_eval_small(args):
         targets.extend(map(bench.target, bench.confs()))
 
     # Invoke snakemake to run the experiments.
-    subprocess.run(args.snakemake_command + targets, check=True, shell=True)
+    if not args.dry_run:
+        subprocess.run(args.snakemake_command + targets, check=True, shell=True)
 
     # Grab the results and print a table, similar to Table IV in the paper.
     table = []
@@ -83,13 +94,12 @@ def do_perf_eval_small(args):
         table.append([bench.suite_name, baseline_names[bench.baseline], "Protean (ProtTrack)", "Protean (ProtDelay)"])
         table.append([
             bench.bench_name,
-            normalized_stat(f"base/{bench.baseline}.atret"),
-            normalized_stat(f"{bench.protcc}/prottrack.atret"),
-            normalized_stat(f"{bench.protcc}/protdelay.atret"),
+            *map(bench.normalized_stat, bench.confs()[1:]),
         ])
 
     # Pretty-print the table.
-    tabulate(table, tablefmt="github")
+    print("Table IV")
+    print(tabulate(table))
 
 def do_perf_eval(args):
     os.chdir("bench")
