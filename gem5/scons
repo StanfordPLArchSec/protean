@@ -1,0 +1,5 @@
+#!/bin/bash
+
+set -eu
+
+scons -j`nproc` --ignore-style --linker=lld "$@"
