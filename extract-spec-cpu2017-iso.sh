@@ -1,0 +1,25 @@
+#!/bin/bash
+
+set -eu
+
+usage() {
+    cat <<EOF
+usage: $0 /path/to/cpu2017-1.1.0.iso
+EOF
+}
+
+if [[ $# -ne 1 ]]; then
+    usage >&2
+    exit 1
+fi
+
+root="$(realpath "$(dirname "${BASH_SOURCE[0]}")")"
+iso="$(realpath "$1")"
+
+cd "$root"
+rm -rf cpu2017 cpu2017-install
+mkdir cpu2017-install
+cd cpu2017-install
+bsdtar -xf "$iso"
+chmod -R u+w .
+./install.sh -f -d ../cpu2017
