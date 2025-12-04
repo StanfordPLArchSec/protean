@@ -7,6 +7,7 @@ import subprocess
 from tabulate import tabulate
 import json
 import re
+from contextlib import chdir
 
 parser = argparse.ArgumentParser()
 subparser = parser.add_subparsers(dest="command", required=True)
@@ -14,7 +15,7 @@ subparser_run = subparser.add_parser("run")
 subparser_run.add_argument("--type", "-t", required=True, choices=["perf", "sec"])
 subparser_run.add_argument("--size", "-s", required=True, choices=["small", "medium", "full"])
 subparser_gen = subparser.add_parser("generate")
-subparser_gen.add_argument("name", choices=["table-iv"])
+subparser_gen.add_argument("name", choices=["table-iv", "section-ix-a-2"])
 subparser_gen.add_argument("--output", "-o")
 
 # Some shared flags.
@@ -41,6 +42,10 @@ def ResultPath(path):
 
 def should_regenerate(args):
     return not args.dry_run and not args.expected
+
+def pdflatex(tex):
+    subprocess.run(["pdflatex", "--interaction=batchmode", str(tex)],
+                   check=True)
 
 def do_perf_eval_small(args):
     # Run snakemake.
@@ -149,6 +154,7 @@ def do_run(args):
     else:
         raise ValueError(args.type)
 
+# GENERATE TABLE IV.
 def do_generate_class_specific_table(args):
     # Collect the snakemake targets.
     names = [
@@ -160,28 +166,58 @@ def do_generate_class_specific_table(args):
     ]
     targets = map(lambda x: f"tables/{x}.tex", names)
 
-    os.chdir("bench")
-    if should_regenerate(args):
-        subprocess.run([*args.snakemake_command, "--configfile=checkpoint-config.yaml", *targets],
-                       check=True)
-    content = dict()
-    for name in names:
-        content[name] = ResultPath(f"tables/{name}.tex").read_text()
-    os.chdir("..")
+    with chdir("bench"):
+        if should_regenerate(args):
+            subprocess.run([*args.snakemake_command, "--configfile=checkpoint-config.yaml", *targets],
+                           check=True)
+        content = dict()
+        for name in names:
+            content[name] = ResultPath(f"tables/{name}.tex").read_text()
 
     # Fill in template.
+    tex = Path("table-iv.tex")
     text = Path("templates/table-iv.tex.in").read_text()
     for k, v in content.items():
         text = text.replace(f"@{k}@", v)
-    Path("table-iv.tex").write_text(text)
+    tex.write_text(text)
 
     # Make .pdf.
-    subprocess.run(["pdflatex", "--interaction=batchmode", "table-iv.tex"], check=True)
+    pdflatex(tex)
 
     # Done!
     print("DONE.")
     print("table-iv.pdf contains rendered PDF of table.")
     print("table-iv.tex contains raw .tex for table.")
+
+def do_generate_results_text(args):
+    names = {
+        "section-ix-a-2": "protcc-overhead",
+    }
+
+    assert args.name in names
+
+    smk_name = names[args.name]
+
+    target = f"results/{smk_name}.tex"
+
+    with chdir("bench"):
+        if should_regenerate(args):
+            subprocess.run([*args.snakemake_command, "--configfile=checkpoint-config.yaml", target],
+                           check=True)
+        content = ResultPath(target).read_text()
+
+    # Fill in template.
+    tex = Path(f"{args.name}.tex")
+    text = Path("templates/section-ix-a.tex.in").read_text()
+    text = text.replace("@body@", text)
+    tex.write_text(text)
+
+    # Make PDF.
+    pdflatex(tex)
+
+    print("DONE.")
+    print(f"{args.name}.pdf contains rendered PDF of text.")
+    print(f"{args.name}.tex contains raw .tex.")
     
 def do_generate(args):
     if args.name == "table-iv":
