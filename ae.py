@@ -9,12 +9,23 @@ import json
 import re
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--type", "-t", required=True, choices=["perf", "sec"])
-parser.add_argument("--size", "-s", required=True, choices=["small", "medium", "full"])
-parser.add_argument("--dry-run", "-n", action="store_true")
-parser.add_argument("--expected", action="store_true")
-parser.add_argument("snakemake_command", nargs="*", default=["snakemake", "--cores=all"],
-                    help="Override snakemake binary/args with this.")
+subparser = parser.add_subparsers(dest="command", required=True)
+subparser_run = subparser.add_parser("run")
+subparser_run.add_argument("--type", "-t", required=True, choices=["perf", "sec"])
+subparser_run.add_argument("--size", "-s", required=True, choices=["small", "medium", "full"])
+subparser_gen = subparser.add_parser("generate")
+subparser_gen.add_argument("name", choices=["table-iv"])
+subparser_gen.add_argument("--output", "-o")
+
+# Some shared flags.
+for sub in [subparser_run, subparser_gen]:
+    sub.add_argument("snakemake_command", nargs="*", default=["snakemake", "--cores=all"],
+                     help="Override snakemake binary/args with this.")
+    sub.add_argument("--dry-run", "-n", action="store_true")
+    sub.add_argument("--expected", action="store_true")
+    sub.add_argument("--verbose", "-v", action="store_true")
+
+
 args = parser.parse_args()
 
 # Go to the root directory.
@@ -27,6 +38,9 @@ def ResultPath(path):
         assert path.parts[0] != "reference"
         path = Path("reference") / path
     return path
+
+def should_regenerate(args):
+    return not args.dry_run and not args.expected
 
 def do_perf_eval_small(args):
     # Run snakemake.
@@ -126,13 +140,58 @@ def do_sec_eval(args):
         do_sec_eval_full(args)
     else:
         raise ValueError(args.size)
+
+def do_run(args):
+    if args.type == "perf":
+        do_perf_eval(args)
+    elif args.type == "sec":
+        do_sec_eval(args)
+    else:
+        raise ValueError(args.type)
+
+def do_generate_class_specific_table(args):
+    # Collect the snakemake targets.
+    names = [
+        "wasmbench",
+        "ctsbench",
+        "ctbench",
+        "nctbench",
+        "webserv",
+    ]
+    targets = map(lambda x: f"tables/{x}.tex", names)
+
+    os.chdir("bench")
+    if should_regenerate(args):
+        subprocess.run([*args.snakemake_command, "--configfile=checkpoint-config.yaml", *targets],
+                       check=True)
+    content = dict()
+    for name in names:
+        content[name] = ResultPath(f"tables/{name}.tex").read_text()
+    os.chdir("..")
+
+    # Fill in template.
+    text = Path("templates/table-iv.tex.in").read_text()
+    for k, v in content.items():
+        text = text.replace(f"@{k}@", v)
+    Path("table-iv.tex").write_text(text)
+
+    # Make .pdf.
+    subprocess.run(["pdflatex", "--interaction=batchmode", "table-iv.tex"], check=True)
+
+    # Done!
+    print("DONE.")
+    print("table-iv.pdf contains rendered PDF of table.")
+    print("table-iv.tex contains raw .tex for table.")
     
-
-if args.type == "perf":
-    do_perf_eval(args)
-elif args.type == "sec":
-    do_sec_eval(args)
+def do_generate(args):
+    if args.name == "table-iv":
+        do_generate_class_specific_table(args)
+    else:
+        raise NotImplementedError()
+    
+if args.command == "run":
+    do_run(args)
+elif args.command == "generate":
+    do_generate(args)
 else:
-    raise ValueError(args.type)
-
-
+    raise NotImplementedError(f"subcommand {args.command}")
