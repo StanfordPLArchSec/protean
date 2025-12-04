@@ -15,7 +15,7 @@ subparser_run = subparser.add_parser("run")
 subparser_run.add_argument("--type", "-t", required=True, choices=["perf", "sec"])
 subparser_run.add_argument("--size", "-s", required=True, choices=["small", "medium", "full"])
 subparser_gen = subparser.add_parser("generate")
-subparser_gen.add_argument("name", choices=["table-iv", "section-ix-a"])
+subparser_gen.add_argument("name", choices=["table-iv", "section-ix-a", "figure-5"])
 subparser_gen.add_argument("--output", "-o")
 
 # Some shared flags.
@@ -221,12 +221,31 @@ def do_generate_results_text(args):
     print("DONE.")
     print(f"{args.name}.pdf contains rendered PDF of text.")
     print(f"{args.name}.tex contains raw .tex.")
+
+def do_generate_ablation(args):
+    targets = [
+        "figures/predictor-mispredict-rate.csv",
+        "figures/predictor-runtime.csv",
+    ]
+    with chdir("bench"):
+        if should_regenerate(args):
+            subprocess.run([args.snakemake_command, *targets, "--configfile=checkpoint-config.yaml", *targets],
+                           check=True)
+        subprocess.run(["figures/predictor.py", 
+                        f"--rate-csv={ResultPath(targets[0])}",
+                        f"--runtime-csv={ResultPath(targets[1])}",
+                        "-o", "../figure-5.pdf",
+                        "--no-crop"],
+                       check=True)
+    print("DONE: See figure-5.pdf")
     
 def do_generate(args):
     if args.name == "table-iv":
         do_generate_class_specific_table(args)
     elif args.name == "section-ix-a":
         do_generate_results_text(args)
+    elif args.name == "figure-5":
+        do_generate_ablation(args)
     else:
         raise NotImplementedError()
     
