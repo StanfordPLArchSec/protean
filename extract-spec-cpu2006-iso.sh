@@ -4,7 +4,7 @@ set -eu
 
 usage() {
     cat <<EOF
-usage: $0 /path/to/cpu2017-1.1.0.iso
+usage: $0 /path/to/cpu2006-1.2.iso
 EOF
 }
 
