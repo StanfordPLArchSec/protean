@@ -23,3 +23,5 @@ cd cpu2006-install
 bsdtar -xf "$iso"
 chmod -R u+w .
 ./install.sh -f -d ../cpu2006
+cd ..
+rm -r cpu2006-install

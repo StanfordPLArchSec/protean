@@ -23,3 +23,5 @@ cd cpu2017-install
 bsdtar -xf "$iso"
 chmod -R u+w .
 ./install.sh -f -d ../cpu2017
+cd ..
+rm -r cpu2017-install
