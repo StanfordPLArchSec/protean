@@ -12,3 +12,5 @@ cd "$root/amulet"
 LLVM_DIR="$root/llvm/build" cmake -G Ninja -S . -B build
 ninja -C build
 
+# Build the harness.
+cc -o harness harness.c
