@@ -32,3 +32,13 @@ RUN apt-get update && apt-get install -y \
     texlive-latex-recommended \
     texlive-latex-extra \
     texlive-fonts-recommended
+RUN apt-get update && apt-get install -y libarchive-tools
+
+RUN apt-get update && apt-get install -y python3-pip python-is-python3
+RUN apt-get update && apt-get install -y python3-yaml python3-numpy
+RUN apt-get update && apt-get install -y python3-full
+RUN python3 -m venv /venv
+ENV PATH="/venv/bin:$PATH"
+RUN pip install pyyaml numpy iced_x86 unicorn xxhash toml keystone-engine capstone \
+                snakemake
+RUN pip install tabulate
