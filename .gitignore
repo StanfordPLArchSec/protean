@@ -10,3 +10,11 @@ CMakeFiles/
 tmp/
 *.o
 *.asm
+*.log
+*.aux
+*.pdf
+/m5cache/
+/ccache/
+/section-iv-a.tex
+/table-iv.tex
+/*.iso
