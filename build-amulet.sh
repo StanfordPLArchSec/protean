@@ -14,3 +14,6 @@ ninja -C build
 
 # Build the harness.
 cc -o harness harness.c
+
+# Get the base.json instruction spec.
+./src/x86/isa_spec/get_spec.py
