@@ -1,0 +1,38 @@
+\documentclass{article}
+
+% ---- packages your table uses ----
+\usepackage{multirow}
+\usepackage{makecell}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{xhfill} % for \Xhline if needed
+\usepackage{graphicx}
+
+\renewcommand{\thetable}{\Roman{table}}
+\setcounter{table}{3}
+
+% If \ourdefense, \singleclass, \multiclass are undefined:
+\newcommand{\ourdefense}{\textsc{Protean}}
+\newcommand{\singleclass}{single-class}
+\newcommand{\multiclass}{multi-class}
+
+\begin{document}
+
+\begin{table}[t]
+  \centering
+    \begin{tabular}{!{\vrule width 1pt}l|c|c|c!{\vrule width 1pt}}\Xhline{1pt}
+      @wasmbench@
+      @ctsbench@
+    \end{tabular}\begin{tabular}{|l|c|c|c!{\vrule width 1pt}}\Xhline{1pt}
+      @ctbench@
+      @nctbench@
+      @webserv@
+    \end{tabular}
+    \caption{\small Normalized runtime of \ourdefense{} on representative \singleclass{} and \multiclass{} workloads, 
+      simulated on a P-core.}
+    \label{tab:perf:specific}
+\end{table}
+
+\end{document}
+
+

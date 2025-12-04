@@ -11,8 +11,6 @@ suffix=opt
 root="$(realpath "$(dirname "${BASH_SOURCE[0]}")")"
 cd "$root"
 
-scons="$(realpath "$root/gem5/scons")"
-
 # Check if we have ccache.
 if which ccache >/dev/null; then
     # Don't hash directories, since we want to be able to get ccache hits when compiling
@@ -39,7 +37,7 @@ build_gem5() {
     target=build/$2/gem5.$suffix
 
     if [[ -x $1/$target ]]; then
-	echo "[*] skipping building $target (exists)"
+	echo "[*] skipping building $1/$target (exists)"
 	return 0
     fi
 
@@ -57,7 +55,7 @@ build_gem5() {
 	M5_BUILD_CACHE=$M5_BUILD_CACHE
     )
     
-    if ! "$scons" --keep-going $target "${scons_opts[@]}"; then
+    if ! scons --ignore-style --linker=lld -j$(nproc) --keep-going $target "${scons_opts[@]}"; then
 	echo "[!] failed to build $1/$target"
 	exit 1
     fi
