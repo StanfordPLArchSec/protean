@@ -1,0 +1,37 @@
+\documentclass{article}
+
+\usepackage{multirow}
+
+\newcommand{\ourdefense}{\textsc{Protean}}
+
+\begin{document}
+
+\begin{table}[t]
+    \centering
+    \begin{tabular}{|l|l|l|l|l|}\hline
+        \multirow{3}{*}{\bf Contract} & \multirow{3}{*}{\bf Instrumentation} & \multicolumn{3}{|c|}{\bf Violations (out of 200)} \\\cline{3-5}
+        && \multirow{2}{*}{Unsafe} & \multicolumn{2}{|c|}{\ourdefense{}} \\\cline{4-5}
+        &&& \ourtrack{} & \ourdelay{} \\\hline
+        % \ourcontract{} & assembly & \prot{} insertion & 23 (0) & 0 (0) & 0 (0) \\\hline
+        % \archcontract{} & assembly & none & 80 (0)  & 0 (0) & 0 (0) \\\hline
+        % \ctcontract{} & llvm-ir & \ctcc{} & 98 (0) & 2 (16) & 0 (8) \\\hline
+        %%%
+        \ourcontract{} & \ourcc{}-RAND & \textbf{190} (0) & \textbf{0} (0) & \textbf{0} (0) \\\hline
+        \archseq{} & \sboxcc{} & \textbf{161} (39) & \textbf{0} (5) & \textbf{0} (2) \\\hline
+        \ctsseq{} & \ctscc{} & \textbf{200} (0) & \textbf{0} (0) & \textbf{0} (1) \\\hline
+        \ctseq{} & \ctcc{} & \textbf{200} (0) & \textbf{0} (10) & \textbf{0} (15) \\\hline
+        \ctseq{} & \nctcc{} & \textbf{199} (1) & \textbf{0} (17) & \textbf{0} (20) \\\hline
+    \end{tabular}%\\\begin{tabular}{|l|l|l|l|l|l|}\hline
+    %     \multirow{3}{*}{\bf Contract} & \multirow{3}{*}{\bf Instrumentation} & \multicolumn{4}{|c|}{\bf Violations (out of 200)} \\\cline{3-6}
+    %     && \multicolumn{2}{|c|}{STT} & \multicolumn{2}{|c|}{SPT} \\\cline{3-6}
+    %     && orig. & fixed & orig. & fixed \\\hline
+    %\end{tabular}
+    \caption{\small\ouramulet{}-detected contract violations for 
+    \new{\ourcc{}-RAND/-ARCH/-CTS/-CT/-UNR} test binaries on unsafe, ProtTrack, and ProtDelay hardware.
+    False positives (\S\ref{sec:amulet:false-positives}) are in parentheses.
+    \nmosier{Consider marking the ``unsafe'' true-positives since we haven't verified all of them.}}
+    \label{tab:amulet}
+    \label{fig:amulet}
+\end{table}
+
+\end{document}

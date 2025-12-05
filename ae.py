@@ -303,7 +303,7 @@ def do_generate_protean_amulet(args):
         # Read the results, per defense.
         results = {}
         for observer, generator in obs_gen_pairs:
-            l = results[observer] = []
+            l = results[f"{observer}-{generator}"] = []
             for defense in defenses:
                 l.append({
                     "true-positive": 0,
@@ -317,13 +317,13 @@ def do_generate_protean_amulet(args):
 
     # Substitute into the template.
     text = Path("templates/table-i.tex.in").read_text()
-    for observer, results in results.items():
+    for key, results in results.items():
         def format_result(result):
             tps = result["true-positive"]
             fps = result["false-positive"]
             return r"\textbf{" + str(tps) + r"} (" + str(fps) + ")"
         formatted_results = " & ".join(map(format_result, results))
-        text = text.replace(f"@{observer}@", formatted_results)
+        text = text.replace(f"@{key}@", formatted_results)
     Path("table-i.tex").write_text(text)
 
     # Generate the PDF.
