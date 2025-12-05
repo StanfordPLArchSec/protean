@@ -42,3 +42,10 @@ ENV PATH="/venv/bin:$PATH"
 RUN pip install pyyaml numpy iced_x86 unicorn xxhash toml keystone-engine capstone \
                 snakemake
 RUN pip install tabulate
+RUN pip install pandas
+RUN pip install matplotlib
+RUN pip install scipy seaborn
+RUN apt-get update && \
+    echo "ttf-mscorefonts-installer msttcorefonts/accepted-mscorefonts-eula select true" | debconf-set-selections && \
+    apt-get install -y ttf-mscorefonts-installer fontconfig && \
+    fc-cache -fv
