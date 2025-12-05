@@ -8,6 +8,8 @@ from tabulate import tabulate
 import json
 import re
 from contextlib import chdir
+import shlex
+import sys
 
 parser = argparse.ArgumentParser()
 subparser = parser.add_subparsers(dest="command", required=True)
@@ -15,7 +17,7 @@ subparser_run = subparser.add_parser("run")
 subparser_run.add_argument("--type", "-t", required=True, choices=["perf", "sec"])
 subparser_run.add_argument("--size", "-s", required=True, choices=["small", "medium", "full"])
 subparser_gen = subparser.add_parser("generate")
-subparser_gen.add_argument("name", choices=["table-iv", "section-ix-a", "figure-5", "figure-1"])
+subparser_gen.add_argument("name", choices=["table-iv", "section-ix-a", "figure-5", "figure-1", "table-i"])
 subparser_gen.add_argument("--output", "-o")
 
 # Some shared flags.
@@ -27,7 +29,7 @@ for sub in [subparser_run, subparser_gen]:
     sub.add_argument("--verbose", "-v", action="store_true")
 
 
-args = parser.parse_args()
+g_args = args = parser.parse_args()
 
 # Go to the root directory.
 root_dir = Path(__file__).resolve().parent
@@ -40,6 +42,12 @@ def ResultPath(path):
         path = Path("reference") / path
     return path
 
+def run(cmd, *args, **kwargs):
+    if g_args.verbose:
+        cmd_str = shlex.join(cmd)
+        print(f"INFO: running subprocess: {cmd_str}", file=sys.stderr)
+    subprocess.run(cmd, *args, **kwargs)
+
 def should_regenerate(args):
     return not args.dry_run and not args.expected
 
@@ -47,10 +55,10 @@ def pdflatex(tex):
     pdflatex_args = []
     if not args.verbose:
         pdflatex_args.append("--interaction=batchmode")
-    subprocess.run(["pdflatex",
-                    *pdflatex_args,
-                    str(tex)],
-                   check=True)
+    run(["pdflatex",
+         *pdflatex_args,
+         str(tex)],
+        check=True)
 
 def do_perf_eval_small(args):
     # Run snakemake.
@@ -116,7 +124,7 @@ def do_perf_eval_small(args):
 
     # Invoke snakemake to run the experiments.
     if not args.dry_run and not args.expected:
-        subprocess.run(args.snakemake_command + targets, check=True, shell=True)
+        run(args.snakemake_command + targets, check=True)
 
     # Grab the results and print a table, similar to Table IV in the paper.
     table = []
@@ -173,7 +181,7 @@ def do_generate_class_specific_table(args):
 
     with chdir("bench"):
         if should_regenerate(args):
-            subprocess.run([*args.snakemake_command, "--configfile=checkpoint-config.yaml", *targets],
+            run([*args.snakemake_command, "--configfile=checkpoint-config.yaml", *targets],
                            check=True)
         content = dict()
         for name in names:
@@ -207,7 +215,7 @@ def do_generate_results_text(args):
 
     with chdir("bench"):
         if should_regenerate(args):
-            subprocess.run([*args.snakemake_command, "--configfile=checkpoint-config.yaml", *targets],
+            run([*args.snakemake_command, "--configfile=checkpoint-config.yaml", *targets],
                            check=True)
         content = dict()
         for k, target in zip(names, targets):
@@ -234,9 +242,9 @@ def do_generate_ablation(args):
     ]
     with chdir("bench"):
         if should_regenerate(args):
-            subprocess.run([*args.snakemake_command, *targets, "--configfile=checkpoint-config.yaml"],
+            run([*args.snakemake_command, *targets, "--configfile=checkpoint-config.yaml"],
                            check=True)
-        subprocess.run(["figures/predictor.py", 
+        run(["figures/predictor.py", 
                         f"--rate-csv={ResultPath(targets[0])}",
                         f"--runtime-csv={ResultPath(targets[1])}",
                         "-o", "../figure-5.pdf",
@@ -248,7 +256,7 @@ def do_generate_survey(args):
     target = "tables/survey.tex"
     with chdir("bench"):
         if should_regenerate(args):
-            subprocess.run([*args.snakemake_command, target, "--configfile=checkpoint-config.yaml"],
+            run([*args.snakemake_command, target, "--configfile=checkpoint-config.yaml"],
                            check=True)
         # Read survey.tex.
         content = ResultPath(target).read_text()
@@ -260,6 +268,69 @@ def do_generate_survey(args):
     pdflatex(tex)
 
     print("DONE: See figure-1.pdf")
+
+def do_generate_protean_amulet(args):
+    # First, run all the experiments.
+    obs_gen_pairs = [
+        ("prot", "llvm.prot"),
+        ("arch", "llvm.arch"),
+        ("cts", "llvm.cts"),
+        ("ct", "llvm.ct"),
+        ("ct", "llvm.unr"),
+    ]
+    defenses = ["none", "prottrack", "protdelay"]
+    adversaries = ["commit", "cache"]
+    fuzz_targets = []
+    triage_targets = []
+    for observer, generator in obs_gen_pairs:
+        for defense in defenses:
+            for adversary in adversaries:
+                d = f"{defense}-{observer}-{generator}-{adversary}"
+                fuzz_targets.append(os.path.join(d, "all"))
+                triage_targets.append(os.path.join(d, "triage"))
+
+
+    with chdir("amulet"):
+        if should_regenerate(args):
+            # Fuzz step.
+            run([*args.snakemake_command, *fuzz_targets],
+                           check=True)
+
+            # Triage step.
+            run([*args.snakemake_command, *triage_targets, "-j1"],
+                           check=True)
+
+        # Read the results, per defense.
+        results = {}
+        for observer, generator in obs_gen_pairs:
+            l = results[observer] = []
+            for defense in defenses:
+                l.append({
+                    "true-positive": 0,
+                    "false-positive": 0,
+                })
+                for adversary in adversaries:
+                    p = ResultPath(f"{defense}-{observer}-{generator}-{adversary}/triage")
+                    j = json.loads(p.read_text())
+                    for result in j.values():
+                        l[-1][result["result"]] += 1
+
+    # Substitute into the template.
+    text = Path("templates/table-i.tex.in").read_text()
+    for observer, results in results.items():
+        def format_result(result):
+            tps = result["true-positive"]
+            fps = result["false-positive"]
+            return r"\textbf{" + str(tps) + r"} (" + str(fps) + ")"
+        formatted_results = " & ".join(map(format_result, results))
+        text = text.replace(f"@{observer}@", formatted_results)
+    Path("table-i.tex").write_text(text)
+
+    # Generate the PDF.
+    pdflatex("table-i.tex")
+
+    print("DONE: See table-i.pdf")
+    
     
 def do_generate(args):
     if args.name == "table-iv":
@@ -270,6 +341,8 @@ def do_generate(args):
         do_generate_ablation(args)
     elif args.name == "figure-1":
         do_generate_survey(args)
+    elif args.name == "table-i":
+        do_generate_protean_amulet(args)
     else:
         raise NotImplementedError()
     
