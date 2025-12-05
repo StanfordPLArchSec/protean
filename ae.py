@@ -10,6 +10,7 @@ import re
 from contextlib import chdir
 import shlex
 import sys
+from collections import defaultdict
 
 parser = argparse.ArgumentParser()
 subparser = parser.add_subparsers(dest="command", required=True)
@@ -27,6 +28,8 @@ for sub in [subparser_run, subparser_gen]:
     sub.add_argument("--dry-run", "-n", action="store_true")
     sub.add_argument("--expected", action="store_true")
     sub.add_argument("--verbose", "-v", action="store_true")
+    sub.add_argument("--force", "-f", action="store_true",
+                     help="Overwrite existing results")
 
 
 g_args = args = parser.parse_args()
@@ -140,6 +143,78 @@ def do_perf_eval_small(args):
     # Pretty-print the table.
     print(tabulate(table))
 
+def do_sec_eval_small(args):
+    # Just run the UNPROT tests with scaled down parameters.
+    # Number of jobs per tuple: 5
+    # Number of programs: 50
+    # Number of inputs per program: 50/3 (?)
+    dirs = []
+    fuzz_targets = []
+    triage_targets = []
+    for defense in ["none", "prottrack", "protdelay"]:
+        for adversary in ["cache", "commit"]:
+            d = f"{defense}-prot-llvm.prot-{adversary}"
+            dirs.append(d)
+            fuzz_targets.append(d + "/all")
+            triage_targets.append(d + "/triage")
+
+    # Run amulet via snakemake.
+    with chdir("amulet"):
+        if should_regenerate(args):
+            # Make sure that the output directory is empty.
+            for d in dirs:
+                d = Path(d)
+                if d.exists():
+                    if args.force:
+                        print(f"WARN: overwriting results directory {d}", file=sys.stderr)
+                        d.rmdir()
+                    else:
+                        print(f"ERROR: refusing to overwrite existing results directory {d}", file=sys.stderr)
+                        exit(1)
+            
+            # Fuzz.
+            run([*args.snakemake_command, *fuzz_targets,
+                 "--config",
+                 "instances=5",
+                 "programs=50",
+                 "inputs_cache=50",
+                 "inputs_commit=3"],
+                check=True)
+
+            # Triage.
+            run([*args.snakemake_command, *triage_targets],
+                check=True)
+
+        # Read the results of triaging.
+        l = []
+        for defense in ["none", "prottrack", "protdelay"]:
+            l.append({
+                "true-positive": 0,
+                "false-positive": 0,
+            })
+            for adversary in ["commit", "cache"]:
+                p = ResultPath(f"{defense}-prot-llvm.prot-{adversary}/triage")
+                j = json.loads(p.read_text())
+                for result in j.values():
+                    l[-1][result["result"]] += 1
+
+    # TODO: Shared code with elsewhere.
+    # Factor out common code.
+    subs = defaultdict(lambda: "- & - & -")
+    def format_result(result):
+        tps = result["true-positive"]
+        fps = result["false-positive"]
+        return r"\textbf{" + str(tps) + r"} (" + str(fps) + ")"
+    subs["prot-llvm.prot"] = " & ".join(map(format_result, l))
+
+    do_format_table_i(subs)
+
+    # Generate the PDF.
+    pdflatex("table-i.tex")
+
+    print("DONE: See table-i.pdf")
+            
+    
 def do_perf_eval(args):
     os.chdir("bench")
     if args.size == "small":
@@ -269,6 +344,19 @@ def do_generate_survey(args):
 
     print("DONE: See figure-1.pdf")
 
+def do_format_text(text, subs):
+    while m := re.search(r"@(.*?)@", text):
+        key = m.group(1)
+        value = subs[key]
+        text = text.replace(m.group(0), value)
+    assert "@" not in text
+    return text
+    
+def do_format_table_i(subs):
+    text = Path("templates/table-i.tex.in").read_text()
+    text = do_format_text(text, subs)
+    Path("table-i.tex").write_text(text)
+    
 def do_generate_protean_amulet(args):
     # First, run all the experiments.
     obs_gen_pairs = [
@@ -315,16 +403,16 @@ def do_generate_protean_amulet(args):
                     for result in j.values():
                         l[-1][result["result"]] += 1
 
-    # Substitute into the template.
-    text = Path("templates/table-i.tex.in").read_text()
-    for key, results in results.items():
+    # Substitute into the template.    
+    subs = defaultdict(lambda: "- & - & -")
+    for key, result in results.items():
         def format_result(result):
             tps = result["true-positive"]
             fps = result["false-positive"]
             return r"\textbf{" + str(tps) + r"} (" + str(fps) + ")"
-        formatted_results = " & ".join(map(format_result, results))
-        text = text.replace(f"@{key}@", formatted_results)
-    Path("table-i.tex").write_text(text)
+        subs[key] = " & ".join(map(format_result, result))
+
+    do_format_table_i(subs)
 
     # Generate the PDF.
     pdflatex("table-i.tex")
