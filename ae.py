@@ -15,7 +15,7 @@ subparser_run = subparser.add_parser("run")
 subparser_run.add_argument("--type", "-t", required=True, choices=["perf", "sec"])
 subparser_run.add_argument("--size", "-s", required=True, choices=["small", "medium", "full"])
 subparser_gen = subparser.add_parser("generate")
-subparser_gen.add_argument("name", choices=["table-iv", "section-ix-a", "figure-5"])
+subparser_gen.add_argument("name", choices=["table-iv", "section-ix-a", "figure-5", "figure-1"])
 subparser_gen.add_argument("--output", "-o")
 
 # Some shared flags.
@@ -44,7 +44,12 @@ def should_regenerate(args):
     return not args.dry_run and not args.expected
 
 def pdflatex(tex):
-    subprocess.run(["pdflatex", "--interaction=batchmode", str(tex)],
+    pdflatex_args = []
+    if not args.verbose:
+        pdflatex_args.append("--interaction=batchmode")
+    subprocess.run(["pdflatex",
+                    *pdflatex_args,
+                    str(tex)],
                    check=True)
 
 def do_perf_eval_small(args):
@@ -229,7 +234,7 @@ def do_generate_ablation(args):
     ]
     with chdir("bench"):
         if should_regenerate(args):
-            subprocess.run([args.snakemake_command, *targets, "--configfile=checkpoint-config.yaml", *targets],
+            subprocess.run([*args.snakemake_command, *targets, "--configfile=checkpoint-config.yaml"],
                            check=True)
         subprocess.run(["figures/predictor.py", 
                         f"--rate-csv={ResultPath(targets[0])}",
@@ -238,6 +243,23 @@ def do_generate_ablation(args):
                         "--no-crop"],
                        check=True)
     print("DONE: See figure-5.pdf")
+
+def do_generate_survey(args):
+    target = "tables/survey.tex"
+    with chdir("bench"):
+        if should_regenerate(args):
+            subprocess.run([*args.snakemake_command, target, "--configfile=checkpoint-config.yaml"],
+                           check=True)
+        # Read survey.tex.
+        content = ResultPath(target).read_text()
+
+    tex = Path("figure-1.tex")
+    text = Path("templates/figure-1.tex.in").read_text()
+    text = text.replace("@body@", content)
+    tex.write_text(text)
+    pdflatex(tex)
+
+    print("DONE: See figure-1.pdf")
     
 def do_generate(args):
     if args.name == "table-iv":
@@ -246,6 +268,8 @@ def do_generate(args):
         do_generate_results_text(args)
     elif args.name == "figure-5":
         do_generate_ablation(args)
+    elif args.name == "figure-1":
+        do_generate_survey(args)
     else:
         raise NotImplementedError()
     

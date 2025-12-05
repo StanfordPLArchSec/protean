@@ -1,0 +1,45 @@
+\documentclass{article}
+
+% ---- packages your table uses ----
+\usepackage{multirow}
+\usepackage{makecell}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{xhfill} % for \Xhline if needed
+\usepackage{graphicx}
+\usepackage{pifont}
+\usepackage{cleveref}
+
+\newcommand{\ourdefense}{\textsc{Protean}}
+\newcommand{\constanttime}{constant-time}
+
+\newcommand{\cmark}{\ding{51}}
+\newcommand{\xmark}{\textcolor{gray}{\ding{55}}}
+\newcommand{\qmark}{?}
+\newcommand{\Protset}{ProtSet}
+\newcommand{\SBOX}{ARCH}
+\newcommand{\CTS}{CTS}
+\newcommand{\CT}{CT}
+\newcommand{\NCT}{UNR}
+\newcommand{\ourtrack}{ProtTrack}
+\newcommand{\ourdelay}{ProtDelay}
+
+
+\begin{document}
+
+\begin{table}[t]
+  @body@
+
+  \caption{\small%
+    \ourdefense{} % is the first comprehensive, \programmertransparent{} Spectre defense to 
+    targets (\S\ref{sec:motivation:targets}) all
+    \textit{vulnerable code classes}
+    (\S\ref{sec:motivation:classes}): non-secret-accessing (ARCH) $\subset$ static \constanttime{} (CTS) $\subset$ \constanttime{} (CT)    $\subset$ unrestricted (UNR).
+    It secures them more performantly
+    than class-spe\-cif\-ic defenses~\cite{nda, specshield, jiyong:stt, choudhary:spt} that target (\cmark{}/xx.x\%), 
+    secure but do not target \textcolor{gray}{(\cmark{}/xx.x\%)}, or 
+    do not secure (\xmark{}) them.
+    Percentages are runtime overheads for comprehensively securing vulnerable programs with the most performant available defense, copied from \Cref{tab:perf:specific}.}
+\end{table}
+
+\end{document}

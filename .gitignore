@@ -15,6 +15,8 @@ tmp/
 *.pdf
 /m5cache/
 /ccache/
-/section-iv-a.tex
+/section-ix-a.tex
 /table-iv.tex
 /*.iso
+/figure-1.tex
+\#*\#

@@ -5,13 +5,12 @@
 \usepackage{makecell}
 \usepackage{booktabs}
 \usepackage{array}
-\usepackage{xhfill} % for \Xhline if needed
+\usepackage{xhfill}
 \usepackage{graphicx}
 
 \renewcommand{\thetable}{\Roman{table}}
 \setcounter{table}{3}
 
-% If \ourdefense, \singleclass, \multiclass are undefined:
 \newcommand{\ourdefense}{\textsc{Protean}}
 \newcommand{\singleclass}{single-class}
 \newcommand{\multiclass}{multi-class}
