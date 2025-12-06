@@ -95,7 +95,7 @@ for bench in ["apps/blackscholes",
               "kernels/canneal",
               "kernels/dedup"]:
     parsec_benches.append(Bench(
-        name = bench.split()[-1],
+        name = bench.split("/")[-1] + ".p",
         target = bench,
     ))
 suites.append(PARSECSuite(
@@ -122,6 +122,12 @@ parser.add_argument(
     help="Individual benchmarks to run and include in the figure.",
 )
 
+parser.add_argument(
+    "--all", "-a",
+    action="store_true",
+    help="Run all benchmarks.",
+)
+
 add_common_arguments(parser)
 
 args = parser.parse_args()
@@ -132,7 +138,8 @@ bench_list = []
 for suite in suites:
     for bench in suite.benches:
         if suite.name in args.suite or \
-           bench.name in args.bench:
+           bench.name in args.bench or \
+           args.all:
             bench_list.append(bench)
 if len(bench_list) == 0:
     print("WARN: benchmark list is empty! Nothing to run.",
@@ -174,9 +181,20 @@ import matplotlib.patheffects as pe
 import matplotlib as mpl
 
 mpl.rcParams["text.usetex"] = True
+mpl.rcParams["font.family"] = "serif"
 mpl.rcParams["text.latex.preamble"] = r"""
 \usepackage{ulem}
+\usepackage{newtxtext}
+\usepackage{newtxmath}
 """
+mpl.rcParams.update({
+    "font.size": 8,
+    "axes.labelsize": 8,
+    "axes.titlesize": 8,
+    "xtick.labelsize": 8,
+    "ytick.labelsize": 8,
+    "legend.fontsize": 8,
+})
 
 all_benches = [bench for suite in suites for bench in suite.benches]
 n = len(all_benches)
@@ -195,7 +213,7 @@ stt, prot_arch, spt, prot_ct = table
 x = np.arange(n)
 width = 0.18
 
-fig, ax = plt.subplots(figsize=(10, 4))
+fig, ax = plt.subplots(figsize=(7.5, 2))
 
 # Grouped bars.
 def make_style(color, hatch):
@@ -210,10 +228,12 @@ spt_style = make_style((218, 120, 66), "---")
 prot_ct_style = make_style((79, 173, 91), "---")
     
 b1 = ax.bar(x - 1.5 * width, stt, width, label="STT", **stt_style)
-b2 = ax.bar(x - 0.5 * width, prot_arch, width, label="Protean-Track-ARCH",
+b2 = ax.bar(x - 0.5 * width, prot_arch, width,
+            label=r"\textbf{Protean-Track-ARCH}",
             **prot_arch_style)
 b3 = ax.bar(x + 0.5 * width, spt, width, label="SPT", **spt_style)
-b4 = ax.bar(x + 1.5 * width, prot_ct, width, label="Protean-Track-CT",
+b4 = ax.bar(x + 1.5 * width, prot_ct, width,
+            label=r"\textbf{Protean-Track-CT}",
             **prot_ct_style)
 
 # Y-axis: 1 to 2 in 0.2 increments (matches the tick labels in the PDF)
@@ -241,7 +261,14 @@ ax.set_xticklabels(
 # ax.set_xlabel("Benchmark")  # Only if the original has it; otherwise drop
 
 # Legend: 4 entries, usually above or below the plot in a single row
-ax.legend(loc="upper center", bbox_to_anchor=(0.5, 1.25), ncol=4, frameon=False)
+ax.legend(
+    loc="upper right",
+    bbox_to_anchor=(0.98, 0.98),
+    ncol=4,
+    frameon=True,
+    framealpha=0.6,
+    edgecolor="black",
+)
 
 # Tight layout so labels don't get cut off
 fig.tight_layout()
