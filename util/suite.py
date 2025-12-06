@@ -1,6 +1,9 @@
 import json
 import re
-from util.util import ResultPath
+from util.util import (
+    json_cycles,
+    stats_seconds,
+)
 
 class SuiteBase:
     def __init__(self, name, benches, baseline, protcc):
@@ -23,21 +26,14 @@ class CheckpointSuite(SuiteBase):
         )
 
     def perf(self, target):
-        j = json.loads(ResultPath(target).read_text())
-        return j["stats"]["cycles"]
+        return json_cycles(target)
 
 class Suite(CheckpointSuite):
     pass
     
 class EndToEndSuite(SuiteBase):
     def perf(self, target):
-        l = []
-        with ResultPath(target).with_name("stats.txt").open() as f:
-            for line in f:
-                if m := re.match(r"simSeconds\s+([0-9.]+)", line):
-                    l.append(float(m.group(1)))
-        assert len(l) >= 1
-        return l[-1]
+        return stats_seconds(target)
 
 class WebserverSuite(EndToEndSuite):
     def _target(self, bench, bin, hwconf):

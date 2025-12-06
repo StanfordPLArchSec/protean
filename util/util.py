@@ -2,6 +2,7 @@ from pathlib import Path
 import re
 import subprocess
 import math
+import json
 
 g_args = None
 
@@ -80,3 +81,16 @@ def format_and_render_tex(name, subs):
 
 def geomean(l):
     return math.prod(l) ** (1 / len(l))
+
+def json_cycles(path):
+    j = json.loads(ResultPath(path).read_text())
+    return j["stats"]["cycles"]
+
+def stats_seconds(path):
+    l = []
+    with ResultPath(path).with_name("stats.txt").open() as f:
+        for line in f:
+            if m := re.match(r"simSeconds\s+([0-9.]+)", line):
+                l.append(float(m.group(1)))
+    assert len(l) >= 1
+    return l[-1]    
