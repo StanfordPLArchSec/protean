@@ -3,7 +3,7 @@ build/
 .*
 cpu2017*.iso
 __pycache__/
-cpu2017/
+/cpu2017/
 CMakeCache.txt
 *.out
 CMakeFiles/
@@ -20,3 +20,6 @@ tmp/
 /*.iso
 /figure-1.tex
 \#*\#
+/cpu2006/
+/cpu2006-install/
+/cpu2017-install/

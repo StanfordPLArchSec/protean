@@ -14,6 +14,11 @@ from collections import defaultdict
 
 parser = argparse.ArgumentParser()
 subparser = parser.add_subparsers(dest="command", required=True)
+
+def comma_list(s):
+    return s.split(",")
+
+# TODO: Deprecated. Remove these.
 subparser_run = subparser.add_parser("run")
 subparser_run.add_argument("--type", "-t", required=True, choices=["perf", "sec"])
 subparser_run.add_argument("--size", "-s", required=True, choices=["small", "medium", "full"])
@@ -21,8 +26,46 @@ subparser_gen = subparser.add_parser("generate")
 subparser_gen.add_argument("name", choices=["table-iv", "section-ix-a", "figure-5", "figure-1", "table-i"])
 subparser_gen.add_argument("--output", "-o")
 
+# The subcommand for generating Table I of our security evaluation.
+parser_sec = subparser.add_parser("sec")
+subparser_sec = parser_sec.add_subparsers(
+    dest="result", required=True,
+    help="The security evaluation result to run/generate.")
+parser_sec_table_i = subparser_sec.add_parser("table-i")
+parser_sec_table_i.add_argument(
+    "--size", "-s",
+    choices=["small", "full"],
+    help=(
+        "The size of the run:\n"
+        "  small: Scaled down number of instances/programs/inputs.\n"
+        "  full:  Use number of instances/programs/inputs described in the paper.\n"),
+)
+parser_sec_table_i_instrumentation_choices = ["rand", "arch", "cts", "ct", "unr"]
+parser_sec_table_i.add_argument(
+    "--instrumentation", "-i",
+    choices=parser_sec_table_i_instrumentation_choices,
+    type=comma_list,
+    action="extend",
+    help=(
+        "Selects which row(s) of Table I to generate, selected based on instrumentation used.\n"
+        "  rand:   Test against UNPROT-SEQ using ProtCC-RAND instrumentation (i.e., randomly insert PROT prefixes).\n"
+        "  arch:   Test against ARCH-SEQ using ProtCC-ARCH instrumentation (i.e., do not insert PROT prefxies).\n"
+        "  cts:    Test against CTS-SEQ using ProtCC-CTS instrumentation.\n"
+        "  ct:     Test against CT-SEQ using ProtCC-CT instrumentation.\n"
+        "  unr:    Test against CT-SEQ using ProtCC-UNR instrumentation.\n"),
+)
+
+parser_sec_table_i.add_argument(
+    "--all", "-a",
+    action="store_true",
+    help=(
+        "Generate the full paper version of Table I.\n"
+        "  WARNING: Takes a long time!\n"
+    ),
+)
+
 # Some shared flags.
-for sub in [subparser_run, subparser_gen]:
+for sub in [subparser_run, subparser_gen, parser_sec_table_i]:
     sub.add_argument("snakemake_command", nargs="*", default=["snakemake", "--cores=all"],
                      help="Override snakemake binary/args with this.")
     sub.add_argument("--dry-run", "-n", action="store_true")
@@ -419,6 +462,99 @@ def do_generate_protean_amulet(args):
 
     print("DONE: See table-i.pdf")
     
+
+def do_generate_table_i(args):
+    # Fill in default arguments.
+    if args.all:
+        if args.size is None:
+            args.size = "full"
+        if args.instrumentation is None:
+            args.instrumentation = parser_sec_table_i_instrumentation_choices
+    else:
+        if args.size is None:
+            args.size = "small"
+        if args.instrumentation is None:
+            args.instrumentation = ["rand"]
+    assert args.size is not None and args.instrumentation is not None
+    
+    defenses = ["none", "prottrack", "protdelay"]
+    adversaries = ["cache", "commit"]
+
+    # Enumerate all directories.
+    dirs = []
+    obs_gen_pairs = []
+    for instrumentation in args.instrumentation:
+        # Get observer and generator.
+        if instrumentation == "rand":
+            observer = generator = "prot"
+        elif instrumentation == "unr":
+            generator = "unr"
+            observer = "ct"
+        else:
+            generator = observer = instrumentation
+
+        obs_gen_pairs.append((observer, f"llvm.{generator}"))
+
+        # Enumerate directories.
+        for defense in defenses:
+            for adversary in adversaries:
+                dirs.append(f"{defense}-{observer}-llvm.{generator}-{adversary}")
+            
+
+    # Compute the fuzz and triage targets.
+    fuzz_targets = [f"{dir}/all" for dir in dirs]
+    triage_targets = [f"{dir}/triage" for dir in dirs]
+
+    # Compute any extra snakemake args.
+    extra_snakemake_args = []
+    if args.size == "small":
+        extra_snakemake_args = [
+            "--config", "instances=5", "programs=50",
+            "inputs_cache=50", "inputs_commit=3",
+        ]
+
+    with chdir("amulet"):
+        if should_regenerate(args):
+            # Make sure that the output directories are empty.
+            for d in dirs:
+                d = Path(d)
+                if d.exists():
+                    if args.force:
+                        print(f"WARN: overwriting results directory {d}", file=sys.stderr)
+                        d.rmdir()
+                    else:
+                        print(f"ERROR: refusing to overwrite existing results directory {d}", file=sys.stderr)
+                        exit(1)
+
+            # Run the fuzzing campaign.
+            run(args.snakemake_command + fuzz_targets + extra_snakemake_args,
+                check=True)
+
+            # Triage.
+            run(args.snakemake_command + triage_targets, check=True)
+            
+        # Read in the results.
+        subs = defaultdict(lambda: "- & - & -")
+        for observer, generator in obs_gen_pairs:
+            l = []
+            for defense in defenses:
+                order = ["true-positive", "false-positive"]
+                x = [0, 0]
+                for adversary in adversaries:
+                    p = ResultPath(f"{defense}-{observer}-{generator}-{adversary}/triage")
+                    j = json.loads(p.read_text())
+                    for result in j.values():
+                        x[order.index(result["result"])] += 1
+                tps, fps = x
+                s = r"\textbf{" + str(tps) + r"} (" + str(fps) + r")"
+                l.append(s)
+            subs[f"{observer}-{generator}"] = " & ".join(l)
+        
+
+    # Generate the table.
+    do_format_table_i(subs)
+    pdflatex("table-i.tex")
+    print("DONE: See table-i.pdf")
     
 def do_generate(args):
     if args.name == "table-iv":
@@ -438,5 +574,10 @@ if args.command == "run":
     do_run(args)
 elif args.command == "generate":
     do_generate(args)
+elif args.command == "sec":
+    if args.result == "table-i":
+        do_generate_table_i(args)
+    else:
+        raise NotImplementedError(f"sec result {args.result}")
 else:
     raise NotImplementedError(f"subcommand {args.command}")
