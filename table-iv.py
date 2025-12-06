@@ -12,106 +12,17 @@ from util.util import (
 )
 from contextlib import chdir
 import sys
-import json
-import re
+from util.suite import (
+    Suite,
+    WebserverSuite,
+    )
+from util.bench import Bench
 
 parser = argparse.ArgumentParser(
     "Script for running class-representative "
     "benchmarks and generating Table IV."
 )
 
-class SuiteBase:
-    def __init__(self, name, benches, baseline, protcc):
-        self.name = name
-        self.benches = benches
-        self.baseline = baseline
-        self.protcc = protcc
-        for bench in self.benches:
-            bench.suite = self
-
-class Suite(SuiteBase):
-    def __init__(self, name, benches, baseline, protcc, group):
-        super().__init__(name, benches, baseline, protcc)
-        self.group = group
-
-    def _target(self, bench, bin, hwconf):
-        return (
-            f"{bench.target_name}/exp/0/{self.group}/{bin}/"
-            f"{hwconf}.pcore/results.json"
-        )
-
-    def perf(self, target):
-        j = json.loads(ResultPath(target).read_text())
-        return j["stats"]["cycles"]
-
-class WebserverSuite(SuiteBase):
-    def _target(self, bench, bin, hwconf):
-        hwconf_l = hwconf.split(".")
-        hwconf_l.insert(1, "se")
-        hwconf = ".".join(hwconf_l)
-        return (
-            f"webserv/exp/{bench.target_name}/{bin}/{hwconf}/stamp.txt"
-        )
-
-    def perf(self, target):
-        l = []
-        with ResultPath(target).with_name("stats.txt").open() as f:
-            for line in f:
-                if m := re.match(r"simSeconds\s+([0-9.]+)", line):
-                    l.append(float(m.group(1)))
-        assert len(l) >= 1
-        return l[-1]
-
-class Bench:
-    def __init__(self, name, target):
-        self.name = name
-        self.target_name = target
-        self.results = [None] * 3
-
-    def _target(self, bin, hwconf):
-        return self.suite._target(self, bin, hwconf)
-
-    def baseline(self):
-        return self.suite.baseline
-
-    def protcc(self):
-        return self.suite.protcc
-
-    def target_unsafe(self):
-        return self._target("base", "unsafe")
-
-    def target_baseline(self):
-        return self._target("base", self.baseline())
-
-    def target_prottrack(self):
-        return self._target(self.protcc(), "prottrack.atret")
-
-    def target_protdelay(self):
-        return self._target(self.protcc(), "protdelay.atret")
-
-    def targets(self):
-        return [
-            self.target_unsafe(),
-            self.target_baseline(),
-            self.target_prottrack(),
-            self.target_protdelay(),
-        ]
-
-    def perf(self, target):
-        return self.suite.perf(target)
-
-    def perf_unsafe(self):
-        return self.perf(self.target_unsafe())
-
-    def perf_baseline(self):
-        return self.perf(self.target_baseline())
-
-    def perf_prottrack(self):
-        return self.perf(self.target_prottrack())
-
-    def perf_protdelay(self):
-        return self.perf(self.target_protdelay())
-        
 suites = [
     Suite(
         name = "arch-wasm",
