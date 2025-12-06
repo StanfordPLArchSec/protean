@@ -6,19 +6,13 @@ from util.util import (
     should_regenerate,
     ResultPath,
     set_args,
-    do_format_text,
-    pdflatex,
+    format_and_render_tex,
 )
 from contextlib import chdir
 from collections import defaultdict
 import json
 import argparse
 from pathlib import Path
-
-def do_format_table_i(subs):
-    text = Path("templates/table-i.tex.in").read_text()
-    text = do_format_text(text, subs)
-    Path("table-i.tex").write_text(text)
 
 def do_generate_table_i(args):
     # Fill in default arguments.
@@ -84,11 +78,10 @@ def do_generate_table_i(args):
                         exit(1)
 
             # Run the fuzzing campaign.
-            run(args.snakemake_command + fuzz_targets + extra_snakemake_args,
-                check=True)
+            run(args.snakemake_command + fuzz_targets + extra_snakemake_args)
 
             # Triage.
-            run(args.snakemake_command + triage_targets, check=True)
+            run(args.snakemake_command + triage_targets)
             
         # Read in the results.
         subs = defaultdict(lambda: "- & - & -")
@@ -109,8 +102,7 @@ def do_generate_table_i(args):
         
 
     # Generate the table.
-    do_format_table_i(subs)
-    pdflatex("table-i.tex")
+    format_and_render_tex("table-i", subs)
     print("DONE: See table-i.pdf")
 
 

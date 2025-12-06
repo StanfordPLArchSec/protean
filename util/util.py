@@ -1,6 +1,7 @@
 from pathlib import Path
 import re
 import subprocess
+import math
 
 g_args = None
 
@@ -27,9 +28,19 @@ def add_common_arguments(parser):
         action="store_true",
         help="Enable verbose output."
     )
+    parser.add_argument(
+        "snakemake_command",
+        nargs="*",
+        default=["snakemake", "--cores=all"],
+        help="Override snakemake binary/args with this."),
+    
     
 def should_regenerate(args):
     return not args.dry_run and not args.expected
+
+def run_if_requested(args_, *args, **kwargs):
+    if should_regenerate(args_):
+        run(*args, **kwargs)
 
 def ResultPath(path):
     path = Path(path)
@@ -50,13 +61,22 @@ def pdflatex(tex):
     pdflatex_args = []
     if not g_args.verbose:
         pdflatex_args.append("--interaction=batchmode")
-    run(["pdflatex",
-         *pdflatex_args,
-         str(tex)],
-        check=True)
+    run(["pdflatex", *pdflatex_args, str(tex)])
 
 def run(cmd, *args, **kwargs):
     if g_args.verbose:
         cmd_str = shlex.join(cmd)
         print(f"INFO: running subprocess: {cmd_str}", file=sys.stderr)
-    subprocess.run(cmd, *args, **kwargs)
+    subprocess.run(cmd, *args, check=True, **kwargs)
+
+def format_tex(name, subs):
+    text = Path(f"templates/{name}.tex.in").read_text()
+    text = do_format_text(text, subs)
+    Path(f"{name}.tex").write_text(text)
+
+def format_and_render_tex(name, subs):
+    format_tex(name, subs)
+    pdflatex(f"{name}.tex")
+
+def geomean(l):
+    return math.prod(l) ** (1 / len(l))
