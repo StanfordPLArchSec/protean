@@ -113,3 +113,6 @@ def make_name():
     stem = Path(exe).stem
     type, id = stem.split("-")
     return _make_name(type, id)
+
+def arithmean(l):
+    return sum(l) / len(l)
