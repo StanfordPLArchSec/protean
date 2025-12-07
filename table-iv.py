@@ -9,6 +9,7 @@ from util.util import (
     stats_seconds,
     run_if_requested,
     format_and_render_tex,
+    make_name,
 )
 from contextlib import chdir
 from collections import defaultdict
@@ -77,32 +78,28 @@ class SuiteBase:
         self.name = name
         self.benches = benches
 
-    def hwconfs(self, program_class):
+    def confs(self, program_class):
         return [
-            "unsafe", f"{program_class.baseline}.atret",
-            "prottrack.atret", "protdelay.atret",
+            "base/unsafe",
+            f"base/{program_class.baseline}.atret",
+            f"{program_class.target}/prottrack.atret",
+            f"{program_class.target}/protdelay.atret",
         ]
 
-    def target(self, program_class, hwconf):
+    def target(self, conf):
         l = []
         for bench in self.benches:
-            l.append(self._target(program_class, bench, hwconf))
+            l.append(self._target(bench, conf))
         return l
 
     def targets(self, program_class):
         l = []
-        for hwconf in self.hwconfs(program_class):
-            l.extend(self.target(program_class, hwconf))
+        for conf in self.confs(program_class):
+            l.extend(self.target(conf))
         return l
 
-    def perf(self, program_class, hwconf):
-        return geomean(
-            list(
-                map(
-                    self._perf, self.target(program_class, hwconf)
-                )
-            )
-        )
+    def perf(self, conf):
+        return geomean([self._perf(target) for target in self.target(conf)])
 
 class SPECSuite(SuiteBase):
     def __init__(self, name, core_type):
@@ -130,11 +127,8 @@ class SPECSuite(SuiteBase):
         ])
         self.core_type = core_type
 
-    def _target(self, program_class, bench, hwconf):
-        return (
-            f"{bench}/exp/0/main/{program_class.target}/"
-            f"{hwconf}.{self.core_type}/results.json"
-        )
+    def _target(self, bench, conf):
+        return f"{bench}/exp/0/main/{conf}.{self.core_type}/results.json"
 
     def _perf(self, path):
         return json_cycles(path)
@@ -152,11 +146,8 @@ class PARSECSuite(SuiteBase):
             "kernels/dedup"
         ])
 
-    def _target(self, program_class, bench, hwconf):
-        return (
-            f"parsec/pkgs/{bench}/{program_class.target}/"
-            f"{hwconf}"
-        )
+    def _target(self, bench, conf):
+        return f"parsec/pkgs/{bench}/run/exp/{conf}/stamp.txt"
 
     def _perf(self, path):
         return stats_seconds(path)
@@ -190,8 +181,7 @@ with chdir("bench"):
     for program_class in program_classes:
         for suite in suites:
             unsafe_perf, *defense_perfs = \
-                map(lambda hwconf: suite.perf(program_class, hwconf),
-                    suite.hwconfs(program_class))
+                map(suite.perf, suite.confs(program_class))
             norms = []
             for defense_perf in defense_perfs:
                 norms.append(defense_perf / unsafe_perf)
