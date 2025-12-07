@@ -13,7 +13,10 @@ from util.util import (
 )
 from contextlib import chdir
 import sys
-from util.class_specific import suites
+from util.class_specific import (
+    suites,
+    get_results_for_benchmarks,
+)
 
 strname, filename = make_name()
 
@@ -92,34 +95,12 @@ if len(bench_list) == 0:
           file=sys.stderr)
     exit(1)
 
-# Construct a list of targets.
-targets = []
-for bench in bench_list:
-    targets.extend(bench.targets())
-
-with chdir("bench"):
-    # Run results.
-    run_if_requested(args, [*args.snakemake_command, *targets])
-
-    # Read in results.
-    for bench in bench_list:
-        unsafe = bench.perf_unsafe()
-        baseline = bench.perf_baseline()
-        prottrack = bench.perf_prottrack()
-        protdelay = bench.perf_protdelay()
-        assert unsafe != 0
-        assert baseline != 0
-        assert prottrack != 0
-        assert protdelay != 0
-        bench.results = [
-            baseline / unsafe, prottrack / unsafe, protdelay / unsafe,
-        ]
+get_results_for_benchmarks(bench_list, args)
 
 # Generate subtables.
 subs = {}
 for suite in suites:
     lines = []
-    full_suite = True
     for bench in suite.benches:
         # If we have the benchmarks, put in the results.
         tokens = [bench.name]
@@ -128,21 +109,14 @@ for suite in suites:
                 tokens.append(f"{result : .3f}")
             else:
                 tokens.append("-")
-                full_suite = False
         line = " & ".join(tokens)
         line += r"\\\hline"
         lines.append(line)
 
     # If we got all the results for the benchmark, then compute the geomeans for each.
     geomean_line = ["geomean"]
-    if full_suite:
-        result_lists = [[], [], []]
-        for bench in suite.benches:
-            for result, result_list in zip(bench.results, result_lists):
-                result_list.append(result)
-        geomean_line.extend(
-            map(lambda x: f"{x : .3f}", map(geomean, result_lists))
-        )
+    if geo_list := suite.geomean():
+        geomean_line.extend([f"{x:.3f}" for x in geo_list])
     else:
         geomean_line.extend(["-"] * 3)
     lines.append(" & ".join(geomean_line) + r"\\\Xhline{1pt}")

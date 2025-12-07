@@ -3,6 +3,7 @@ import re
 from util.util import (
     json_cycles,
     stats_seconds,
+    geomean,
 )
 
 class SuiteBase:
@@ -13,6 +14,16 @@ class SuiteBase:
         self.protcc = protcc
         for bench in self.benches:
             bench.suite = self
+
+    def geomean(self):
+        # If there is a missing number, then bail.
+        if any([None in bench.results for bench in self.benches]):
+            return None
+        ls = [[], [], []]
+        for bench in self.benches:
+            for l, result in zip(ls, bench.results):
+                l.append(result)
+        return [geomean(l) for l in ls]
 
 class CheckpointSuite(SuiteBase):
     def __init__(self, name, benches, baseline, protcc, group):

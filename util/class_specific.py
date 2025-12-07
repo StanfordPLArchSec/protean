@@ -3,6 +3,8 @@ from util.suite import (
     WebserverSuite,
 )
 from util.bench import Bench
+from contextlib import chdir
+from util.util import run_if_requested
 
 suites = [
     Suite(
@@ -67,3 +69,28 @@ suites = [
         protcc = "nct.ossl-annot",
     )
 ]
+
+def get_results_for_benchmarks(bench_list, args):
+    # Construct a list of targets.
+    targets = []
+    for bench in bench_list:
+        targets.extend(bench.targets())
+
+    with chdir("bench"):
+        # Run results.
+        run_if_requested(args, [*args.snakemake_command, *targets])
+
+        # Read in results.
+        for bench in bench_list:
+            unsafe = bench.perf_unsafe()
+            baseline = bench.perf_baseline()
+            prottrack = bench.perf_prottrack()
+            protdelay = bench.perf_protdelay()
+            assert unsafe != 0
+            assert baseline != 0
+            assert prottrack != 0
+            assert protdelay != 0
+            bench.results = [
+                baseline / unsafe, prottrack / unsafe, protdelay / unsafe,
+            ]
+
