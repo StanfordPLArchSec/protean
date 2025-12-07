@@ -269,7 +269,7 @@ ax.legend(
     bbox_to_anchor=(0.99, 0.94),
     ncol=4,
     frameon=True,
-    framealpha=0.6,
+    framealpha=0.8,
     edgecolor="black",
 )
 
@@ -338,4 +338,4 @@ ax.grid(axis="y", which="major", linestyle="-", linewidth=0.4, alpha=0.3)
 fig.tight_layout()
 
 # Save as PDF to drop back into LaTeX
-plt.savefig("figure-7.pdf", bbox_inches="tight")
+plt.savefig(f"{filename}.pdf", bbox_inches="tight")
