@@ -213,16 +213,19 @@ for i, bench in enumerate(all_benches):
         table[j][i] = result
 stt, prot_arch, spt, prot_ct = table
 
-x = np.arange(n)
+# Space out each benchmark group a bit more.
+group_spacing = 1.25
+x = np.arange(n) * group_spacing
 width = 0.18
 
-fig, ax = plt.subplots(figsize=(7.5, 2))
+fig, ax = plt.subplots(figsize=(7.25, 1.75))
 
 # Grouped bars.
 def make_style(color, hatch):
     return dict(
         color = rgbtohex(*color),
         edgecolor = "black",
+        linewidth = 0.6,
         hatch = hatch,
     )
 stt_style = make_style((255, 255, 84), "///")
@@ -258,6 +261,22 @@ ax.set_xticklabels(
     rotation=25,
     ha="right",
 )
+# Small ticks between bar groups to mark boundaries.
+if n > 1:
+    boundary_x = (x[:-1] + x[1:]) / 2
+    y0, y1 = ax.get_ylim()
+    tick_h = 0.03 * (y1 - y0)
+    ax.vlines(
+        boundary_x,
+        y0,
+        y0 + tick_h,
+        colors="black",
+        linewidth=0.6,
+        clip_on=False,
+    )
+    # Add a little extra x margin so the first/last groups aren't cramped.
+    pad = 2.0 * width
+    ax.set_xlim(x[0] - pad, x[-1] + pad)
 
 # Optional: axis labels (if your original figure has them)
 # ax.set_ylabel("Normalized execution time")
