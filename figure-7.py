@@ -252,7 +252,7 @@ for bench in all_benches:
 ax.set_xticks(x)
 ax.set_xticklabels(
     stylized_bench_list,
-    rotation=20,
+    rotation=25,
     ha="right",
 )
 
@@ -263,12 +263,73 @@ ax.set_xticklabels(
 # Legend: 4 entries, usually above or below the plot in a single row
 ax.legend(
     loc="upper right",
-    bbox_to_anchor=(0.98, 0.98),
+    bbox_to_anchor=(0.99, 0.94),
     ncol=4,
     frameon=True,
     framealpha=0.6,
     edgecolor="black",
 )
+
+ymin, ymax = ax.get_ylim()
+
+def label_clipped_bars(bar_container, ymax, side="center",
+                       fmt="{:.2f}", dy=0.02, dx=0.1):
+    for bar in bar_container:
+        h = bar.get_height()
+        if h > ymax:
+            # base x at bar center
+            x = bar.get_x() + bar.get_width() / 2
+
+            if side == "left":
+                x = bar.get_x() - dx
+                ha = "right"
+                rot = 90
+            elif side == "right":
+                x = bar.get_x() + bar.get_width() + dx
+                ha = "left"
+                rot = 90
+            else:
+                ha = "center"
+                rot = 90
+
+            # 🔑 grab the bar's actual color
+            color = bar.get_facecolor()
+
+            ax.text(
+                x, ymax - dy,
+                fmt.format(h),
+                ha=ha,
+                va="top",
+                color=color,
+                clip_on=False,
+                # path_effects=[
+                #     pe.Stroke(linewidth=3, foreground="black"),
+                #     pe.Normal(),
+                # ],
+            )
+
+label_clipped_bars(b1, ymax, side="left")    # STT → left
+label_clipped_bars(b2, ymax, side="center") # Prot-ARCH → center (optional)
+label_clipped_bars(b3, ymax, side="right")  # SPT → right
+label_clipped_bars(b4, ymax, side="center") # Prot-CT → center (optional)
+
+ax.tick_params(axis="x", pad=0.5)
+
+from matplotlib.ticker import MultipleLocator
+
+ax.set_ylim(1.0, 2.0)
+
+# Major ticks every 0.2
+ax.yaxis.set_major_locator(MultipleLocator(0.2))
+
+# Minor ticks every 0.05
+ax.yaxis.set_minor_locator(MultipleLocator(0.05))
+
+# Optional: style the minor ticks so they're shorter/thinner
+ax.tick_params(axis="y", which="minor", length=2, width=0.5)
+ax.tick_params(axis="y", which="major", length=4, width=0.8)
+
+ax.grid(axis="y", which="major", linestyle="-", linewidth=0.4, alpha=0.3)
 
 # Tight layout so labels don't get cut off
 fig.tight_layout()

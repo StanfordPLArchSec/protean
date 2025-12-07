@@ -94,3 +94,6 @@ def stats_seconds(path):
                 l.append(float(m.group(1)))
     assert len(l) >= 1
     return l[-1]    
+
+def rgbtohex(r, g, b):
+    return "#" + "".join(map(lambda x: f"{x:02x}", [r, g, b]))
