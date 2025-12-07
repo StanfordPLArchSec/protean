@@ -3,6 +3,8 @@ import re
 import subprocess
 import math
 import json
+import shlex
+import sys
 
 g_args = None
 
@@ -10,6 +12,7 @@ def set_args(args):
     global g_args
     g_args = args
 
+# TODO: Remove.
 def comma_list(s):
     return s.split(",")
 
@@ -97,3 +100,16 @@ def stats_seconds(path):
 
 def rgbtohex(r, g, b):
     return "#" + "".join(map(lambda x: f"{x:02x}", [r, g, b]))
+
+def _make_name(type, id):
+    return (
+        f"{type.lower().capitalize()} {id.upper()}",
+        f"{type.lower()}-{id.lower()}",
+    )
+
+def make_name():
+    exe = sys.argv[0]
+    assert exe.endswith(".py")
+    stem = Path(exe).stem
+    type, id = stem.split("-")
+    return _make_name(type, id)

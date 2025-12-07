@@ -15,15 +15,12 @@ from collections import defaultdict
 parser = argparse.ArgumentParser()
 subparser = parser.add_subparsers(dest="command", required=True)
 
-def comma_list(s):
-    return s.split(",")
-
 # TODO: Deprecated. Remove these.
 subparser_run = subparser.add_parser("run")
 subparser_run.add_argument("--type", "-t", required=True, choices=["perf", "sec"])
 subparser_run.add_argument("--size", "-s", required=True, choices=["small", "medium", "full"])
 subparser_gen = subparser.add_parser("generate")
-subparser_gen.add_argument("name", choices=["table-iv", "section-ix-a", "figure-5", "figure-1", "table-i"])
+subparser_gen.add_argument("name", choices=["table-iv", "section-ix-a", "figure-5", "figure-1"])
 subparser_gen.add_argument("--output", "-o")
 
 # The subcommand for generating Table I of our security evaluation.
@@ -93,9 +90,6 @@ def run(cmd, *args, **kwargs):
         cmd_str = shlex.join(cmd)
         print(f"INFO: running subprocess: {cmd_str}", file=sys.stderr)
     subprocess.run(cmd, *args, **kwargs)
-
-def should_regenerate(args):
-    return not args.dry_run and not args.expected
 
 def pdflatex(tex):
     pdflatex_args = []
@@ -185,78 +179,6 @@ def do_perf_eval_small(args):
 
     # Pretty-print the table.
     print(tabulate(table))
-
-def do_sec_eval_small(args):
-    # Just run the UNPROT tests with scaled down parameters.
-    # Number of jobs per tuple: 5
-    # Number of programs: 50
-    # Number of inputs per program: 50/3 (?)
-    dirs = []
-    fuzz_targets = []
-    triage_targets = []
-    for defense in ["none", "prottrack", "protdelay"]:
-        for adversary in ["cache", "commit"]:
-            d = f"{defense}-prot-llvm.prot-{adversary}"
-            dirs.append(d)
-            fuzz_targets.append(d + "/all")
-            triage_targets.append(d + "/triage")
-
-    # Run amulet via snakemake.
-    with chdir("amulet"):
-        if should_regenerate(args):
-            # Make sure that the output directory is empty.
-            for d in dirs:
-                d = Path(d)
-                if d.exists():
-                    if args.force:
-                        print(f"WARN: overwriting results directory {d}", file=sys.stderr)
-                        d.rmdir()
-                    else:
-                        print(f"ERROR: refusing to overwrite existing results directory {d}", file=sys.stderr)
-                        exit(1)
-            
-            # Fuzz.
-            run([*args.snakemake_command, *fuzz_targets,
-                 "--config",
-                 "instances=5",
-                 "programs=50",
-                 "inputs_cache=50",
-                 "inputs_commit=3"],
-                check=True)
-
-            # Triage.
-            run([*args.snakemake_command, *triage_targets],
-                check=True)
-
-        # Read the results of triaging.
-        l = []
-        for defense in ["none", "prottrack", "protdelay"]:
-            l.append({
-                "true-positive": 0,
-                "false-positive": 0,
-            })
-            for adversary in ["commit", "cache"]:
-                p = ResultPath(f"{defense}-prot-llvm.prot-{adversary}/triage")
-                j = json.loads(p.read_text())
-                for result in j.values():
-                    l[-1][result["result"]] += 1
-
-    # TODO: Shared code with elsewhere.
-    # Factor out common code.
-    subs = defaultdict(lambda: "- & - & -")
-    def format_result(result):
-        tps = result["true-positive"]
-        fps = result["false-positive"]
-        return r"\textbf{" + str(tps) + r"} (" + str(fps) + ")"
-    subs["prot-llvm.prot"] = " & ".join(map(format_result, l))
-
-    do_format_table_i(subs)
-
-    # Generate the PDF.
-    pdflatex("table-i.tex")
-
-    print("DONE: See table-i.pdf")
-            
     
 def do_perf_eval(args):
     os.chdir("bench")
@@ -463,98 +385,6 @@ def do_generate_protean_amulet(args):
     print("DONE: See table-i.pdf")
     
 
-def do_generate_table_i(args):
-    # Fill in default arguments.
-    if args.all:
-        if args.size is None:
-            args.size = "full"
-        if args.instrumentation is None:
-            args.instrumentation = parser_sec_table_i_instrumentation_choices
-    else:
-        if args.size is None:
-            args.size = "small"
-        if args.instrumentation is None:
-            args.instrumentation = ["rand"]
-    assert args.size is not None and args.instrumentation is not None
-    
-    defenses = ["none", "prottrack", "protdelay"]
-    adversaries = ["cache", "commit"]
-
-    # Enumerate all directories.
-    dirs = []
-    obs_gen_pairs = []
-    for instrumentation in args.instrumentation:
-        # Get observer and generator.
-        if instrumentation == "rand":
-            observer = generator = "prot"
-        elif instrumentation == "unr":
-            generator = "unr"
-            observer = "ct"
-        else:
-            generator = observer = instrumentation
-
-        obs_gen_pairs.append((observer, f"llvm.{generator}"))
-
-        # Enumerate directories.
-        for defense in defenses:
-            for adversary in adversaries:
-                dirs.append(f"{defense}-{observer}-llvm.{generator}-{adversary}")
-            
-
-    # Compute the fuzz and triage targets.
-    fuzz_targets = [f"{dir}/all" for dir in dirs]
-    triage_targets = [f"{dir}/triage" for dir in dirs]
-
-    # Compute any extra snakemake args.
-    extra_snakemake_args = []
-    if args.size == "small":
-        extra_snakemake_args = [
-            "--config", "instances=5", "programs=50",
-            "inputs_cache=50", "inputs_commit=3",
-        ]
-
-    with chdir("amulet"):
-        if should_regenerate(args):
-            # Make sure that the output directories are empty.
-            for d in dirs:
-                d = Path(d)
-                if d.exists():
-                    if args.force:
-                        print(f"WARN: overwriting results directory {d}", file=sys.stderr)
-                        d.rmdir()
-                    else:
-                        print(f"ERROR: refusing to overwrite existing results directory {d}", file=sys.stderr)
-                        exit(1)
-
-            # Run the fuzzing campaign.
-            run(args.snakemake_command + fuzz_targets + extra_snakemake_args,
-                check=True)
-
-            # Triage.
-            run(args.snakemake_command + triage_targets, check=True)
-            
-        # Read in the results.
-        subs = defaultdict(lambda: "- & - & -")
-        for observer, generator in obs_gen_pairs:
-            l = []
-            for defense in defenses:
-                order = ["true-positive", "false-positive"]
-                x = [0, 0]
-                for adversary in adversaries:
-                    p = ResultPath(f"{defense}-{observer}-{generator}-{adversary}/triage")
-                    j = json.loads(p.read_text())
-                    for result in j.values():
-                        x[order.index(result["result"])] += 1
-                tps, fps = x
-                s = r"\textbf{" + str(tps) + r"} (" + str(fps) + r")"
-                l.append(s)
-            subs[f"{observer}-{generator}"] = " & ".join(l)
-        
-
-    # Generate the table.
-    do_format_table_i(subs)
-    pdflatex("table-i.tex")
-    print("DONE: See table-i.pdf")
     
 def do_generate(args):
     if args.name == "table-iv":

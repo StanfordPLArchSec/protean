@@ -14,6 +14,8 @@ import json
 import argparse
 from pathlib import Path
 
+strname, filename = make_name()
+
 def do_generate_table_i(args):
     # Fill in default arguments.
     if args.all:
@@ -102,8 +104,8 @@ def do_generate_table_i(args):
         
 
     # Generate the table.
-    format_and_render_tex("table-i", subs)
-    print("DONE: See table-i.pdf")
+    format_and_render_tex(filename, subs)
+    print(f"DONE: See {filename}.pdf")
 
 
 parser = argparse.ArgumentParser(

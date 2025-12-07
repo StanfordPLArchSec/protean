@@ -1,0 +1,48 @@
+\documentclass{article}
+
+\usepackage{multirow}
+
+\newcommand{\ourdefense}{\textsc{Protean}}
+\newcommand{\ourtrack}{ProtTrack}
+\newcommand{\ourdelay}{ProtDelay}
+\newcommand{\ourcontract}{\texttt{UNPROT-SEQ}}
+\newcommand{\ourcc}{ProtCC}
+\newcommand{\archseq}{\texttt{ARCH-SEQ}}
+\newcommand{\ctsseq}{\texttt{CTS-SEQ}}
+\newcommand{\ctseq}{\texttt{CT-SEQ}}
+\newcommand{\sboxcc}{ProtCC-ARCH}
+\newcommand{\ctscc}{ProtCC-CTS}
+\newcommand{\ctcc}{ProtCC-CT}
+\newcommand{\nctcc}{ProtCC-UNR}
+\newcommand{\ouramulet}{AMuLeT${}^*$}
+
+\begin{document}
+
+\begin{table}[t]
+    \centering
+    \begin{tabular}{|l|l|l|l|l|}\hline
+        \multirow{3}{*}{\bf Contract} & \multirow{3}{*}{\bf Instrumentation} & \multicolumn{3}{|c|}{\bf Violations (out of 200)} \\\cline{3-5}
+        && \multirow{2}{*}{Unsafe} & \multicolumn{2}{|c|}{\ourdefense{}} \\\cline{4-5}
+        &&& \ourtrack{} & \ourdelay{} \\\hline
+        % \ourcontract{} & assembly & \prot{} insertion & 23 (0) & 0 (0) & 0 (0) \\\hline
+        % \archcontract{} & assembly & none & 80 (0)  & 0 (0) & 0 (0) \\\hline
+        % \ctcontract{} & llvm-ir & \ctcc{} & 98 (0) & 2 (16) & 0 (8) \\\hline
+        %%%
+        \ourcontract{} & \ourcc{}-RAND & @prot-llvm.prot@ \\\hline
+        \archseq{} & \sboxcc{} & @arch-llvm.arch@ \\\hline
+        \ctsseq{} & \ctscc{} & @cts-llvm.cts@ \\\hline
+        \ctseq{} & \ctcc{} & @ct-llvm.ct@ \\\hline
+        \ctseq{} & \nctcc{} & @ct-llvm.unr@ \\\hline
+    \end{tabular}%\\\begin{tabular}{|l|l|l|l|l|l|}\hline
+    %     \multirow{3}{*}{\bf Contract} & \multirow{3}{*}{\bf Instrumentation} & \multicolumn{4}{|c|}{\bf Violations (out of 200)} \\\cline{3-6}
+    %     && \multicolumn{2}{|c|}{STT} & \multicolumn{2}{|c|}{SPT} \\\cline{3-6}
+    %     && orig. & fixed & orig. & fixed \\\hline
+    %\end{tabular}
+    \caption{\small\ouramulet{}-detected contract violations for 
+    \ourcc{}-RAND/-ARCH/-CTS/-CT/-UNR test binaries on unsafe, ProtTrack, and ProtDelay hardware.
+    False positives (\S\ref{sec:amulet:false-positives}) are in parentheses.}
+    \label{tab:amulet}
+    \label{fig:amulet}
+\end{table}
+
+\end{document}

@@ -10,11 +10,14 @@ from util.util import (
     comma_list,
     run_if_requested,
     add_common_arguments,
-    rgbtohex
+    rgbtohex,
+    make_name,
 )
 from contextlib import chdir
 
-parser = argparse.ArgumentParser("Generate Figure 7 from the paper.")
+strname, filename = make_name()
+
+parser = argparse.ArgumentParser(f"Generate {strname} from the paper.")
 
 class SuiteBase:
     def __init__(self, name, benches):

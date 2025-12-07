@@ -16,10 +16,10 @@ tmp/
 /m5cache/
 /ccache/
 /section-ix-a.tex
-/table-iv.tex
 /*.iso
-/figure-1.tex
 \#*\#
 /cpu2006/
 /cpu2006-install/
 /cpu2017-install/
+/table-*.tex
+/figure-*.tex

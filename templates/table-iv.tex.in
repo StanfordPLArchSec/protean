@@ -19,33 +19,37 @@
 
 \begin{table}[t]
   \centering
-  \begin{tabular}{!{\vrule width 1pt}l|c|c|c!{\vrule width 1pt}}\Xhline{1pt}
-    \bf \multirow{2}{*}{\makecell{ARCH-Wasm}} & \bf \multirow{2}{*}{STT} & \multicolumn{2}{c!{\vrule width 1pt}}{\bf\textsc{Protean}} \\\cline{3-4}
-&& \bf Track & \bf Delay \\\hline
-    @arch-wasm@
-
-    \bf \multirow{2}{*}{\makecell{CTS-Crypto}} & \bf \multirow{2}{*}{SPT} & \multicolumn{2}{c!{\vrule width 1pt}}{\bf\textsc{Protean}} \\\cline{3-4}
-&& \bf Track & \bf Delay \\\hline
-    @cts-crypto@
-    
-  \end{tabular}\begin{tabular}{|l|c|c|c!{\vrule width 1pt}}\Xhline{1pt}
-    \bf \multirow{2}{*}{\makecell{CT-Crypto}} & \bf \multirow{2}{*}{SPT} & \multicolumn{2}{c!{\vrule width 1pt}}{\bf\textsc{Protean}} \\\cline{3-4}
-&& \bf Track & \bf Delay \\\hline
-    @ct-crypto@
-
-    \bf \multirow{2}{*}{\makecell{UNR-\\Crypto}} & \bf \multirow{2}{*}{\makecell{SPT-\\SB}} & \multicolumn{2}{c!{\vrule width 1pt}}{\bf\textsc{Protean}} \\\cline{3-4}
-&& \bf Track & \bf Delay \\\hline
-    @unr-crypto@
-
-    \bf \multirow{2}{*}{\makecell{Multi-Class\\Webserver}} & \bf \multirow{2}{*}{\makecell{SPT-\\SB}} & \multicolumn{2}{c!{\vrule width 1pt}}{\bf\textsc{Protean}} \\\cline{3-4}
-&& \bf Track & \bf Delay \\\hline
-    @webserver@
+  \begin{tabular}{!{\vrule width 1pt}c|c|c|c|c!{\vrule width 1pt}}\Xhline{1pt}
+    \multicolumn{2}{!{\vrule width 1pt}c|}{\multirow{2}{*}{\bf ARCH}}
+    & \multirow{2}{*}{\bf STT} & \multicolumn{2}{c!{\vrule width 1pt}}{\bf\ourdefense{}} \\\Xcline{4-5}{0.125pt}
+    \multicolumn{2}{!{\vrule width 1pt}c|}{} && \bf Track & \bf Delay \\\hline
+    \multicolumn{1}{!{\vrule width 1pt}c!{\vrule width 0.125pt}}{\multirow{2}{2.5em}{\textit{SPEC\allowbreak{}2017}}} & \it P-core & @arch_spec_pcore@ \\\cline{2-5}
+    \multicolumn{1}{!{\vrule width 1pt}c!{\vrule width 0.125pt}}{}                                          & \it E-core & @arch_spec_ecore@ \\\hline
+    \multicolumn{2}{!{\vrule width 1pt}c|}{\it PARSEC}                      & @arch_parsec@ \\\Xhline{1pt}
+  \end{tabular}\begin{tabular}{!{\vrule width 1pt}c|c|c|c|c!{\vrule width 1pt}}\Xhline{1pt}
+    \multicolumn{2}{!{\vrule width 1pt}c|}{\multirow{2}{*}{\bf CTS}}
+    & \multirow{2}{*}{\bf SPT} & \multicolumn{2}{c!{\vrule width 1pt}}{\bf\ourdefense{}} \\\Xcline{4-5}{0.125pt}
+    \multicolumn{2}{!{\vrule width 1pt}c|}{} && \bf Track & \bf Delay \\\hline
+    \multicolumn{1}{!{\vrule width 1pt}c!{\vrule width 0.125pt}}{\multirow{2}{2.5em}{\it SPEC\allowbreak{}2017}} & \it P-core & @cts_spec_pcore@ \\\cline{2-5}
+    \multicolumn{1}{!{\vrule width 1pt}c!{\vrule width 0.125pt}}{}                                          & \it E-core & @cts_spec_ecore@ \\\hline
+    \multicolumn{2}{!{\vrule width 1pt}c|}{\it PARSEC}                      & @cts_parsec@ \\\Xhline{1pt}
+  \end{tabular}\\\begin{tabular}{!{\vrule width 1pt}c|c|c|c|c!{\vrule width 1pt}}\Xhline{1pt}
+  \multicolumn{2}{!{\vrule width 1pt}c|}{\multirow{2}{*}{\bf CT}}
+  & \multirow{2}{*}{\bf SPT} & \multicolumn{2}{c!{\vrule width 1pt}}{\bf\ourdefense{}} \\\Xcline{4-5}{0.125pt}
+  \multicolumn{2}{!{\vrule width 1pt}c|}{} && \bf Track & \bf Delay \\\hline
+  \multicolumn{1}{!{\vrule width 1pt}c!{\vrule width 0.125pt}}{\multirow{2}{2.5em}{\it SPEC\allowbreak{}2017}} & \it P-core & @ct_spec_pcore@ \\\cline{2-5}
+  \multicolumn{1}{!{\vrule width 1pt}c!{\vrule width 0.125pt}}{}                                          & \it E-core & @ct_spec_ecore@ \\\hline
+  \multicolumn{2}{!{\vrule width 1pt}c|}{\it PARSEC}                      & @ct_parsec@ \\\Xhline{1pt}
+  \end{tabular}\begin{tabular}{!{\vrule width 1pt}c|c|c|c|c!{\vrule width 1pt}}\Xhline{1pt}
+    \multicolumn{2}{!{\vrule width 1pt}c|}{\multirow{2}{*}{\bf UNR}}
+    & \multirow{2}{*}{\bf \makecell{SPT-\\SB}} & \multicolumn{2}{c!{\vrule width 1pt}}{\bf\ourdefense{}} \\\Xcline{4-5}{0.125pt}
+    \multicolumn{2}{!{\vrule width 1pt}c|}{} && \bf Track & \bf Delay \\\hline
+    \multicolumn{1}{!{\vrule width 1pt}c!{\vrule width 0.125pt}}{\multirow{2}{2.5em}{\textit{SPEC\allowbreak{}2017}}} & \it P-core & @unr_spec_pcore@ \\\cline{2-5}
+    \multicolumn{1}{!{\vrule width 1pt}c!{\vrule width 0.125pt}}{}                                          & \it E-core & @unr_spec_ecore@ \\\hline
+    \multicolumn{2}{!{\vrule width 1pt}c|}{\it PARSEC}                      & @unr_parsec@ \\\Xhline{1pt}
   \end{tabular}
-  \caption{\small Normalized runtime of \ourdefense{} on representative \singleclass{} and \multiclass{} workloads, 
-    simulated on a P-core.}
-  \label{tab:perf:specific}
+  \caption{\small Geometric mean normalized runtime of all eight of \ourdefense{}'s single-class configurations on SPEC2017 and PARSEC.}
+  \label{tab:perf:general}
 \end{table}
 
 \end{document}
-
-

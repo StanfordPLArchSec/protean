@@ -2,218 +2,202 @@
 
 import argparse
 from util.util import (
-    add_common_arguments,
-    run_if_requested,
     set_args,
-    comma_list,
-    format_and_render_tex,
-    ResultPath,
+    add_common_arguments,
     geomean,
+    json_cycles,
+    stats_seconds,
+    run_if_requested,
+    format_and_render_tex,
 )
 from contextlib import chdir
-import sys
-from util.suite import (
-    Suite,
-    WebserverSuite,
-    )
-from util.bench import Bench
+from collections import defaultdict
+
+strname, filename = make_name()
 
 parser = argparse.ArgumentParser(
-    "Script for running class-representative "
-    "benchmarks and generating Table IV."
-)
-
-suites = [
-    Suite(
-        name = "arch-wasm",
-        benches = [
-            Bench("bzip2", "wasm.401.bzip2"),
-            Bench("mcf", "wasm.429.mcf"),
-            Bench("milc", "wasm.433.milc"),
-            Bench("namd", "wasm.444.namd"),
-            Bench("libquantum", "wasm.462.libquantum"),
-            Bench("lbm", "wasm.470.lbm"),
-        ],
-        baseline = "stt.atret",
-        protcc = "base",
-        group = "base",
-    ),
-    Suite(
-        name = "cts-crypto",
-        benches = [
-            Bench("hacl.chacha20", "ctsbench.hacl.chacha20"),
-            Bench("hacl.curve25519", "ctsbench.hacl.curve25519"),
-            Bench("hacl.poly1305", "ctsbench.hacl.poly1305"),
-            Bench("sodium.salsa20", "ctsbench.libsodium.salsa20"),
-            Bench("sodium.sha256", "ctsbench.libsodium.sha256"),
-            Bench("ossl.chacha20", "ctsbench.openssl.chacha20"),
-            Bench("ossl.curve25519", "ctsbench.openssl.curve25519"),
-            Bench("ossl.sha256", "ctsbench.openssl.sha256"),
-        ],
-        baseline = "spt.atret",
-        protcc = "cts",
-        group = "ctsbench",
-    ),
-    Suite(
-        name = "ct-crypto",
-        benches = [
-            Bench("bearssl", "bearssl"),
-            Bench("ctaes", "ctaes"),
-            Bench("djbsort", "djbsort"),
-        ],
-        baseline = "spt.atret",
-        protcc = "ct",
-        group = "ctbench",
-    ),
-    Suite(
-        name = "unr-crypto",
-        benches = [
-            Bench("ossl.bnexp", "nctbench.openssl.bnexp"),
-            Bench("ossl.dh", "nctbench.openssl.dh"),
-            Bench("ossl.ecadd", "nctbench.openssl.ecadd"),
-        ],
-        baseline = "sptsb.atret",
-        protcc = "nct",
-        group = "nctbench",
-    ),
-    WebserverSuite(
-        name = "webserver",
-        benches = [
-            Bench(f"nginx.c{c}r{r}", f"c{c}r{r}")
-            for c, r in [(1, 1), (2, 2), (1, 4), (4, 1), (4, 4)]
-        ],
-        baseline = "sptsb.atret",
-        protcc = "nct.ossl-annot",
-    )
-]
-
-suite_list = [suite.name for suite in suites]
-bench_list = [bench.name for suite in suites for bench in suite.benches]
-
-parser.add_argument(
-    "--suite", "-s",
-    choices=suite_list,
-    action="extend",
-    type=comma_list,
-    help=(
-        "Class-representative benchmark suites to run "
-        "and generate results for."
-    ),
-)
-
-parser.add_argument(
-    "--bench", "-b",
-    choices=bench_list,
-    action="extend",
-    type=comma_list,
-    help=(
-        "Individual class-representative benchmarks to run "
-        "and generate results for."
-    ),
+    f"Run and generate {strname} "
+    "(general-purpose benchmark suite results)."
 )
 
 parser.add_argument(
     "--all", "-a",
     action="store_true",
-    help="Run all class-representative benchmarks.",
+    help="Generate results for all four program classes.",
+)
+
+class ProgramClass:
+    def __init__(self, name, target, baseline):
+        self.name = name
+        self.target = target
+        self.baseline = baseline
+
+all_program_classes = [
+    ProgramClass(
+        name = "arch",
+        target = "base",
+        baseline = "stt",
+    ),
+    ProgramClass(
+        name = "cts",
+        target = "cts",
+        baseline = "spt",
+    ),
+    ProgramClass(
+        name = "ct",
+        target = "ct",
+        baseline = "spt",
+    ),
+    ProgramClass(
+        name = "unr",
+        target = "nct",
+        baseline = "sptsb",
+    ),
+]
+
+parser.add_argument(
+    "--program-class", "-c",
+    choices=[program_class.name for program_class in all_program_classes],
+    action="append",
+    default=[],
+    help="Program classes to generate results for.",
 )
 
 add_common_arguments(parser)
-
 args = parser.parse_args()
 set_args(args)
 
-# Set default arguments.
-if args.suite is None and args.bench is None:
-    args.bench = [
-        "hacl.poly1305",
-        "bearssl",
-        "ossl.bnexp",
-        "nginx.c1r1",
-    ]
-    args.suite = []
-
 if args.all:
-    args.suite = suite_list
+    args.program_class.extend(
+        [program_class.name for program_class in all_program_classes]
+    )
 
-# Collect list of suites and benchmarks to run.
-suite_list = []
-for suite_name in args.suite:
-    for suite in suites:
-        if suite.name == suite_name:
-            suite_list.append(suite)
+class SuiteBase:
+    def __init__(self, name, benches):
+        self.name = name
+        self.benches = benches
 
-bench_list = []
-for suite in suite_list:
-    bench_list.extend(suite.benches)
-for bench_name in args.bench:
-    for suite in suites:
-        for bench in suite.benches:
-            if bench.name == bench_name:
-                bench_list.append(bench)
-
-if len(bench_list) == 0:
-    print("WARN: benchmark list is empty! Nothing to run.",
-          file=sys.stderr)
-    exit(1)
-
-# Construct a list of targets.
-targets = []
-for bench in bench_list:
-    targets.extend(bench.targets())
-
-with chdir("bench"):
-    # Run results.
-    run_if_requested(args, [*args.snakemake_command, *targets])
-
-    # Read in results.
-    for bench in bench_list:
-        unsafe = bench.perf_unsafe()
-        baseline = bench.perf_baseline()
-        prottrack = bench.perf_prottrack()
-        protdelay = bench.perf_protdelay()
-        assert unsafe != 0
-        assert baseline != 0
-        assert prottrack != 0
-        assert protdelay != 0
-        bench.results = [
-            baseline / unsafe, prottrack / unsafe, protdelay / unsafe,
+    def hwconfs(self, program_class):
+        return [
+            "unsafe", f"{program_class.baseline}.atret",
+            "prottrack.atret", "protdelay.atret",
         ]
 
-# Generate subtables.
-subs = {}
-for suite in suites:
-    lines = []
-    full_suite = True
-    for bench in suite.benches:
-        # If we have the benchmarks, put in the results.
-        tokens = [bench.name]
-        for result in bench.results:
-            if result is not None:
-                tokens.append(f"{result : .3f}")
-            else:
-                tokens.append("-")
-                full_suite = False
-        line = " & ".join(tokens)
-        line += r"\\\hline"
-        lines.append(line)
+    def target(self, program_class, hwconf):
+        l = []
+        for bench in self.benches:
+            l.append(self._target(program_class, bench, hwconf))
+        return l
 
-    # If we got all the results for the benchmark, then compute the geomeans for each.
-    geomean_line = ["geomean"]
-    if full_suite:
-        result_lists = [[], [], []]
-        for bench in suite.benches:
-            for result, result_list in zip(bench.results, result_lists):
-                result_list.append(result)
-        geomean_line.extend(
-            map(lambda x: f"{x : .3f}", map(geomean, result_lists))
+    def targets(self, program_class):
+        l = []
+        for hwconf in self.hwconfs(program_class):
+            l.extend(self.target(program_class, hwconf))
+        return l
+
+    def perf(self, program_class, hwconf):
+        return geomean(
+            list(
+                map(
+                    self._perf, self.target(program_class, hwconf)
+                )
+            )
         )
-    else:
-        geomean_line.extend(["-"] * 3)
-    lines.append(" & ".join(geomean_line) + r"\\\Xhline{1pt}")
 
-    subs[suite.name] = "\n".join(lines)
+class SPECSuite(SuiteBase):
+    def __init__(self, name, core_type):
+        super().__init__(
+            name = name,
+            benches = [
+            "600.perlbench_s",
+            "602.gcc_s",
+            "603.bwaves_s",
+            "605.mcf_s",
+            "607.cactuBSSN_s",
+            "619.lbm_s",
+            "620.omnetpp_s",
+            "621.wrf_s",
+            "623.xalancbmk_s",
+            "625.x264_s",
+            "628.pop2_s",
+            "631.deepsjeng_s",
+            "638.imagick_s",
+            "641.leela_s",
+            "644.nab_s",
+            "648.exchange2_s",
+            "649.fotonik3d_s",
+            "657.xz_s",
+        ])
+        self.core_type = core_type
 
-# Format table.
-format_and_render_tex("table-iv", subs)
-print("DONE: Find result at table-iv.pdf")
+    def _target(self, program_class, bench, hwconf):
+        return (
+            f"{bench}/exp/0/main/{program_class.target}/"
+            f"{hwconf}.{self.core_type}/results.json"
+        )
+
+    def _perf(self, path):
+        return json_cycles(path)
+        
+class PARSECSuite(SuiteBase):
+    def __init__(self):
+        super().__init__(
+            name = "parsec",
+            benches = [
+            "apps/blackscholes",
+            "apps/ferret",
+            "apps/fluidanimate",
+            "apps/swaptions",
+            "kernels/canneal",
+            "kernels/dedup"
+        ])
+
+    def _target(self, program_class, bench, hwconf):
+        return (
+            f"parsec/pkgs/{bench}/{program_class.target}/"
+            f"{hwconf}"
+        )
+
+    def _perf(self, path):
+        return stats_seconds(path)
+
+suites = [
+    SPECSuite("spec_pcore", "pcore"),
+    SPECSuite("spec_ecore", "ecore"),
+    PARSECSuite(),
+]
+    
+# Collect selected program classes.
+program_classes = []
+for program_class_name in args.program_class:
+    for program_class in all_program_classes:
+        if program_class.name == program_class_name:
+            program_classes.append(program_class)
+
+# Get snakemake targets.
+targets = [
+    suite.targets(program_class) \
+    for program_class in program_classes \
+    for suite in suites
+]
+
+subs = defaultdict(lambda: "- & - & -")
+with chdir("bench"):
+    # Generate results.
+    run_if_requested(args, args.snakemake_command + targets)
+
+    # Read in results.
+    for program_class in program_classes:
+        for suite in suites:
+            unsafe_perf, *defense_perfs = \
+                map(lambda hwconf: suite.perf(program_class, hwconf),
+                    suite.hwconfs(program_class))
+            norms = []
+            for defense_perf in defense_perfs:
+                norms.append(defense_perf / unsafe_perf)
+            v = " & ".join(map(lambda x: f"{x:.3f}", norms))
+            k = f"{program_class.name}_{suite.name}"
+            subs[k] = v
+                
+format_and_render_tex(filename, subs)
+print(f"DONE: Find table in {filename}.pdf")
