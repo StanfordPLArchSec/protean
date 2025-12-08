@@ -53,3 +53,4 @@ RUN apt-get update && apt-get install -y xz-utils
 
 RUN apt-get update && apt-get install -y texlive-fonts-extra
 RUN apt-get update && apt-get install -y dvipng
+RUN apt-get update && apt-get install -y gettext-base
