@@ -23,3 +23,6 @@ tmp/
 /cpu2017-install/
 /table-*.tex
 /figure-*.tex
+/*.bak
+/*.csv
+/docker/protean.tar
