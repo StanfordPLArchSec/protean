@@ -31,8 +31,8 @@ bench_list = [bench.name for suite in suites for bench in suite.benches]
 parser.add_argument(
     "--suite", "-s",
     choices=suite_list,
-    action="extend",
-    type=comma_list,
+    action="append",
+    default=[],
     help=(
         "Class-representative benchmark suites to run "
         "and generate results for."
@@ -42,8 +42,8 @@ parser.add_argument(
 parser.add_argument(
     "--bench", "-b",
     choices=bench_list,
-    action="extend",
-    type=comma_list,
+    action="append",
+    default=[],
     help=(
         "Individual class-representative benchmarks to run "
         "and generate results for."
