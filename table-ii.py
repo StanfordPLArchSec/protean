@@ -7,12 +7,16 @@ from util.util import (
     ResultPath,
     set_args,
     format_and_render_tex,
+    make_name,
+    run,
 )
 from contextlib import chdir
 from collections import defaultdict
 import json
 import argparse
 from pathlib import Path
+import sys
+import shutil
 
 strname, filename = make_name()
 
@@ -63,7 +67,7 @@ def do_generate_table_i(args):
     if args.size == "small":
         extra_snakemake_args = [
             "--config", "instances=5", "programs=50",
-            "inputs_cache=50", "inputs_commit=3",
+            "inputs_cache=50", "inputs_commit=5",
         ]
 
     with chdir("amulet"):
@@ -74,7 +78,7 @@ def do_generate_table_i(args):
                 if d.exists():
                     if args.force:
                         print(f"WARN: overwriting results directory {d}", file=sys.stderr)
-                        d.rmdir()
+                        shutil.rmtree(str(d))
                     else:
                         print(f"ERROR: refusing to overwrite existing results directory {d}", file=sys.stderr)
                         exit(1)
@@ -127,8 +131,7 @@ instrumentations = [
 parser.add_argument(
     "--instrumentation", "-i",
     choices=instrumentations,
-    type=comma_list,
-    action="extend",
+    action="append",
     help=(
         "Selects which row(s) of Table I to generate, selected based on instrumentation used.\n"
         "  rand:   Test against UNPROT-SEQ using ProtCC-RAND instrumentation (i.e., randomly insert PROT prefixes).\n"
@@ -145,6 +148,12 @@ parser.add_argument(
         "Generate the full paper version of Table I.\n"
         "  WARNING: Takes a long time!\n"
     ),
+)
+
+parser.add_argument(
+    "--force", "-f",
+    action="store_true",
+    help="Overwrite existing AMuLeT* results.",
 )
 add_common_arguments(parser)
 
