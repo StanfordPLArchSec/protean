@@ -72,17 +72,6 @@ def do_generate_table_i(args):
 
     with chdir("amulet"):
         if should_regenerate(args):
-            # Make sure that the output directories are empty.
-            for d in dirs:
-                d = Path(d)
-                if d.exists():
-                    if args.force:
-                        print(f"WARN: overwriting results directory {d}", file=sys.stderr)
-                        shutil.rmtree(str(d))
-                    else:
-                        print(f"ERROR: refusing to overwrite existing results directory {d}", file=sys.stderr)
-                        exit(1)
-
             # Run the fuzzing campaign.
             run(args.snakemake_command + fuzz_targets + extra_snakemake_args)
 
@@ -148,12 +137,6 @@ parser.add_argument(
         "Generate the full paper version of Table I.\n"
         "  WARNING: Takes a long time!\n"
     ),
-)
-
-parser.add_argument(
-    "--force", "-f",
-    action="store_true",
-    help="Overwrite existing AMuLeT* results.",
 )
 add_common_arguments(parser)
 
