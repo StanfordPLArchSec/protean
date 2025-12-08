@@ -64,6 +64,7 @@ set_args(args)
 # Set default arguments.
 if args.suite is None and args.bench is None:
     args.bench = [
+        "lbm",
         "hacl.poly1305",
         "bearssl",
         "ossl.bnexp",
