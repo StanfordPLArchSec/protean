@@ -26,3 +26,4 @@ tmp/
 /*.bak
 /*.csv
 /docker/protean.tar
+/siege/
