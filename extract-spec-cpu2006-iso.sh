@@ -2,19 +2,13 @@
 
 set -eu
 
-usage() {
-    cat <<EOF
-usage: $0 /path/to/cpu2006-1.2.iso
-EOF
-}
+root="$(realpath "$(dirname "${BASH_SOURCE[0]}")")"
+iso="$root/cpu2006.iso"
 
-if [[ $# -ne 1 ]]; then
-    usage >&2
+if [[ ! -f "$iso" ]]; then
+    echo "ERROR: missing $iso" >&2
     exit 1
 fi
-
-root="$(realpath "$(dirname "${BASH_SOURCE[0]}")")"
-iso="$(realpath "$1")"
 
 cd "$root"
 rm -rf cpu2006 cpu2006-install
