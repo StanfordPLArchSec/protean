@@ -37,3 +37,6 @@
 [submodule "bench"]
 	path = bench
 	url = https://github.com/StanfordPLArchSec/protean-bench.git
+[submodule "simpoint"]
+	path = simpoint
+	url = https://github.com/StanfordPLArchSec/simpoint.git
