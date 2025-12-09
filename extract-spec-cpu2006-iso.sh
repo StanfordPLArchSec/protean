@@ -3,7 +3,7 @@
 set -eu
 
 root="$(realpath "$(dirname "${BASH_SOURCE[0]}")")"
-iso="$root/cpu2017.iso"
+iso="$root/cpu2006.iso"
 
 if [[ ! -f "$iso" ]]; then
     echo "ERROR: missing $iso" >&2
