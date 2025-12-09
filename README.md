@@ -7,7 +7,7 @@ Artifact evaluators: please see [this section](#Artifact-Evaluation).
 ## Artifact Evaluation
 Use the following commands to run the artifact evaluation (where `/host/path/to/cpu2006.iso` points to your copy of the SPEC CPU2006 benchmarks ISO image
 and `$`/`#` denotes a shell command executed on the host / in the Docker container):
-```sh
+```
 $ curl -L https://zenodo.org/records/17857896?preview=1&token=eyJhbGciOiJIUzUxMiJ9.eyJpZCI6ImQzYTlhMjE3LWFjNzEtNGJiNC1iZWNkLTg1Y2Y1ZmE4NmE3MyIsImRhdGEiOnt9LCJyYW5kb20iOiJjMzBjZGFiZjg3NGJlMzUxZTFmNmEwMzI4MDIxNTRhZiJ9._yZvid8Wm9o7c3d5jar_f0t90myhGMcDTu0U7-MWacq3uWci7Wo6QKp2fOTpIFkD3qCNyTjV0F2peKokd74rTg | docker load
 $ docker run --name protean-container -it protean:latest
 $ docker cp /host/path/to/cpu2006.iso protean-container:/protean/cpu2006.iso
@@ -19,7 +19,7 @@ $ docker exec -it protean-container /bin/bash
 
 ## Building with Docker
 To build Protean with Docker, run the following commands:
-```sh
+```
 $ git clone https://github.com/StanfordPLArchSec/protean.git
 $ cd protean
 $ git submodule update --init --recursive --depth=1
