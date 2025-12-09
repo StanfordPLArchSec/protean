@@ -35,7 +35,7 @@ def add_common_arguments(parser):
     parser.add_argument(
         "snakemake_command",
         nargs="*",
-        default=["snakemake", "--cores=all"],
+        default=["snakemake", "--cores=all", "--rerun-incomplete", "--keep-incomplete"],
         help="Override snakemake binary/args with this."),
     
     
