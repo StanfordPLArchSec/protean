@@ -1,0 +1,45 @@
+\documentclass{article}
+
+% ---- packages your table uses ----
+\usepackage{multirow}
+\usepackage{makecell}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{xhfill}
+\usepackage{graphicx}
+\usepackage{cleveref}
+\usepackage{pifont}
+
+\renewcommand{\thetable}{\Roman{table}}
+\setcounter{table}{3}
+
+\newcommand{\ourdefense}{\textsc{Protean}}
+\newcommand{\singleclass}{single-class}
+\newcommand{\multiclass}{multi-class}
+\newcommand{\Protset}{ProtSet}
+\newcommand{\SBOX}{ARCH}
+\newcommand{\CTS}{CTS}
+\newcommand{\CT}{CT}
+\newcommand{\NCT}{UNR}
+
+\newcommand{\cmark}{\ding{51}}
+\newcommand{\xmark}{\textcolor{gray}{\ding{55}}}
+\newcommand{\qmark}{?}
+\newcommand{\ourtrack}{ProtTrack}
+\newcommand{\ourdelay}{ProtDelay}
+
+\begin{document}
+
+\begin{tabular}{|l|l|l|l|l|l|l|l|}\hline
+        \multirow{2}{*}{\it Defense} & \multirow{2}{*}{\it \Protset{}} & \multirow{2}{*}{\it \makecell{Protection \\  mechanism}} & \multicolumn{5}{c|}{\it Vulnerable program class} \\\cline{4-8} 
+        &&& \textit{\SBOX{}} & \textit{\CTS{}} & \textit{\CT{}} & \textit{UNR} & \it \scriptsize \makecell{multiple \\ (\Cref{fig:intro:hybrid})} \\\hline
+        NDA & all mem & AccessDelay & \cmark{} & \xmark{} & \xmark{} & \xmark{} & \xmark{} \\\hline
+        SpecShield & all mem & AccessDelay & \cmark{} & \xmark{} & \xmark{} & \xmark{} & \xmark{} \\\hline
+        STT & all mem & AccessTrack & @stt_arch@\% & \xmark{} & \xmark{} & \xmark{} & \xmark{} \\\hline
+        SPT & unxmitted state & AccessTrack & \color{gray} \cmark{} & \color{gray} @spt_cts@\% & @spt_ct@\% & \xmark{} & \xmark{} \\\hline
+        SPT-SB & all state & XmitDelay & \color{gray} \cmark{}  & \color{gray} \cmark{} & \color{gray} \cmark{} & @sptsb_unr@\% & \color{gray} @sptsb_multi@\% \\\hline
+        \multirow{2}{*}{\textbf{\makecell{\ourdefense{} \\ (ours)}}} & \multirow{2}{*}{\textbf{\makecell{programmable}}} & \bf \ourtrack{} & \bf @prottrack_arch@\% & \bf @prottrack_cts@\% & \bf @prottrack_ct@\% & \bf @prottrack_unr@\% & \bf @prottrack_multi@\% \\\cline{3-8}
+        && \bf \ourdelay{} & \bf @protdelay_arch@\% & \bf @protdelay_cts@\% & \bf @protdelay_ct@\% & \bf @protdelay_unr@\% & \bf @protdelay_multi@\% \\\hline
+\end{tabular}
+
+\end{document}
