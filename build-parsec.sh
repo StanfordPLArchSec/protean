@@ -12,4 +12,4 @@ cd "$root"
 # Download the simsmall inputs.
 url=https://github.com/cirosantilli/parsec-benchmark/releases/download/3.0/parsec-3.0-input-sim.tar.gz
 
-wget -O- "$url" | tar -C parsec -x --strip-components=1
+wget -O- "$url" | tar -C parsec --gzip -x --strip-components=1
