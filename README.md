@@ -1,3 +1,34 @@
+# The Protean Spectre Defense (Artifact) 
+This repository serves as an artifact for our HPCA'26 paper
+_Protean: A Programmable Spectre Defense_.
+
+
+# New Build instructions
+
+```sh
+# Build all gem5 instances (Protean, unsafe baseline, secure baselines, Amulet models). 
+# Takes many hours.
+./build-gem5.sh
+```
+
+# SPEC CPU2017 and CPU2006 Benchmarks
+Because these benchmarks are properietary...
+We provide scripts for automatically extracting the SPEC CPU2017 and CPU2006 benchmarks
+from their ISOs (you must provide the ISO).
+
+```sh
+./extract-spec-cpu2017-iso.sh /path/to/cpu2017.iso
+```
+We have tested with `cpu2017-1.1.0.iso` (i.e., SPEC CPU2017 v1.1.0), specifically.
+We have not tested other versions.
+
+To extract
+
+
+
+
+# OLD OLD OLD: IGNORE
+
 # FIXME: Update.
 # LLSCT2 
 
