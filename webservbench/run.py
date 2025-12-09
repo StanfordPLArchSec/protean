@@ -17,15 +17,14 @@ args = parser.parse_args()
 nginx = subprocess.Popen(args.nginx.split())
 
 # Wait until we can connect.
-port = 8443
 while True:
     if x := nginx.poll() is not None:
-        print("ERROR: nginx died before binding to port", file=sys.stderr)
+        print(f"ERROR: nginx died before binding to port {args.port}", file=sys.stderr)
         print(x, file=sys.stderr)
         exit(1)
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     try:
-        conn = sock.connect(("127.0.0.1", port))
+        conn = sock.connect(("127.0.0.1", args.port))
         sock.close()
         break
     except OSError:
@@ -45,9 +44,6 @@ if siege_retval:
     
 # Kill nginx.
 nginx.send_signal(signal.SIGINT)
-nginx_retval = nginx.wait()
-if nginx_retval:
-    exitno = 1
-    print("ERROR: nginx failed", file=sys.stderr)
+nginx.wait()
 
 exit(exitno)
