@@ -40,7 +40,7 @@
     %\end{tabular}
     \caption{\small\ouramulet{}-detected contract violations for 
     \ourcc{}-RAND/-ARCH/-CTS/-CT/-UNR test binaries on unsafe, \ourdelay{}, and \ourtrack{} hardware.
-    False positives (\S\ref{sec:amulet:false-positives}) are in parentheses.}
+    False positives (\S\ref{sec:ouramulet}) are in parentheses.}
     \label{tab:amulet}
     \label{fig:amulet}
 \end{table}

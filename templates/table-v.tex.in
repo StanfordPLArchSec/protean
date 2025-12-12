@@ -21,24 +21,24 @@
   \centering
   \begin{tabular}{!{\vrule width 1pt}l|c|c|c!{\vrule width 1pt}}\Xhline{1pt}
     \bf \multirow{2}{*}{\makecell{ARCH-Wasm}} & \bf \multirow{2}{*}{STT} & \multicolumn{2}{c!{\vrule width 1pt}}{\bf\textsc{Protean}} \\\cline{3-4}
-&& \bf Track & \bf Delay \\\hline
+&& \bf Delay & \bf Track \\\hline
     @arch-wasm@
 
     \bf \multirow{2}{*}{\makecell{CTS-Crypto}} & \bf \multirow{2}{*}{SPT} & \multicolumn{2}{c!{\vrule width 1pt}}{\bf\textsc{Protean}} \\\cline{3-4}
-&& \bf Track & \bf Delay \\\hline
+&& \bf Delay & \bf Track \\\hline
     @cts-crypto@
     
   \end{tabular}\begin{tabular}{|l|c|c|c!{\vrule width 1pt}}\Xhline{1pt}
     \bf \multirow{2}{*}{\makecell{CT-Crypto}} & \bf \multirow{2}{*}{SPT} & \multicolumn{2}{c!{\vrule width 1pt}}{\bf\textsc{Protean}} \\\cline{3-4}
-&& \bf Track & \bf Delay \\\hline
+&& \bf Delay & \bf Track \\\hline
     @ct-crypto@
 
     \bf \multirow{2}{*}{\makecell{UNR-\\Crypto}} & \bf \multirow{2}{*}{\makecell{SPT-\\SB}} & \multicolumn{2}{c!{\vrule width 1pt}}{\bf\textsc{Protean}} \\\cline{3-4}
-&& \bf Track & \bf Delay \\\hline
+&& \bf Delay & \bf Track \\\hline
     @unr-crypto@
 
     \bf \multirow{2}{*}{\makecell{Multi-Class\\Webserver}} & \bf \multirow{2}{*}{\makecell{SPT-\\SB}} & \multicolumn{2}{c!{\vrule width 1pt}}{\bf\textsc{Protean}} \\\cline{3-4}
-&& \bf Track & \bf Delay \\\hline
+&& \bf Delay & \bf Track \\\hline
     @webserver@
   \end{tabular}
   \caption{\small Normalized runtime of \ourdefense{} on representative \singleclass{} and \multiclass{} workloads, 
