@@ -34,7 +34,7 @@ def do_generate_table_i(args):
             args.instrumentation = ["rand"]
     assert args.size is not None and args.instrumentation is not None
     
-    defenses = ["none", "prottrack", "protdelay"]
+    defenses = ["none", "protdelay", "prottrack"]
     adversaries = ["cache", "commit"]
 
     # Enumerate all directories.

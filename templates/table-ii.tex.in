@@ -23,7 +23,7 @@
     \begin{tabular}{|l|l|l|l|l|}\hline
         \multirow{3}{*}{\bf Contract} & \multirow{3}{*}{\bf Instrumentation} & \multicolumn{3}{|c|}{\bf Violations (out of 200)} \\\cline{3-5}
         && \multirow{2}{*}{Unsafe} & \multicolumn{2}{|c|}{\ourdefense{}} \\\cline{4-5}
-        &&& \ourtrack{} & \ourdelay{} \\\hline
+        &&& \ourdelay{} & \ourtrack{} \\\hline
         % \ourcontract{} & assembly & \prot{} insertion & 23 (0) & 0 (0) & 0 (0) \\\hline
         % \archcontract{} & assembly & none & 80 (0)  & 0 (0) & 0 (0) \\\hline
         % \ctcontract{} & llvm-ir & \ctcc{} & 98 (0) & 2 (16) & 0 (8) \\\hline
@@ -39,7 +39,7 @@
     %     && orig. & fixed & orig. & fixed \\\hline
     %\end{tabular}
     \caption{\small\ouramulet{}-detected contract violations for 
-    \ourcc{}-RAND/-ARCH/-CTS/-CT/-UNR test binaries on unsafe, ProtTrack, and ProtDelay hardware.
+    \ourcc{}-RAND/-ARCH/-CTS/-CT/-UNR test binaries on unsafe, \ourdelay{}, and \ourtrack{} hardware.
     False positives (\S\ref{sec:amulet:false-positives}) are in parentheses.}
     \label{tab:amulet}
     \label{fig:amulet}
