@@ -82,8 +82,8 @@ class SuiteBase:
         return [
             "base/unsafe",
             f"base/{program_class.baseline}.atret",
-            f"{program_class.target}/prottrack.atret",
             f"{program_class.target}/protdelay.atret",
+            f"{program_class.target}/prottrack.atret",
         ]
 
     def target(self, conf):
