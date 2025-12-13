@@ -1,107 +1,37 @@
-# FIXME: Update.
-# LLSCT2 
+# The Protean Spectre Defense
+This repository contains the source code for a prototype of Protean,
+as presented in the HPCA'26 paper _Protean: A Programmalbe Spectre Defense_.
 
-## Prerequisites
-```sh
-brew install cmake p7zip binutils gawk llvm
+Artifact evaluators: please see [this section](#Artifact-Evaluation).
+
+## Artifact Evaluation
+Use the following commands to run the artifact evaluation (where `/host/path/to/cpu2006.iso` points to your copy of the SPEC CPU2006 benchmarks ISO image
+and `$`/`#` denotes a shell command executed on the host / in the Docker container):
 ```
-
-## Cloning
-```sh
-git clone https://github.com/StanfordPLArchSec/llsct2
-git submodule init
-git submodule update
-LLSCT=$PWD     # set the root dir for LLSCT
+$ docker pull nmosier/protean:latest
+$ docker run --name protean-container -it nmosier/protean:latest /bin/bash
+$ docker cp /host/path/to/cpu2006.iso protean-container:/protean/cpu2006.iso
+# ./extract-spec-cpu2006-iso.sh
+# ./table-v.py --bench={lbm,hacl.poly1305,bearssl,ossl.bnexp,nginx.c1r1}
+# ./table-ii.py --instrumentation=rand
 ```
-This will probably take a few minutes.
+Note that the `docker cp` command must be executed in a different host shell, since the previous `docker run` command starts the Docker container.
 
-## Building
-
-First, make sure that the default generator for CMake is set to Ninja:
-```sh
-export CMAKE_GENERATOR=Ninja
+## Building with Docker
+To build Protean with Docker, run the following commands:
 ```
-### Building LLVM
-```sh
-
-cd llvm
-cmake -S llvm -B build \
-      -DCMAKE_BUILD_TYPE=Release \
-      -DLLVM_ENABLE_PROJECTS='clang;lld' \
-      -DLLVM_TARGETS_TO_BUILD=X86 \
-      -DLLVM_INCLUDE_TESTS=Off \
-      -DLLVM_BINUTILS_INCDIR=$(brew --prefix binutils)/include \
-      -DLLVM_USE_LINKER=lld
-cmake --build build
-cd ..
+$ git clone https://github.com/StanfordPLArchSec/protean.git
+$ cd protean
+$ git submodule update --init --recursive --depth=1
+$ ./docker/build.sh
+$ ./docker/run.sh
+# ./build.sh
 ```
+Note that building everything will take a _long_ time.
 
-### Building gem5
-```sh
-cd gem5
-scons --ignore-style -j $(nproc) build/X86/gem5.fast
-cd ..
-```
-
-### Building glibc
-```sh
-cd glibc && mkdir build && cd build
-glibc_flags="-O3"
-../configure --prefix=$LLSCT/glibc/install CC=$LLSCT/llvm/build/bin/clang CXX=$LLSCT/llvm/build/bin/clang++ CFLAGS="$glibc_flags" CXXFLAGS="$glibc_flags"
-make -s -j$(nproc)
-make -s -j$(nproc) install
-cd ../..
-```
-
-### Configuring SPEC CPU2017 benchmarks
-1. First, get the `cpu2017-1.1.0.iso` image. Let `$SPEC_ISO` denote the path to this ISO image.
-2. 
-```sh
-mkdir cpu2017 && cd cpu2017
-7z e $SPEC_ISO install_archives/cpu2017.tar.xz
-tar -xf cpu2017.tar.xz
-yes | ./install.sh
-SPEC=$PWD
-cd ..
-```
-
-### Building test-suite
-```sh
-mkdir test-suite/build && cd test-suite/build
-test_suite_cflags=""
-test_suite_ldflags="-static -L $LLSCT/glibc/install/lib -Wl,--rpath=$LLSCT/glibc/install/lib -Wl,--dynamic-linker=$LLSCT/glibc/install/lib/ld-linux-x86-64.so.2 /usr/lib/x86_64-linux-gnu/libc_nonshared.a"
-cmake ..  -DCMAKE_C_COMPILER=$LLVM/bin/clang \
-	  -DCMAKE_CXX_COMPILER=$LLVM/bin/clang++ \
-	  -DCMAKE_C_FLAGS="$test_suite_cflags" \
-	  -DCMAKE_CXX_FLAGS="$test_suite_cflags" \
-	  -DCMAKE_EXE_LINKER_FLAGS="$test_suite_ldflags" \
-	  -DCMAKE_SHARED_LINKER_FLAGS="$test_suite_ldflags" \
-	  -DTEST_SUITE_SPEC2017_ROOT=$LLSCT/cpu2017 \
-	  -DTEST_SUITE_SUBDIRS=External \
-	  -DTEST_SUITE_COLLECT_STATS=Off \
-	  -DTEST_SUITE_COLLECT_CODE_SIZE=Off \
-	  -DTEST_SUITE_RUN_TYPE=test
-ninja
-TEST_SUITE=$PWD
-cd ../..
-```
-
-### Building valgrind
-We will use valgrind for profiling the SPEC CPU2017 benchmarks to produce basic block vector (BBV) files, which we will pass to SimPoint for analysis.
-```sh
-cd valgrind
-./autogen.sh
-mkdir build
-cd build
-../configure --prefix=$PWD/../install
-make -s -j$(nproc)
-make -s -j$(nproc) install
-cd ../../
-```
-
-### Building SimPoint
-```sh
-cd simpoint
-make -s -j$(nproc)
-```
-
+## Extending Protean's Evaluation Infrastructure
+We implemented an extensive Snakemake-based infrastructure for 
+evaluating the performance and security of Protean.
+Luckily, this infrastructure can be easily extended to 
+[add new benchmarks](https://github.com/StanfordPLArchSec/protean-bench/blob/main/example/README.md)
+and evaluate the [performance](https://github.com/StanfordPLArchSec/protean-bench/blob/main/HW-SW.md) and [security](https://github.com/StanfordPLArchSec/protean-amulet/blob/protean/HW-SW.md) of new hardware-software codesigns.

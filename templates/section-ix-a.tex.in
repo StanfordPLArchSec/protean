@@ -1,0 +1,46 @@
+\documentclass{article}
+
+\renewcommand{\thesection}{\Roman{section}}
+\setcounter{section}{8}
+
+\newcommand{\ourdefense}{\textsc{Protean}}
+\newcommand{\ctcc}{ProtCC-CT}
+\newcommand{\nctcc}{ProtCC-UNR}
+\newcommand{\ctscc}{ProtCC-CTS}
+\newcommand{\sboxcc}{ProtCC-ARCH}
+\newcommand{\spectrectrl}{\textsc{SpectreCtrl}}
+\newcommand{\ourtrack}{ProtTrack}
+\newcommand{\ourdelay}{ProtDelay}
+\newcommand{\theirtrack}{AccessTrack}
+\newcommand{\theirdelay}{AccessDelay}
+\newcommand{\ourisa}{ProtISA}
+\newcommand{\ourcc}{ProtCC}
+\newcommand{\ptex}{\ourisa{}}
+
+\begin{document}
+
+\section{Performance Results}
+
+\subsection{General-Purpose Performance}
+
+\setcounter{subsubsection}{1}
+\subsubsection{\ourcc{} Overhead}
+\label{sec:results:ourcc-overhead}
+@protcc-overhead@
+
+\subsubsection{ProtL1 Variants}
+@protl1-variants@
+
+\subsubsection{\theirdelay{} and \theirtrack{}}
+\label{sec:results:naive}
+@access@
+
+\setcounter{subsubsection}{5}
+\subsubsection{SpectreCtrl}
+@spectre-ctrl@
+
+\subsubsection{Baseline Security Fixes}
+\label{sec:perf:baseline-fixes}
+@baseline-fixes@
+
+\end{document}
