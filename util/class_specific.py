@@ -84,13 +84,15 @@ def get_results_for_benchmarks(bench_list, args):
         for bench in bench_list:
             unsafe = bench.perf_unsafe()
             baseline = bench.perf_baseline()
-            prottrack = bench.perf_prottrack()
             protdelay = bench.perf_protdelay()
+            prottrack = bench.perf_prottrack()
             assert unsafe != 0
             assert baseline != 0
-            assert prottrack != 0
             assert protdelay != 0
+            assert prottrack != 0
             bench.results = [
-                baseline / unsafe, prottrack / unsafe, protdelay / unsafe,
+                baseline / unsafe,
+                protdelay / unsafe,
+                prottrack / unsafe,
             ]
 
