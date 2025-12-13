@@ -10,3 +10,6 @@ CMakeFiles/
 tmp/
 *.o
 *.asm
+/bench-ninja/
+/sim/
+m5out/
