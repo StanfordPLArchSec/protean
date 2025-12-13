@@ -17,3 +17,6 @@ cc -o harness harness.c
 
 # Get the base.json instruction spec.
 ./src/x86/isa_spec/get_spec.py
+
+# Remove intermediate files.
+rm -f instructions_Jan2022.xml
