@@ -37,7 +37,7 @@
 && \bf Delay & \bf Track \\\hline
     @unr-crypto@
 
-    \bf \multirow{2}{*}{\makecell{Multi-Class\\Webserver}} & \bf \multirow{2}{*}{\makecell{SPT-\\SB}} & \multicolumn{2}{c!{\vrule width 1pt}}{\bf\textsc{Protean}} \\\cline{3-4}
+    \bf \multirow{2}{*}{\makecell{Multi-Class\\Web Server}} & \bf \multirow{2}{*}{\makecell{SPT-\\SB}} & \multicolumn{2}{c!{\vrule width 1pt}}{\bf\textsc{Protean}} \\\cline{3-4}
 && \bf Delay & \bf Track \\\hline
     @webserver@
   \end{tabular}
