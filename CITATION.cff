@@ -1,0 +1,97 @@
+# This CITATION.cff file was generated with cffinit.
+# Visit https://bit.ly/cffinit to generate yours today!
+
+cff-version: 1.2.0
+title: The Protean Spectre Defense
+message: >-
+  If you use this software, please cite it using the
+  metadata from this file.
+type: software
+authors:
+  - given-names: Nicholas
+    family-names: Mosier
+    email: nmosier@stanford.edu
+    affiliation: Stanford University
+    orcid: 'https://orcid.org/0000-0003-3705-8161'
+  - given-names: Hamed
+    family-names: Nemati
+    email: hnnemati@kth.se
+    affiliation: KTH Royal Institute of Technology
+    orcid: 'https://orcid.org/0000-0001-9251-3679'
+  - given-names: John C.
+    family-names: Mitchell
+    email: jcm@stanford.edu
+    affiliation: Stanford University
+    orcid: 'https://orcid.org/0000-0002-0024-860X'
+  - given-names: Caroline
+    family-names: Trippel
+    email: trippel@stanford.edu
+    affiliation: Stanford University
+    orcid: 'https://orcid.org/0000-0002-5776-1121'
+identifiers:
+  - type: doi
+    value: 10.5281/zenodo.17857895
+    description: >-
+      Docker container containing prebuilt Protean, its
+      experimental infrastructure, and dependencies
+repository-code: 'https://github.com/StanfordPLArchSec/protean'
+abstract: >-
+  We present the PROTEAN Spectre defense—the first to be
+  altogether comprehensive, covering all side-channels and
+  speculation; programmer-transparent, requiring no source
+  modifications; and programmable, tailoring its hardware
+  protections to software's security needs. Several Spectre
+  defenses offer the first two features, but protect a
+  hardware-defined subset of architectural state from
+  transiently leaking. Meanwhile, many Spectrevulnerable
+  programs process secrets in ways that such rigid
+  protections cannot both performantly and fully secure.
+  Protean overcomes this limitation through: (1) ProtISA, an
+  ISA extension that allows software to tell hardware which
+  architectural registers and memory bytes require
+  protection from transiently leaking at each program point;
+  (2) ProtCC, a compiler that automatically infers and
+  programs ProtISA protections for vulnerable code with
+  minimal user input; and (3) ProtDelay and ProtTrack, two
+  alternative hardware mechanisms that performantly enforce
+  software-defined ProtISA protections. By flexibly
+  tailoring a hardware Spectre defense to a program's data
+  protection needs, Protean significantly reduces the
+  overhead of fully securing vulnerable programs. With
+  ProtDelay/ProtTrack, it averages 0.27x/0.18x and
+  0.42x/0.34x of the runtime overhead of the best secure
+  baseline for programs with and without mixed security
+  needs, respectively, at lower/comparable hardware
+  complexity.
+keywords:
+  - hardware security
+  - hardware side-channel attacks
+  - Spectre defenses
+  - hardware-software codesign
+license: BSD-3-Clause
+preferred-citation:
+  type: conference-paper
+  authors:
+  - given-names: Nicholas
+    family-names: Mosier
+    email: nmosier@stanford.edu
+    affiliation: Stanford University
+    orcid: 'https://orcid.org/0000-0003-3705-8161'
+  - given-names: Hamed
+    family-names: Nemati
+    email: hnnemati@stanford.edu
+    affiliation: Stanford University
+    orcid: 'https://orcid.org/0000-0001-9251-3679'
+  - given-names: John
+    family-names: Mitchell
+    email: jcm@stanford.edu
+    affiliation: Stanford University
+  - given-names: Caroline
+    family-names: Trippel
+    email: trippel@stanford.edu
+    affiliation: Stanford University
+    orcid: 'https://orcid.org/0000-0002-5776-1121'
+  title: "Protean: A Programmable Spectre Defense"
+  year: 2026
+  conference: 
+    name: "2026 IEEE International Symposium on High Performance Computer Architecture (HPCA)"
